@@ -1,4 +1,4 @@
-"""集中定义接口响应、数据库记录和初始化结果所需的 Pydantic schema。"""
+"""Pydantic schemas used by the HTTP and service layers."""
 
 from __future__ import annotations
 
@@ -6,24 +6,30 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class FeatureStatus(BaseModel):
-    """描述某个模块能力当前是否已可用。"""
+    """Describe whether a feature is currently available."""
 
     name: str
     ready: bool
     note: str
 
 
-class HealthStatus(BaseModel):
-    """基础服务健康检查返回。"""
+class MessageResponse(BaseModel):
+    """Simple message response."""
 
-    status: str = Field(..., description="服务整体状态")
-    service: str = Field(..., description="服务名称")
-    version: str = Field(..., description="服务版本")
-    environment: str = Field(..., description="当前环境")
+    message: str
+
+
+class HealthStatus(BaseModel):
+    """Health-check response."""
+
+    status: str = Field(..., description="Service status")
+    service: str = Field(..., description="Service name")
+    version: str = Field(..., description="Service version")
+    environment: str = Field(..., description="Current environment")
 
 
 class AuthCapability(BaseModel):
@@ -56,10 +62,44 @@ class WizardCapability(BaseModel):
     features: list[FeatureStatus]
 
 
-class ProfileRecord(BaseModel):
-    """profiles 表的数据表达，字段名尽量贴近原始数据库设计。"""
+class AuthRegisterRequest(BaseModel):
+    """Register request."""
 
-    id: UUID
+    email: EmailStr
+    password: str = Field(min_length=6)
+    display_name: str | None = None
+
+
+class AuthLoginRequest(BaseModel):
+    """Login request."""
+
+    email: EmailStr
+    password: str = Field(min_length=6)
+
+
+class CurrentUser(BaseModel):
+    """Simplified current-user model."""
+
+    id: str
+    email: EmailStr
+    display_name: str | None = None
+    role: Literal["user", "admin"] = "user"
+
+
+class AuthTokenResponse(BaseModel):
+    """Register/login response."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: CurrentUser
+
+
+class ProfileRecord(BaseModel):
+    """Database-facing profile record."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str
     display_name: str | None = None
     selected_model: str = "gpt-4o"
     deepseek_api_key: str | None = None
@@ -77,30 +117,136 @@ class ProfileRecord(BaseModel):
     updated_at: datetime | None = None
 
 
+class ProfileResponse(BaseModel):
+    """Profile response without raw API keys."""
+
+    id: str
+    display_name: str | None = None
+    selected_model: str
+    deep_think_enabled: bool
+    company_affiliates: list[str]
+    company_affiliates_roles: list[dict[str, str]]
+    active_custom_rules: list[str]
+    wizard_completed: bool
+    disclaimer_accepted: bool
+    role: Literal["user", "admin"]
+    has_deepseek_key: bool
+    has_zhipu_key: bool
+    has_zhipu_ocr_key: bool
+    has_openai_key: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Minimal profile update request."""
+
+    display_name: str | None = None
+    selected_model: str | None = None
+    deep_think_enabled: bool | None = None
+    company_affiliates: list[str] | None = None
+    company_affiliates_roles: list[dict[str, str]] | None = None
+    deepseek_api_key: str | None = None
+    zhipu_api_key: str | None = None
+    zhipu_ocr_api_key: str | None = None
+    openai_api_key: str | None = None
+
+
+class DisclaimerUpdateRequest(BaseModel):
+    """Disclaimer update request."""
+
+    disclaimer_accepted: bool
+
+
+class ConnectionTestRequest(BaseModel):
+    """Connection test request."""
+
+    provider: Literal["openai", "deepseek", "zhipuai", "zhipu-ocr"]
+    use_saved_key: bool = True
+    api_key: str | None = None
+
+
+class ConnectionTestResponse(BaseModel):
+    """Connection test response."""
+
+    success: bool
+    message: str
+
+
 class IndustryTemplateSeed(BaseModel):
-    """industry_templates 的默认系统模板内容。"""
+    """Default industry template payload."""
 
     name: str
     description: str
     rules_text: str
     company_affiliates: list[str] = Field(default_factory=list)
     is_system: bool = True
-    user_id: UUID | None = None
+    user_id: UUID | str | None = None
 
 
 class IndustryTemplateRecord(IndustryTemplateSeed):
-    """industry_templates 表的数据表达。"""
+    """Database-facing template record."""
 
-    id: UUID | None = None
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
-class AuditHistoryRecord(BaseModel):
-    """audit_history 表的数据表达。"""
+class TemplateResponse(BaseModel):
+    """Template response."""
 
-    id: UUID | None = None
-    user_id: UUID
+    id: str
+    name: str
+    description: str
+    rules_text: str
+    company_affiliates: list[str]
+    is_system: bool
+    user_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class TemplateCreateRequest(BaseModel):
+    """Create template request."""
+
+    name: str = Field(min_length=1)
+    description: str = ""
+    rules_text: str = Field(min_length=1)
+    company_affiliates: list[str] = Field(default_factory=list)
+
+
+class TemplateUpdateRequest(BaseModel):
+    """Update template request."""
+
+    name: str | None = None
+    description: str | None = None
+    rules_text: str | None = None
+    company_affiliates: list[str] | None = None
+
+
+class TemplateLoadResponse(BaseModel):
+    """Template-load response."""
+
+    template: TemplateResponse
+    loaded_rules: list[str]
+    message: str
+
+
+class TemplateListResponse(BaseModel):
+    """Template-list response."""
+
+    templates: list[TemplateResponse]
+
+
+class AuditHistoryRecord(BaseModel):
+    """Database-facing audit-history record."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str | None = None
+    user_id: UUID | str
     document_count: int = 0
     red_count: int = 0
     yellow_count: int = 0
@@ -113,8 +259,33 @@ class AuditHistoryRecord(BaseModel):
     updated_at: datetime | None = None
 
 
+class AuditHistoryItem(BaseModel):
+    """Audit-history list item."""
+
+    id: str
+    model_used: str
+    document_count: int
+    red_count: int
+    yellow_count: int
+    blue_count: int
+    deep_think_used: bool
+    created_at: datetime | None = None
+
+
+class AuditHistoryListResponse(BaseModel):
+    """Audit-history list response."""
+
+    items: list[AuditHistoryItem]
+
+
+class AuditHistoryDetailResponse(BaseModel):
+    """Audit-history detail response."""
+
+    item: AuditHistoryRecord
+
+
 class SystemRuleSeed(BaseModel):
-    """system_rules 表默认记录的初始化表达。"""
+    """Default system-rule payload."""
 
     key: str
     display_text: str
@@ -122,15 +293,189 @@ class SystemRuleSeed(BaseModel):
 
 
 class SystemRuleRecord(SystemRuleSeed):
-    """system_rules 表的数据表达。"""
+    """Database-facing system-rule record."""
 
-    id: UUID | None = None
-    updated_by: UUID | None = None
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str | None = None
+    updated_by: UUID | str | None = None
     updated_at: datetime | None = None
 
 
+class BuiltinRulePublicResponse(BaseModel):
+    """Public builtin-rule response."""
+
+    key: str
+    display_text: str
+    updated_at: datetime | None = None
+
+
+class BuiltinRuleFullResponse(BaseModel):
+    """Full builtin-rule response."""
+
+    key: str
+    display_text: str
+    prompt_text: str
+    updated_at: datetime | None = None
+
+
+class BuiltinRuleUpdateRequest(BaseModel):
+    """Builtin-rule update request."""
+
+    display_text: str = Field(min_length=1)
+    prompt_text: str = Field(min_length=1)
+
+
+class CustomRulesResponse(BaseModel):
+    """Current-user custom rules."""
+
+    rules: list[str]
+
+
+class CustomRulesUpdateRequest(BaseModel):
+    """Custom-rules update request."""
+
+    rules: list[str] = Field(default_factory=list)
+
+
+class FileRecord(BaseModel):
+    """Uploaded-file preview record."""
+
+    id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    detected_type: str
+    preview_text: str
+    uploaded_at: datetime
+
+
+class FileUploadResponse(BaseModel):
+    """File upload response."""
+
+    file: FileRecord
+    message: str
+
+
+class FileDeleteResponse(BaseModel):
+    """File delete response."""
+
+    file_id: str
+    message: str
+
+
+class AuditFileRefItem(BaseModel):
+    """Object-style file reference used by audit-start payloads."""
+
+    file_id: str
+    document_type: str | None = None
+    label: str | None = None
+
+
+class AuditStartRequest(BaseModel):
+    """Start-audit request aligned with the original contract."""
+
+    po_file_id: str
+    target_files: list[AuditFileRefItem] = Field(min_length=1)
+    prev_ticket_files: list[AuditFileRefItem] = Field(default_factory=list)
+    template_file_id: str | None = None
+    reference_file_ids: list[str] = Field(default_factory=list)
+    deep_think: bool = False
+
+
+class AuditStartResponse(BaseModel):
+    """Start-audit response."""
+
+    task_id: str
+    status: str
+    message: str
+
+
+class AuditProgressPayload(BaseModel):
+    """Audit-progress SSE payload."""
+
+    task_id: str
+    status: str
+    progress_percent: int
+    message: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuditIssue(BaseModel):
+    """Minimal audit-issue payload."""
+
+    level: Literal["RED", "YELLOW", "BLUE"]
+    field_name: str
+    message: str
+
+
+class AuditResultResponse(BaseModel):
+    """Audit-result response."""
+
+    task_id: str
+    status: str
+    summary: dict[str, int]
+    issues: list[AuditIssue]
+    message: str
+
+
+class AuditCancelResponse(BaseModel):
+    """Audit-cancel response."""
+
+    task_id: str
+    status: str
+    message: str
+
+
+class AuditReportResponse(BaseModel):
+    """Report endpoint placeholder response."""
+
+    task_id: str
+    message: str
+
+
+class WizardStartRequest(BaseModel):
+    """Wizard start request."""
+
+    first_message: str | None = None
+
+
+class WizardStartResponse(BaseModel):
+    """Wizard start response."""
+
+    session_id: str
+    message: str
+
+
+class WizardChatRequest(BaseModel):
+    """Wizard chat request."""
+
+    session_id: str
+    message: str = Field(min_length=1)
+
+
+class WizardChatResponse(BaseModel):
+    """Wizard chat response."""
+
+    session_id: str
+    reply: str
+
+
+class WizardCompleteRequest(BaseModel):
+    """Wizard complete request."""
+
+    session_id: str
+
+
+class WizardSkipResponse(BaseModel):
+    """Wizard skip/complete common response."""
+
+    message: str
+
+
 class DatabaseTableSpec(BaseModel):
-    """文档化展示单张表的关键设计点。"""
+    """Database table spec for docs."""
 
     name: str
     purpose: str
@@ -138,7 +483,7 @@ class DatabaseTableSpec(BaseModel):
 
 
 class RLSPolicySpec(BaseModel):
-    """文档化展示 RLS 策略摘要。"""
+    """RLS policy spec for docs."""
 
     table_name: str
     actor: str
@@ -147,7 +492,7 @@ class RLSPolicySpec(BaseModel):
 
 
 class BootstrapDataPlan(BaseModel):
-    """初始化阶段的目标数据说明。"""
+    """Bootstrap plan used by init logic."""
 
     system_rule: SystemRuleSeed
     system_templates: list[IndustryTemplateSeed]
@@ -155,7 +500,7 @@ class BootstrapDataPlan(BaseModel):
 
 
 class SeedExecutionResult(BaseModel):
-    """单条初始化动作执行结果。"""
+    """Single seed execution result."""
 
     entity: str
     identifier: str
@@ -164,7 +509,7 @@ class SeedExecutionResult(BaseModel):
 
 
 class DatabaseBootstrapResult(BaseModel):
-    """幂等初始化执行结果摘要。"""
+    """Summary of bootstrap execution."""
 
     executed: bool
     message: str

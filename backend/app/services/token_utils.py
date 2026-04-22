@@ -2,7 +2,7 @@ from app.models.schemas import FeatureStatus
 
 
 class TokenUtilityService:
-    """Reserves token estimation responsibilities for future LLM orchestration."""
+    """提供 token 估算能力说明占位。"""
 
     def get_features(self) -> list[FeatureStatus]:
         return [
@@ -12,4 +12,3 @@ class TokenUtilityService:
                 note="当前只保留工具模块位置，尚未接入真实估算逻辑。",
             )
         ]
-

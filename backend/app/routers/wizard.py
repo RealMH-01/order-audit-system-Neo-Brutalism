@@ -1,7 +1,16 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies import get_wizard_engine_service
-from app.models.schemas import WizardCapability
+from app.dependencies import get_current_user, get_wizard_engine_service
+from app.models.schemas import (
+    CurrentUser,
+    WizardCapability,
+    WizardChatRequest,
+    WizardChatResponse,
+    WizardCompleteRequest,
+    WizardSkipResponse,
+    WizardStartRequest,
+    WizardStartResponse,
+)
 from app.services.wizard_engine import WizardEngineService
 
 router = APIRouter()
@@ -13,3 +22,37 @@ async def get_wizard_capabilities(
 ) -> WizardCapability:
     return service.get_capability()
 
+
+@router.post("/start", response_model=WizardStartResponse)
+async def start_wizard(
+    payload: WizardStartRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: WizardEngineService = Depends(get_wizard_engine_service),
+) -> WizardStartResponse:
+    return service.start(current_user, payload)
+
+
+@router.post("/chat", response_model=WizardChatResponse)
+async def chat_wizard(
+    payload: WizardChatRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: WizardEngineService = Depends(get_wizard_engine_service),
+) -> WizardChatResponse:
+    return service.chat(current_user, payload)
+
+
+@router.post("/complete", response_model=WizardSkipResponse)
+async def complete_wizard(
+    payload: WizardCompleteRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: WizardEngineService = Depends(get_wizard_engine_service),
+) -> WizardSkipResponse:
+    return service.complete(current_user, payload)
+
+
+@router.post("/skip", response_model=WizardSkipResponse)
+async def skip_wizard(
+    current_user: CurrentUser = Depends(get_current_user),
+    service: WizardEngineService = Depends(get_wizard_engine_service),
+) -> WizardSkipResponse:
+    return service.skip(current_user)

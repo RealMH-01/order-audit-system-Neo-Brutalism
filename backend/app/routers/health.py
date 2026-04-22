@@ -26,4 +26,3 @@ async def get_readiness_status() -> HealthStatus:
         version=settings.app_version,
         environment=settings.app_env,
     )
-

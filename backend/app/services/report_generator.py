@@ -2,7 +2,7 @@ from app.models.schemas import FeatureStatus
 
 
 class ReportGeneratorService:
-    """Placeholder for future Excel report generation and export formatting."""
+    """提供报告导出能力说明占位。"""
 
     def get_features(self) -> list[FeatureStatus]:
         return [
@@ -12,4 +12,3 @@ class ReportGeneratorService:
                 note="Excel 报告生成将在后续轮次接入。",
             )
         ]
-

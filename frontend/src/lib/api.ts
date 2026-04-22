@@ -1,7 +1,7 @@
 import type { ApiError, ApiSuccess, AuditProgressEvent } from "@/types";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
   if (!response.ok) {
@@ -42,4 +42,3 @@ export function createAuditEventSource(path: string) {
 export function parseAuditEvent(raw: MessageEvent<string>): AuditProgressEvent {
   return JSON.parse(raw.data) as AuditProgressEvent;
 }
-

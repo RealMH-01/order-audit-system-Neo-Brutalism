@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     app_name: str = "Order Audit System API"
     app_version: str = "0.2.0"
-    api_v1_prefix: str = "/api/v1"
+    api_v1_prefix: str = "/api"
     debug: bool = True
     allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 

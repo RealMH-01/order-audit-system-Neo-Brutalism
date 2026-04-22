@@ -2,7 +2,7 @@ from app.models.schemas import FeatureStatus
 
 
 class AuditEngineService:
-    """Future field-by-field comparison engine placeholder."""
+    """提供审核引擎的能力说明占位。"""
 
     def get_features(self) -> list[FeatureStatus]:
         return [
@@ -12,4 +12,3 @@ class AuditEngineService:
                 note="RED / YELLOW / BLUE 规则判断将在后续轮次实现。",
             )
         ]
-
