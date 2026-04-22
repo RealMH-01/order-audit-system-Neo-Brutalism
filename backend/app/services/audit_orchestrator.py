@@ -1,10 +1,11 @@
-"""Provide a minimal audit task lifecycle for the current round."""
+"""审核任务调度器：连接文件解析、Prompt 构造、模型调用、结果修正和报告输出。"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from app.config import Settings
@@ -31,9 +32,27 @@ from app.services.report_generator import ReportGeneratorService
 from app.services.runtime_store import RuntimeStore
 from app.services.token_utils import TokenUtilityService
 
+_DOC_TYPE_HINTS = {
+    "invoice": {"invoice", "commercial_invoice", "inv"},
+    "packing_list": {"packing_list", "packing", "plist"},
+    "shipping_instruction": {"shipping_instruction", "shipping", "si"},
+    "po": {"po", "purchase_order"},
+}
+
+_DOWNGRADE_ALLOWED_FIELDS = {
+    "seller",
+    "supplier",
+    "shipper",
+    "exporter",
+    "notify_party",
+    "beneficiary",
+}
+
+_DOWNGRADE_BLOCKED_KEYWORDS = {"buyer", "consignee", "importer", "收货人", "买方"}
+
 
 class AuditOrchestratorService:
-    """Coordinate minimal audit task startup, progress, cancel, and result flow."""
+    """协调审核执行流水线。"""
 
     def __init__(
         self,
@@ -53,22 +72,25 @@ class AuditOrchestratorService:
         self.audit_engine = AuditEngineService()
 
     def get_capability(self) -> AuditCapability:
+        """返回执行层能力说明。"""
+
         return AuditCapability(
-            mode="minimal-task-lifecycle",
+            mode="execution-pipeline",
             features=[
                 FeatureStatus(
-                    name="审核任务主链路",
+                    name="审核任务执行主干",
                     ready=True,
-                    note="已提供任务创建、进度、取消和结果读取的最小闭环。",
+                    note="已接通文件解析、Prompt 构造、模型调用、结果修正和报告输出主链路。",
                 ),
                 FeatureStatus(
-                    name="真实审核引擎",
-                    ready=False,
-                    note="本轮不实现完整 OCR、字段比对和规则推理。",
+                    name="并行审核",
+                    ready=True,
+                    note="第一轮 target 文件审核已支持 asyncio.gather 并行结构。",
                 ),
                 *self.audit_engine.get_features(),
                 *self.report_generator.get_features(),
                 *self.token_utils.get_features(),
+                *self.llm_client.get_provider_features(),
             ],
         )
 
@@ -77,10 +99,9 @@ class AuditOrchestratorService:
         current_user: CurrentUser,
         payload: AuditStartRequest,
     ) -> AuditStartResponse:
-        """Start a minimal audit task with the original request contract."""
+        """创建审核任务并启动后台协程。"""
 
         self.file_parser.get_user_file(current_user.id, payload.po_file_id)
-
         for item in payload.target_files:
             self.file_parser.get_user_file(current_user.id, item.file_id)
         for item in payload.prev_ticket_files:
@@ -93,7 +114,6 @@ class AuditOrchestratorService:
         profile = self.store.profiles.get(current_user.id, {})
         task_id = str(uuid4())
         now = datetime.now(timezone.utc)
-
         self.store.audit_tasks[task_id] = {
             "task_id": task_id,
             "user_id": current_user.id,
@@ -111,17 +131,81 @@ class AuditOrchestratorService:
             "created_at": now,
             "updated_at": now,
             "result": None,
+            "full_result": None,
+            "report_bundle": None,
+        }
+        asyncio.create_task(self._run_task(task_id))
+        return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
+
+    async def run_full_audit(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        progress_callback: Callable[[int, str], Awaitable[None] | None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        """执行完整审核主干：解析 -> 第一轮审核 -> 自定义规则 -> 交叉比对 -> 报告。"""
+
+        task = self._get_task(user_id, task_id)
+        profile = self.store.profiles.get(user_id, {})
+        company_affiliates = list(profile.get("company_affiliates", []))
+        selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
+        primary_provider = self.llm_client._resolve_provider(None, selected_model)
+
+        await self._notify_progress(progress_callback, 5, "正在准备审核上下文。")
+        self._ensure_not_cancelled(should_cancel)
+
+        po_record = self._ensure_runtime_file(task["po_file_id"])
+        prev_records = [self._ensure_runtime_file(item["file_id"]) for item in task["prev_ticket_files"]]
+        template_record = self._ensure_runtime_file(task["template_file_id"]) if task.get("template_file_id") else None
+        reference_records = [self._ensure_runtime_file(file_id) for file_id in task["reference_file_ids"]]
+
+        targets = list(task["target_files"])
+        completed = 0
+        progress_lock = asyncio.Lock()
+
+        async def _update_target_progress(doc_type: str) -> None:
+            nonlocal completed
+            async with progress_lock:
+                completed += 1
+                percent = 15 + int((completed / max(len(targets), 1)) * 55)
+                await self._notify_progress(progress_callback, percent, f"已完成 {completed}/{len(targets)} 份单据审核：{doc_type}")
+
+        async def _audit_target(index: int, target_item: dict[str, Any]) -> dict[str, Any]:
+            result = await self._run_single_target_audit(
+                index=index,
+                target_item=target_item,
+                po_record=po_record,
+                prev_records=prev_records,
+                template_record=template_record,
+                reference_records=reference_records,
+                selected_model=selected_model,
+                primary_provider=primary_provider,
+                deep_think=bool(task["deep_think"]),
+                custom_rules=list(task["custom_rules"]),
+                company_affiliates=company_affiliates,
+                should_cancel=should_cancel,
+            )
+            await _update_target_progress(result["doc_type"])
+            return result
+
+        first_round_results = await asyncio.gather(*[_audit_target(index, item) for index, item in enumerate(targets)])
+        self._ensure_not_cancelled(should_cancel)
+
+        await self._notify_progress(progress_callback, 80, "正在汇总审核结果并生成报告。")
+        aggregate_result = self._aggregate_results(first_round_results)
+        report_bundle = self.report_generator.generate_report_bundle(task_id, aggregate_result)
+
+        return {
+            "aggregate_result": aggregate_result,
+            "document_results": first_round_results,
+            "report_bundle": report_bundle,
+            "provider": primary_provider,
         }
 
-        asyncio.create_task(self._run_task(task_id))
-        return AuditStartResponse(
-            task_id=task_id,
-            status="queued",
-            message="审核任务已创建，等待处理。",
-        )
-
     async def progress_stream(self, current_user: CurrentUser, task_id: str):
-        """Yield audit progress as SSE events."""
+        """以 SSE 输出任务进度。"""
 
         while True:
             task = self._get_task(current_user.id, task_id)
@@ -139,28 +223,20 @@ class AuditOrchestratorService:
             await asyncio.sleep(0.5)
 
     def cancel_task(self, current_user: CurrentUser, task_id: str) -> AuditCancelResponse:
-        """Cancel a pending or running task."""
+        """取消任务。"""
 
         task = self._get_task(current_user.id, task_id)
         if task["status"] in {"completed", "cancelled", "failed"}:
-            return AuditCancelResponse(
-                task_id=task_id,
-                status=str(task["status"]),
-                message="该任务已经结束，无需重复取消。",
-            )
+            return AuditCancelResponse(task_id=task_id, status=str(task["status"]), message="该任务已经结束，无需重复取消。")
 
         task["cancel_requested"] = True
         task["status"] = "cancelling"
         task["message"] = "已收到取消请求，正在停止任务。"
         task["updated_at"] = datetime.now(timezone.utc)
-        return AuditCancelResponse(
-            task_id=task_id,
-            status="cancelling",
-            message="已收到取消请求，正在停止任务。",
-        )
+        return AuditCancelResponse(task_id=task_id, status="cancelling", message="已收到取消请求，正在停止任务。")
 
     def get_result(self, current_user: CurrentUser, task_id: str) -> AuditResultResponse:
-        """Return the current audit result or an unfinished placeholder."""
+        """读取当前任务结果。"""
 
         task = self._get_task(current_user.id, task_id)
         if task["result"] is None:
@@ -174,16 +250,15 @@ class AuditOrchestratorService:
         return task["result"]
 
     def get_report_placeholder(self, current_user: CurrentUser, task_id: str) -> AuditReportResponse:
-        """Return a placeholder for the future report endpoint."""
+        """返回报告状态说明。"""
 
-        self._get_task(current_user.id, task_id)
-        return AuditReportResponse(
-            task_id=task_id,
-            message="本轮暂未开放报告下载，请先查看任务结果。",
-        )
+        task = self._get_task(current_user.id, task_id)
+        if task.get("report_bundle"):
+            return AuditReportResponse(task_id=task_id, message="报告已生成，下载接口将在后续轮次接通。")
+        return AuditReportResponse(task_id=task_id, message="报告尚未生成，请先等待审核任务完成。")
 
     def get_history(self, current_user: CurrentUser) -> AuditHistoryListResponse:
-        """Return minimal in-memory audit history."""
+        """读取当前用户的历史列表。"""
 
         items = [
             AuditHistoryItem(
@@ -201,43 +276,270 @@ class AuditOrchestratorService:
         return AuditHistoryListResponse(items=items)
 
     def get_history_detail(self, current_user: CurrentUser, history_id: str) -> AuditHistoryDetailResponse:
-        """Return one in-memory history record."""
+        """读取单条历史记录。"""
 
         for item in self.store.audit_history.get(current_user.id, []):
             if str(item["id"]) == history_id:
                 return AuditHistoryDetailResponse(item=item)
         raise AppError("未找到指定审核历史记录。", status_code=404)
 
-    async def _run_task(self, task_id: str) -> None:
-        task = self.store.audit_tasks[task_id]
-        try:
-            await self._update_task(task, "running", 15, "正在读取基准文件。")
-            await asyncio.sleep(0.2)
-            if task["cancel_requested"]:
-                await self._finalize_cancel(task)
-                return
+    async def _run_single_target_audit(
+        self,
+        *,
+        index: int,
+        target_item: dict[str, Any],
+        po_record: dict[str, Any],
+        prev_records: list[dict[str, Any]],
+        template_record: dict[str, Any] | None,
+        reference_records: list[dict[str, Any]],
+        selected_model: str,
+        primary_provider: str,
+        deep_think: bool,
+        custom_rules: list[str],
+        company_affiliates: list[str],
+        should_cancel: Callable[[], bool] | None,
+    ) -> dict[str, Any]:
+        """对单个 target 文件执行完整审核链路。"""
 
-            await self._update_task(task, "running", 55, "正在生成最小审核结果。")
-            await asyncio.sleep(0.2)
-            if task["cancel_requested"]:
-                await self._finalize_cancel(task)
-                return
+        self._ensure_not_cancelled(should_cancel)
 
-            issues = [
-                AuditIssue(
-                    level="BLUE",
-                    field_name="status",
-                    message="当前结果为第 4 轮任务生命周期占位结果，后续轮次会替换为真实审核问题列表。",
-                )
-            ]
-            result = AuditResultResponse(
-                task_id=task_id,
-                status="completed",
-                summary={"red": 0, "yellow": 0, "blue": len(issues)},
-                issues=issues,
-                message="审核任务已完成，当前结果为最小占位结构。",
+        target_record = self._ensure_runtime_file(target_item["file_id"])
+        doc_type = self._resolve_doc_type(target_item.get("document_type"), target_record)
+        prev_text = self._collect_previous_ticket_text(doc_type, prev_records)
+        template_text = str(template_record.get("text", "")) if template_record else ""
+        reference_texts = [str(record.get("text", "")) for record in reference_records if record.get("text")]
+        provider_for_call = primary_provider
+
+        messages = self.audit_engine.build_audit_prompt(
+            po_text=self._prepare_text_context(str(po_record.get("text", "")), selected_model),
+            target_text=self._prepare_text_context(str(target_record.get("text", "")), selected_model),
+            target_type=doc_type,
+            prev_ticket_text=self._prepare_text_context(prev_text, selected_model),
+            template_text=self._prepare_text_context(template_text, selected_model),
+            reference_texts=[self._prepare_text_context(text, selected_model) for text in reference_texts],
+            company_affiliates=company_affiliates,
+            deep_think=deep_think,
+        )
+
+        if bool(target_record.get("needs_ocr")) and target_record.get("page_images"):
+            provider_for_call = self._select_ocr_provider(primary_provider)
+            raw_response = await self.llm_client.call_llm_with_image(
+                messages,
+                image_payloads=list(target_record.get("page_images", [])),
+                provider=provider_for_call,
+                requested_model=selected_model,
+                deep_think=deep_think,
             )
-            task["result"] = result
+        else:
+            raw_response = await self.llm_client.call_llm(
+                messages,
+                provider=provider_for_call,
+                requested_model=selected_model,
+                deep_think=deep_think,
+            )
+
+        parsed_result = self.audit_engine.parse_audit_result(raw_response)
+        parsed_result = self._post_process_force_downgrade(parsed_result, company_affiliates)
+
+        if custom_rules:
+            self._ensure_not_cancelled(should_cancel)
+            custom_messages = self.audit_engine.build_custom_rules_review_prompt(
+                original_result=parsed_result,
+                custom_rules=custom_rules,
+                po_text=po_record.get("text", ""),
+                target_text=target_record.get("text", ""),
+                target_type=doc_type,
+            )
+            custom_response = await self.llm_client.call_llm(
+                custom_messages,
+                provider=provider_for_call,
+                requested_model=selected_model,
+                deep_think=deep_think,
+            )
+            parsed_result = self._post_process_force_downgrade(
+                self.audit_engine.parse_audit_result(custom_response),
+                company_affiliates,
+            )
+
+        if prev_text or template_text or reference_texts:
+            self._ensure_not_cancelled(should_cancel)
+            cross_check_messages = self.audit_engine.build_cross_check_prompt(
+                po_text=po_record.get("text", ""),
+                target_text=target_record.get("text", ""),
+                current_result=parsed_result,
+                prev_ticket_text=prev_text,
+                template_text=template_text,
+                reference_texts=reference_texts,
+                target_type=doc_type,
+            )
+            cross_response = await self.llm_client.call_llm(
+                cross_check_messages,
+                provider=provider_for_call,
+                requested_model=selected_model,
+                deep_think=False,
+            )
+            parsed_result = self._post_process_force_downgrade(
+                self.audit_engine.parse_audit_result(cross_response),
+                company_affiliates,
+            )
+
+        enriched = self._attach_document_context(parsed_result, target_item, target_record, doc_type, index)
+        return {
+            "file_id": target_item["file_id"],
+            "doc_type": doc_type,
+            "provider": provider_for_call,
+            "result": enriched,
+        }
+
+    def _resolve_doc_type(self, manual_type: str | None, file_record: dict[str, Any]) -> str:
+        """手动类型优先，其次依据已解析出的 detected_type 和文件名提示。"""
+
+        if manual_type:
+            return manual_type.strip().lower()
+
+        detected_type = str(file_record.get("detected_type", "")).strip().lower()
+        if detected_type in _DOC_TYPE_HINTS:
+            return detected_type
+
+        filename = str(file_record.get("filename", "")).lower()
+        for doc_type, hints in _DOC_TYPE_HINTS.items():
+            if any(hint in filename for hint in hints):
+                return doc_type
+
+        return detected_type or "generic"
+
+    def _select_ocr_provider(self, primary_provider: str) -> str:
+        """当主 provider 不适合视觉/OCR 时，选择降级/切换 provider。"""
+
+        if primary_provider != "deepseek":
+            return primary_provider
+        if self.settings.zhipuai_api_key:
+            return "zhipuai"
+        if self.settings.openai_api_key:
+            return "openai"
+        raise AppError("当前扫描件需要视觉/OCR 模型，但未配置可用的 OpenAI 或智谱 API key。", status_code=400)
+
+    def _collect_previous_ticket_text(self, doc_type: str, prev_records: list[dict[str, Any]]) -> str:
+        """收集上一票文本，优先拼出和当前 doc_type 相关的上下文。"""
+
+        typed_matches = [
+            str(record.get("text", ""))
+            for record in prev_records
+            if self._resolve_doc_type(None, record) == doc_type and record.get("text")
+        ]
+        if typed_matches:
+            return "\n\n".join(typed_matches)
+        fallback_matches = [str(record.get("text", "")) for record in prev_records if record.get("text")]
+        return "\n\n".join(fallback_matches)
+
+    def _prepare_text_context(self, text: str, model: str) -> str:
+        """根据 token 安全上限控制输入文本大小。"""
+
+        safe_limit = self.token_utils.get_safe_token_limit(model)
+        return self.token_utils.truncate_text(text, max_tokens=max(512, safe_limit // 4), model=model)
+
+    def _attach_document_context(
+        self,
+        parsed_result: dict[str, Any],
+        target_item: dict[str, Any],
+        target_record: dict[str, Any],
+        doc_type: str,
+        index: int,
+    ) -> dict[str, Any]:
+        """把文件上下文补回每条 issue，便于后续报告和历史使用。"""
+
+        issues = parsed_result.get("issues", [])
+        for issue_index, issue in enumerate(issues, start=1):
+            if not isinstance(issue, dict):
+                continue
+            issue["id"] = issue.get("id") or f"{doc_type}-{index + 1}-{issue_index:03d}"
+            issue["document_type"] = doc_type
+            issue["file_id"] = target_item["file_id"]
+            issue["document_label"] = target_item.get("label") or target_record.get("filename", "")
+            if "message" not in issue:
+                issue["message"] = str(issue.get("finding", ""))
+        return parsed_result
+
+    def _post_process_force_downgrade(
+        self,
+        parsed_result: dict[str, Any],
+        company_affiliates: list[str] | None,
+    ) -> dict[str, Any]:
+        """仅在严格条件下把部分 RED 降为 YELLOW。"""
+
+        affiliates = company_affiliates or []
+        issues = parsed_result.get("issues", [])
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            if str(issue.get("level", "")).upper() != "RED":
+                continue
+
+            field_name = str(issue.get("field_name", "")).strip().lower()
+            if field_name in _DOWNGRADE_ALLOWED_FIELDS:
+                finding_text = " ".join(
+                    str(issue.get(key, "")) for key in ("finding", "suggestion", "message")
+                )
+                if self._is_affiliate_match(
+                    field_name=field_name,
+                    observed_value=str(issue.get("observed_value", "")),
+                    matched_po_value=str(issue.get("matched_po_value", "")),
+                    finding_text=finding_text,
+                    company_affiliates=affiliates,
+                ):
+                    issue["level"] = "YELLOW"
+                    issue["message"] = str(issue.get("finding") or issue.get("message", ""))
+
+        parsed_result["summary"] = self._recount_summary(issues)
+        return parsed_result
+
+    def _is_affiliate_match(
+        self,
+        *,
+        field_name: str,
+        observed_value: str,
+        matched_po_value: str,
+        finding_text: str,
+        company_affiliates: list[str],
+    ) -> bool:
+        """判断是否满足允许降级的集团关联主体规则。"""
+
+        if field_name not in _DOWNGRADE_ALLOWED_FIELDS:
+            return False
+        if any(blocked in field_name for blocked in _DOWNGRADE_BLOCKED_KEYWORDS):
+            return False
+
+        finding_lower = finding_text.lower()
+        fallback_hints = ("affiliate", "group company", "same group", "关联公司", "集团内")
+        if any(hint in finding_lower for hint in fallback_hints):
+            return True
+
+        normalized_affiliates = [self._normalize_affiliate_text(item) for item in company_affiliates if item]
+        if not normalized_affiliates:
+            return False
+
+        observed = self._normalize_affiliate_text(observed_value)
+        matched = self._normalize_affiliate_text(matched_po_value)
+        return any(affiliate in observed or affiliate in matched for affiliate in normalized_affiliates if affiliate)
+
+    async def _run_task(self, task_id: str) -> None:
+        """后台任务入口。"""
+
+        task = self.store.audit_tasks[task_id]
+        user_id = str(task["user_id"])
+        try:
+            await self._update_task(task, "running", 5, "正在准备审核任务。")
+            result_bundle = await self.run_full_audit(
+                user_id=user_id,
+                task_id=task_id,
+                progress_callback=lambda progress, message: self._update_task(task, "running", progress, message),
+                should_cancel=lambda: bool(task.get("cancel_requested")),
+            )
+
+            aggregate_result = result_bundle["aggregate_result"]
+            task["full_result"] = aggregate_result
+            task["report_bundle"] = result_bundle["report_bundle"]
+            task["result"] = self._to_api_result(task_id, aggregate_result)
             task["status"] = "completed"
             task["progress_percent"] = 100
             task["message"] = "审核任务已完成。"
@@ -245,32 +547,139 @@ class AuditOrchestratorService:
 
             history_item = {
                 "id": str(uuid4()),
-                "user_id": task["user_id"],
+                "user_id": user_id,
                 "document_count": len(task["target_files"]) + 1,
-                "red_count": 0,
-                "yellow_count": 0,
-                "blue_count": len(issues),
-                "audit_result": result.model_dump(mode="json"),
-                "model_used": self.settings.default_text_model,
+                "red_count": aggregate_result["summary"]["red"],
+                "yellow_count": aggregate_result["summary"]["yellow"],
+                "blue_count": aggregate_result["summary"]["blue"],
+                "audit_result": aggregate_result,
+                "model_used": str(result_bundle["provider"]),
                 "custom_rules_snapshot": list(task["custom_rules"]),
                 "deep_think_used": bool(task["deep_think"]),
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
-            self.store.audit_history.setdefault(task["user_id"], []).insert(0, history_item)
+            self.store.audit_history.setdefault(user_id, []).insert(0, history_item)
+        except asyncio.CancelledError:
+            await self._finalize_cancel(task)
+        except AppError as exc:
+            task["status"] = "failed"
+            task["message"] = exc.message
+            task["updated_at"] = datetime.now(timezone.utc)
         except Exception as exc:  # pragma: no cover
             task["status"] = "failed"
             task["message"] = f"审核任务执行失败：{exc}"
             task["updated_at"] = datetime.now(timezone.utc)
 
+    def _to_api_result(self, task_id: str, aggregate_result: dict[str, Any]) -> AuditResultResponse:
+        """把完整审核结果收敛成当前 API 响应模型。"""
+
+        api_issues = [
+            AuditIssue(
+                level=str(issue.get("level", "YELLOW")).upper(),
+                field_name=str(issue.get("field_name", "unspecified_field")),
+                message=str(issue.get("finding") or issue.get("message", "")),
+            )
+            for issue in aggregate_result.get("issues", [])
+            if isinstance(issue, dict)
+        ]
+        return AuditResultResponse(
+            task_id=task_id,
+            status="completed",
+            summary={
+                "red": int(aggregate_result.get("summary", {}).get("red", 0)),
+                "yellow": int(aggregate_result.get("summary", {}).get("yellow", 0)),
+                "blue": int(aggregate_result.get("summary", {}).get("blue", 0)),
+            },
+            issues=api_issues,
+            message="审核结果已生成，完整结构已进入后续报告与历史流水线。",
+        )
+
+    def _aggregate_results(self, document_results: list[dict[str, Any]]) -> dict[str, Any]:
+        """把逐文件审核结果聚合成总结果。"""
+
+        all_issues: list[dict[str, Any]] = []
+        for item in document_results:
+            result = item.get("result", {})
+            issues = result.get("issues", []) if isinstance(result, dict) else []
+            for issue in issues:
+                if isinstance(issue, dict):
+                    all_issues.append(issue)
+
+        summary = self._recount_summary(all_issues)
+        confidence_values = [
+            float(issue.get("confidence", 0.5))
+            for issue in all_issues
+            if isinstance(issue, dict)
+        ]
+        overall_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.5
+
+        return {
+            "summary": summary,
+            "issues": all_issues,
+            "confidence": overall_confidence,
+            "documents": document_results,
+            "notes": ["当前结果已走通执行主链路，后续轮次可继续补强真实模型与 OCR 细节。"],
+        }
+
+    def _ensure_runtime_file(self, file_id: str) -> dict[str, Any]:
+        """确保运行态文件记录具备解析后的统一结构。"""
+
+        file_record = self.store.files.get(file_id)
+        if not file_record:
+            raise AppError("未找到审核所需文件。", status_code=404)
+
+        if "text" in file_record and "detected_type" in file_record:
+            return file_record
+
+        raw_bytes = file_record.get("raw_bytes")
+        filename = str(file_record.get("filename", "unnamed-file"))
+        if isinstance(raw_bytes, (bytes, bytearray)):
+            parsed = self.file_parser.parse_file(bytes(raw_bytes), filename, content_type=file_record.get("content_type"), file_id=file_id)
+            self.store.files[file_id] = {**file_record, **parsed}
+            return self.store.files[file_id]
+
+        fallback_text = str(file_record.get("preview_text", ""))
+        file_record.setdefault("text", fallback_text)
+        file_record.setdefault("needs_ocr", False)
+        file_record.setdefault("page_images", [])
+        file_record.setdefault("is_scanned_pdf", False)
+        file_record.setdefault("source_kind", "text")
+        return file_record
+
+    @staticmethod
+    async def _notify_progress(
+        callback: Callable[[int, str], Awaitable[None] | None] | None,
+        progress: int,
+        message: str,
+    ) -> None:
+        """统一调用进度回调。"""
+
+        if callback is None:
+            return
+        result = callback(progress, message)
+        if asyncio.iscoroutine(result):
+            await result
+
+    @staticmethod
+    def _ensure_not_cancelled(should_cancel: Callable[[], bool] | None) -> None:
+        """在关键阶段检查取消状态。"""
+
+        if should_cancel and should_cancel():
+            raise asyncio.CancelledError()
+
     @staticmethod
     async def _update_task(task: dict[str, object], status: str, progress: int, message: str) -> None:
+        """更新任务进度。"""
+
         task["status"] = status
         task["progress_percent"] = progress
         task["message"] = message
         task["updated_at"] = datetime.now(timezone.utc)
 
     async def _finalize_cancel(self, task: dict[str, object]) -> None:
+        """收敛任务取消状态。"""
+
         task["status"] = "cancelled"
         task["message"] = "审核任务已取消。"
         task["result"] = AuditResultResponse(
@@ -283,7 +692,33 @@ class AuditOrchestratorService:
         task["updated_at"] = datetime.now(timezone.utc)
 
     def _get_task(self, user_id: str, task_id: str) -> dict[str, object]:
+        """按用户读取任务。"""
+
         task = self.store.audit_tasks.get(task_id)
         if not task or task.get("user_id") != user_id:
             raise AppError("未找到指定审核任务。", status_code=404)
         return task
+
+    @staticmethod
+    def _normalize_affiliate_text(value: str) -> str:
+        """归一化公司名或主体文本。"""
+
+        text = (value or "").lower()
+        for token in (" ", ",", ".", "-", "_", "(", ")", "limited", "ltd", "co", "company"):
+            text = text.replace(token, "")
+        return text
+
+    @staticmethod
+    def _recount_summary(issues: list[dict[str, Any]]) -> dict[str, int]:
+        """按 issue 重新统计 summary。"""
+
+        summary = {"red": 0, "yellow": 0, "blue": 0}
+        for issue in issues:
+            level = str(issue.get("level", "")).upper()
+            if level == "RED":
+                summary["red"] += 1
+            elif level == "BLUE":
+                summary["blue"] += 1
+            else:
+                summary["yellow"] += 1
+        return summary
