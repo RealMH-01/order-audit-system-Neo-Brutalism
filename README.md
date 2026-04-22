@@ -41,6 +41,8 @@ AI-assisted document audit system for trade order follow-up teams, rebuilt as a 
 |   |-- Dockerfile
 |   |-- packages.txt
 |   |-- render.yaml
+|   |-- docs/
+|   |-- sql/
 |   `-- .env.example
 |-- frontend/
 |   |-- public/
@@ -104,14 +106,17 @@ AI-assisted document audit system for trade order follow-up teams, rebuilt as a 
 - Backend Render baseline config lives in `backend/render.yaml`.
 - Frontend is prepared for Vercel deployment.
 - Persistence and authentication target Supabase.
+- Database design notes live in `backend/docs/database.md`.
+- Executable Supabase schema draft lives in `backend/sql/supabase_schema.sql`.
 
 ## Current Scope
 
-This repository currently contains an aligned project skeleton for the first two rounds:
+This repository currently contains the foundation delivered through the first three rounds:
 - backend module boundary alignment
 - frontend `src/` structure alignment
 - environment examples
 - deployment baseline files
 - placeholder routers and services for future rounds
+- database bootstrap design, seed data preparation, and schema draft
 
 Business workflows such as authentication, file parsing, audit orchestration, OCR routing, and database schema rollout are intentionally deferred to later rounds.

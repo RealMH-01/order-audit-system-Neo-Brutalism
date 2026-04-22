@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     supabase_anon_key: str = ""
+    encryption_key: str = ""
 
     openai_api_key: str = ""
     openai_base_url: str = ""
@@ -46,4 +47,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
