@@ -1,4 +1,4 @@
-import type { ApiError, ApiSuccess, AuditProgressEvent } from "@/types";
+import type { ApiError, ApiSuccess } from "@/types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
@@ -7,6 +7,18 @@ const ACCESS_TOKEN_KEY = "order-audit-access-token";
 type RequestOptions = {
   token?: string | null;
   body?: unknown;
+};
+
+type UploadOptions = {
+  token?: string | null;
+  fieldName?: string;
+  signal?: AbortSignal;
+};
+
+type StreamOptions<T> = {
+  token?: string | null;
+  signal?: AbortSignal;
+  onMessage: (payload: T) => void;
 };
 
 async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
@@ -19,7 +31,7 @@ async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
         detail = body.detail;
       }
     } catch {
-      // Keep the default Chinese error message.
+      // 使用默认中文报错文案。
     }
 
     const error: ApiError = {
@@ -40,6 +52,10 @@ function buildHeaders(token?: string | null): HeadersInit {
   };
 }
 
+function buildAuthHeaders(token?: string | null): HeadersInit {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(
   path: string,
   method: "GET" | "POST" | "PUT" | "DELETE",
@@ -51,6 +67,7 @@ async function request<T>(
     headers: buildHeaders(options.token),
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
+
   return parseResponse<T>(response);
 }
 
@@ -77,6 +94,97 @@ export async function apiPut<T>(
   return request<T>(path, "PUT", { ...options, body });
 }
 
+export async function apiDelete<T>(
+  path: string,
+  options: Omit<RequestOptions, "body"> = {}
+): Promise<ApiSuccess<T>> {
+  return request<T>(path, "DELETE", options);
+}
+
+export async function apiUploadFile<T>(
+  path: string,
+  file: File,
+  options: UploadOptions = {}
+): Promise<ApiSuccess<T>> {
+  const formData = new FormData();
+  formData.append(options.fieldName ?? "upload", file);
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: buildAuthHeaders(options.token),
+    body: formData,
+    signal: options.signal
+  });
+
+  return parseResponse<T>(response);
+}
+
+function extractEventData(bufferChunk: string) {
+  const dataLine = bufferChunk
+    .split("\n")
+    .find((line) => line.startsWith("data: "));
+
+  if (!dataLine) {
+    return null;
+  }
+
+  return dataLine.slice(6);
+}
+
+export async function streamJsonEvents<T>(
+  path: string,
+  { token, signal, onMessage }: StreamOptions<T>
+) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      Accept: "text/event-stream",
+      ...buildAuthHeaders(token)
+    },
+    signal
+  });
+
+  if (!response.ok) {
+    await parseResponse<never>(response);
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const error: ApiError = {
+      status: 500,
+      detail: "进度流建立失败，请稍后重试。"
+    };
+    throw error;
+  }
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+
+    for (const chunk of chunks) {
+      const rawData = extractEventData(chunk);
+      if (!rawData) {
+        continue;
+      }
+
+      const payload = JSON.parse(rawData) as T;
+      onMessage(payload);
+    }
+  }
+}
+
 export function getStoredAccessToken() {
   if (typeof window === "undefined") {
     return null;
@@ -96,12 +204,4 @@ export function clearStoredAccessToken() {
     return;
   }
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-}
-
-export function createAuditEventSource(path: string) {
-  return new EventSource(`${API_BASE_URL}${path}`);
-}
-
-export function parseAuditEvent(raw: MessageEvent<string>): AuditProgressEvent {
-  return JSON.parse(raw.data) as AuditProgressEvent;
 }
