@@ -1,5 +1,13 @@
 export type HistoryStatusFilter = "ALL" | "COMPLETED";
 
+export type HistoryResolvedStatus = "COMPLETED";
+
+export type HistorySeveritySummary = {
+  red?: number;
+  yellow?: number;
+  blue?: number;
+};
+
 export type HistoryListItem = {
   id: string;
   model_used: string;
@@ -25,16 +33,32 @@ export type HistoryIssue = {
   confidence?: number;
   document_label?: string;
   document_type?: string;
+  file_id?: string;
+  observed_value?: string;
+  matched_po_value?: string;
+};
+
+export type HistoryDocumentAuditResult = {
+  summary?: HistorySeveritySummary;
+  issues?: HistoryIssue[];
+  confidence?: number;
+  message?: string;
+};
+
+export type HistoryDocumentResult = {
+  file_id?: string;
+  doc_type?: string;
+  provider?: string;
+  result?: HistoryDocumentAuditResult;
 };
 
 export type HistoryAuditResult = {
-  summary?: {
-    red?: number;
-    yellow?: number;
-    blue?: number;
-  };
+  summary?: HistorySeveritySummary;
   issues?: HistoryIssue[];
   message?: string;
+  confidence?: number;
+  notes?: string[];
+  documents?: HistoryDocumentResult[];
 };
 
 export type HistoryDetailRecord = {
