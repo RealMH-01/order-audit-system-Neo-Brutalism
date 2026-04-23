@@ -62,10 +62,13 @@ export type AuditProgressPayload = {
 };
 
 export type AuditIssue = {
+  id?: string;
   level: "RED" | "YELLOW" | "BLUE";
   field_name: string;
   message: string;
   confidence?: number;
+  suggestion?: string;
+  document_label?: string | null;
 };
 
 export type AuditResultResponse = {

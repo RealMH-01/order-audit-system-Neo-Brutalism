@@ -1,4 +1,4 @@
-import { Filter, ShieldAlert } from "lucide-react";
+import { ChevronDown, Filter, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,12 +31,72 @@ function resolveIssueClass(level: AuditIssue["level"]) {
   return "issue-yellow";
 }
 
+function renderConfidence(issue: AuditIssue) {
+  if (typeof issue.confidence !== "number") {
+    return "后端暂未返回置信度";
+  }
+
+  return `置信度 ${Math.round(issue.confidence * 100)}%`;
+}
+
+function renderSuggestion(issue: AuditIssue) {
+  return issue.suggestion?.trim() || "后端暂未返回修正建议。";
+}
+
+function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
+  return (
+    <details className={`${resolveIssueClass(issue.level)} group p-4`} open={index < 2}>
+      <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="inverse">{issue.level}</Badge>
+            <Badge variant="neutral">
+              {issue.field_name || "后端未返回字段名"}
+            </Badge>
+            <Badge variant="muted">
+              {issue.document_label?.trim() || "后端未返回文档归属"}
+            </Badge>
+          </div>
+          <p className="text-sm font-black leading-6">{issue.message}</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em]">
+          <Badge variant="secondary">{renderConfidence(issue)}</Badge>
+          <span className="inline-flex items-center gap-1">
+            展开
+            <ChevronDown
+              size={16}
+              strokeWidth={3}
+              className="transition-transform duration-100 ease-linear group-open:rotate-180"
+            />
+          </span>
+        </div>
+      </summary>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
+          <p className="text-xs font-black uppercase tracking-[0.14em]">问题说明</p>
+          <p className="mt-2 text-sm font-bold leading-6">{issue.message}</p>
+        </div>
+        <div className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
+          <p className="text-xs font-black uppercase tracking-[0.14em]">修正建议</p>
+          <p className="mt-2 text-sm font-bold leading-6">{renderSuggestion(issue)}</p>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export function ResultsPanel({
   result,
   filter,
   onFilterChange
 }: ResultsPanelProps) {
-  const issues =
+  const groups: Array<{ level: AuditIssue["level"]; title: string }> = [
+    { level: "RED", title: "RED 严重问题" },
+    { level: "YELLOW", title: "YELLOW 提醒问题" },
+    { level: "BLUE", title: "BLUE 备注信息" }
+  ];
+
+  const filteredIssues =
     result?.issues.filter((issue) => (filter === "ALL" ? true : issue.level === filter)) ?? [];
 
   return (
@@ -45,7 +105,7 @@ export function ResultsPanel({
         <Badge variant="accent">结果区</Badge>
         <CardTitle>审核结果</CardTitle>
         <CardDescription>
-          完成审核后会在这里显示汇总、问题列表和基础筛选。当前后端返回的是结构化结果，不是直接展示原始 JSON。
+          这里会显示汇总、颜色分组和问题列表。当前保持和后端真实返回结构一致，不会把缺失字段伪装成完整数据。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -74,7 +134,7 @@ export function ResultsPanel({
               </div>
               <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
                 <p className="text-xs font-black uppercase tracking-[0.14em]">
-                  总结
+                  结果说明
                 </p>
                 <p className="mt-2 text-sm font-bold leading-6">{result.message}</p>
               </div>
@@ -93,35 +153,60 @@ export function ResultsPanel({
               ))}
             </div>
 
-            <ScrollArea className="max-h-[32rem] bg-paper">
-              <div className="space-y-3">
-                {issues.length > 0 ? (
-                  issues.map((issue, index) => (
-                    <div
-                      key={`${issue.level}-${issue.field_name}-${index}`}
-                      className={`${resolveIssueClass(issue.level)} p-4`}
-                    >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Badge variant="inverse">{issue.level}</Badge>
-                        <Badge variant="neutral">{issue.field_name}</Badge>
-                        <Badge variant="muted">
-                          {typeof issue.confidence === "number"
-                            ? `置信度 ${(issue.confidence * 100).toFixed(0)}%`
-                            : "后端暂未返回置信度"}
-                        </Badge>
+            <ScrollArea className="max-h-[34rem] bg-paper">
+              <div className="space-y-5">
+                {filter === "ALL"
+                  ? groups.map((group) => {
+                      const groupIssues = result.issues.filter(
+                        (issue) => issue.level === group.level
+                      );
+
+                      return (
+                        <section key={group.level} className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="inverse">{group.level}</Badge>
+                              <h3 className="text-lg font-black uppercase tracking-tight">
+                                {group.title}
+                              </h3>
+                            </div>
+                            <Badge variant="muted">{groupIssues.length} 条</Badge>
+                          </div>
+                          {groupIssues.length > 0 ? (
+                            <div className="space-y-3">
+                              {groupIssues.map((issue, index) => (
+                                <IssueCard
+                                  key={`${group.level}-${issue.field_name}-${index}`}
+                                  issue={issue}
+                                  index={index}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+                              <p className="text-sm font-bold leading-6">
+                                当前没有这一类问题。
+                              </p>
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })
+                  : filteredIssues.length > 0
+                    ? filteredIssues.map((issue, index) => (
+                        <IssueCard
+                          key={`${issue.level}-${issue.field_name}-${index}`}
+                          issue={issue}
+                          index={index}
+                        />
+                      ))
+                    : (
+                      <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+                        <p className="text-sm font-bold leading-6">
+                          当前筛选条件下没有问题项。
+                        </p>
                       </div>
-                      <p className="mt-3 text-sm font-bold leading-6">
-                        {issue.message}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-                    <p className="text-sm font-bold leading-6">
-                      当前筛选条件下没有问题项。
-                    </p>
-                  </div>
-                )}
+                    )}
               </div>
             </ScrollArea>
           </>

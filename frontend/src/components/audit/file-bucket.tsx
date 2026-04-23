@@ -28,6 +28,9 @@ type FileBucketProps = {
   emptyHint: string;
   multiple?: boolean;
   uploading?: boolean;
+  disabled?: boolean;
+  disableHint?: string | null;
+  busyFileIds?: string[];
   allowDocumentType?: boolean;
   uploadLabel?: string;
   onUpload: (files: FileList) => void;
@@ -43,6 +46,9 @@ export function FileBucket({
   emptyHint,
   multiple = false,
   uploading = false,
+  disabled = false,
+  disableHint = null,
+  busyFileIds = [],
   allowDocumentType = false,
   uploadLabel = "上传文件",
   onUpload,
@@ -57,12 +63,24 @@ export function FileBucket({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <label className="inline-flex cursor-pointer items-center gap-3 border-4 border-ink bg-secondary px-4 py-3 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear hover:-translate-y-0.5">
+        {disabled && disableHint ? (
+          <div className="issue-yellow p-4">
+            <p className="text-sm font-bold leading-6">{disableHint}</p>
+          </div>
+        ) : null}
+
+        <label
+          className={[
+            "inline-flex items-center gap-3 border-4 border-ink bg-secondary px-4 py-3 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear",
+            disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:-translate-y-0.5"
+          ].join(" ")}
+        >
           <FilePlus2 size={18} strokeWidth={3} />
           {uploading ? "上传中..." : uploadLabel}
           <input
             type="file"
             multiple={multiple}
+            disabled={disabled || uploading}
             className="hidden"
             onChange={(event) => {
               if (event.target.files && event.target.files.length > 0) {
@@ -75,50 +93,67 @@ export function FileBucket({
 
         {files.length > 0 ? (
           <div className="space-y-3">
-            {files.map((file) => (
-              <div
-                key={file.id}
-                className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
-                    <p className="text-sm font-black leading-6">{file.filename}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="muted">{file.detected_type}</Badge>
-                      <Badge variant="secondary">
-                        {(file.size_bytes / 1024).toFixed(1)} KB
-                      </Badge>
+            {files.map((file) => {
+              const fileBusy = busyFileIds.includes(file.id);
+
+              return (
+                <div
+                  key={file.id}
+                  className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                      <p className="text-sm font-black leading-6">{file.filename}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="muted">{file.detected_type}</Badge>
+                        <Badge variant="secondary">
+                          {(file.size_bytes / 1024).toFixed(1)} KB
+                        </Badge>
+                        {allowDocumentType ? (
+                          <Badge variant="neutral">
+                            当前类型：
+                            {documentTypeOptions.find(
+                              (option) => option.value === (file.documentType ?? "other")
+                            )?.label ?? "其他单据"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="line-clamp-3 text-sm font-bold leading-6">
+                        {file.preview_text || "当前文件暂无可直接展示的文本预览。"}
+                      </p>
                     </div>
-                    <p className="line-clamp-3 text-sm font-bold leading-6">
-                      {file.preview_text || "当前文件没有可直接展示的文本预览。"}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-3 lg:min-w-[14rem]">
-                    {allowDocumentType && onDocumentTypeChange ? (
-                      <Select
-                        value={file.documentType ?? "other"}
-                        onChange={(event) =>
-                          onDocumentTypeChange(
-                            file.id,
-                            event.target.value as AuditDocumentType
-                          )
-                        }
+                    <div className="flex flex-col gap-3 lg:min-w-[15rem]">
+                      {allowDocumentType && onDocumentTypeChange ? (
+                        <Select
+                          value={file.documentType ?? "other"}
+                          disabled={disabled || fileBusy}
+                          onChange={(event) =>
+                            onDocumentTypeChange(
+                              file.id,
+                              event.target.value as AuditDocumentType
+                            )
+                          }
+                        >
+                          {documentTypeOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        disabled={disabled || fileBusy}
+                        onClick={() => onRemove(file.id)}
                       >
-                        {documentTypeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : null}
-                    <Button variant="outline" onClick={() => onRemove(file.id)}>
-                      <Trash2 size={18} strokeWidth={3} />
-                      删除
-                    </Button>
+                        <Trash2 size={18} strokeWidth={3} />
+                        {fileBusy ? "处理中..." : "删除"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="issue-yellow p-4">
