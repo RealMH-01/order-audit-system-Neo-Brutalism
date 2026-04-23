@@ -118,7 +118,7 @@ export function BuiltinRulesPanel({
             ) : (
               <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
                 <p className="text-sm font-bold leading-6">
-                  当前账号不是管理员，因此这里只展示通用规则摘要，不开放 prompt 全文编辑。
+                  当前账号不是管理员，因此这里只展示通用规则摘要，不开放 Prompt 全文编辑。
                 </p>
               </div>
             )}
@@ -150,4 +150,3 @@ export function BuiltinRulesPanel({
     </Card>
   );
 }
-

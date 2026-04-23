@@ -48,7 +48,7 @@ export function HistoryList({
         <Badge variant="accent">历史列表</Badge>
         <CardTitle>最近审核记录</CardTitle>
         <CardDescription>
-          历史列表已接上 `/api/audit/history`。当前后端真实结构只沉淀已完成的记录，因此失败和取消任务暂不会出现在这里。
+          历史列表已接上 `/api/audit/history`。当前后端真实结构只沉淀已完成的记录，因此失败和取消任务暂时不会出现在这里。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

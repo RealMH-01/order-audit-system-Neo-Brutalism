@@ -120,7 +120,7 @@ export function HistoryDetail({
         <Badge variant="inverse">详情查看</Badge>
         <CardTitle>审核详情回看</CardTitle>
         <CardDescription>
-          这里已接上 `/api/audit/history/{`{history_id}`}`，会按后端当前真实详情结构展示基本信息、摘要、问题明细和报告说明。
+          这里已接上历史详情接口，会按后端当前真实详情结构展示基本信息、审核摘要、问题明细和报告说明。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -201,7 +201,7 @@ export function HistoryDetail({
                     深度思考 {item.deep_think_used ? "已开启" : "未开启"}
                   </Badge>
                   <Badge variant="muted">
-                    审核置信度 {resolveConfidence(item.audit_result?.confidence)}
+                    审核{resolveConfidence(item.audit_result?.confidence)}
                   </Badge>
                 </div>
                 <p className="mt-3 text-sm font-bold leading-6">
@@ -215,8 +215,8 @@ export function HistoryDetail({
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <p className="text-xs font-black uppercase tracking-[0.14em]">汇总对齐</p>
                 <p className="mt-2 text-sm font-bold leading-6">
-                  详情里的 `audit_result.summary` 如已返回，会显示为 RED {summary.red} / YELLOW{" "}
-                  {summary.yellow} / BLUE {summary.blue}。
+                  详情里的 `audit_result.summary` 如已返回，会显示为 RED {summary.red} /
+                  YELLOW {summary.yellow} / BLUE {summary.blue}。
                 </p>
               </div>
             </div>
@@ -239,7 +239,7 @@ export function HistoryDetail({
                   ) : (
                     <div className="issue-blue p-4">
                       <p className="text-sm font-bold leading-6">
-                        当前详情里没有返回问题列表，或该条记录暂未包含问题明细。
+                        当前详情里没有返回问题列表，或这条记录暂未包含问题明细。
                       </p>
                     </div>
                   )}
@@ -289,7 +289,7 @@ export function HistoryDetail({
                           {document.doc_type || "未返回单据类型"}
                         </Badge>
                         <Badge variant="muted">
-                          Provider {document.provider || "未返回"}
+                          提供方 {document.provider || "未返回"}
                         </Badge>
                         <Badge variant="secondary">
                           {resolveDocumentCount(document)} 条问题
@@ -297,7 +297,7 @@ export function HistoryDetail({
                       </div>
                       <p className="mt-3 text-sm font-bold leading-6">
                         {document.result?.message ||
-                          "当前后端逐单据结果未返回额外说明，先展示基础结构。"}
+                          "当前后端逐单据结果未返回额外说明，这里先展示基础结构。"}
                       </p>
                     </div>
                   ))}
@@ -317,8 +317,7 @@ export function HistoryDetail({
                 <p className="text-sm font-black uppercase tracking-[0.14em]">报告信息</p>
               </div>
               <p className="mt-3 text-sm font-bold leading-6">
-                当前历史详情接口尚未返回独立报告地址。本页会明确提示这一点；如需查看报告状态，仍应回到
-                `/audit` 工作台使用现有报告入口。
+                当前历史详情接口尚未返回独立报告地址。本页会明确提示这一点；如需查看报告状态，仍应回到 `/audit` 工作台使用现有报告入口。
               </p>
             </div>
           </>

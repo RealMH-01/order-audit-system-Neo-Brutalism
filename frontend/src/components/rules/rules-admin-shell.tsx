@@ -228,7 +228,10 @@ export function RulesAdminShell() {
     }
 
     if (!builtinDisplayText.trim() || !builtinPromptText.trim()) {
-      setFeedback({ tone: "error", message: "系统规则保存前请完整填写展示规则和 prompt 规则。" });
+      setFeedback({
+        tone: "error",
+        message: "系统规则保存前请完整填写展示规则和 Prompt 规则。"
+      });
       return;
     }
 
@@ -457,9 +460,7 @@ export function RulesAdminShell() {
               <Button variant="outline" onClick={() => router.push("/settings")}>
                 前往当前规则配置
               </Button>
-              <Button onClick={() => router.push("/wizard")}>
-                返回向导入口
-              </Button>
+              <Button onClick={() => router.push("/wizard")}>返回向导入口</Button>
             </div>
           </div>
         </CardContent>
@@ -471,7 +472,7 @@ export function RulesAdminShell() {
             <Badge variant={profile?.role === "admin" ? "secondary" : "muted"}>
               权限边界
             </Badge>
-            <CardTitle>当前账号在本页可做什么</CardTitle>
+            <CardTitle>当前账号在本页可做什么？</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">

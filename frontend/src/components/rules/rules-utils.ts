@@ -1,4 +1,4 @@
-import type { TemplateDraft, TemplateItem, TemplateMode, RulesRole } from "@/components/rules/types";
+import type { RulesRole, TemplateDraft, TemplateItem, TemplateMode } from "@/components/rules/types";
 
 export function normalizeError(error: unknown, fallback: string) {
   if (typeof error === "object" && error && "detail" in error) {

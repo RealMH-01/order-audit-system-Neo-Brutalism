@@ -133,7 +133,7 @@ export function HistoryShell() {
         <Card className="bg-paper">
           <CardHeader>
             <Badge variant="accent">未登录</Badge>
-            <CardTitle>请先完成登录或引导配置</CardTitle>
+            <CardTitle>请先完成登录或向导配置</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             <Button onClick={() => router.push("/wizard")}>前往新手向导</Button>

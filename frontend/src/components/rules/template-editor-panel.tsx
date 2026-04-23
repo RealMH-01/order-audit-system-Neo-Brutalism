@@ -108,9 +108,7 @@ export function TemplateEditorPanel({
         </label>
 
         <label className="space-y-2">
-          <span className="text-sm font-black uppercase tracking-[0.14em]">
-            规则内容
-          </span>
+          <span className="text-sm font-black uppercase tracking-[0.14em]">规则内容</span>
           <Textarea
             value={draft.rulesText}
             onChange={(event) => onChange({ ...draft, rulesText: event.target.value })}
@@ -138,7 +136,7 @@ export function TemplateEditorPanel({
         {readOnly ? (
           <div className="issue-blue p-4">
             <p className="text-sm font-bold leading-6">
-              当前模板对你是只读的。普通用户可以查看系统模板，但不能直接修改；管理员仅在系统模板和自己可见范围内拥有维护权限。
+              当前模板对你是只读的。普通用户可以查看系统模板，但不能直接修改；管理员也只在系统模板和自己可见范围内拥有维护权限。
             </p>
           </div>
         ) : null}
