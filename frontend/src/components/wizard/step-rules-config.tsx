@@ -1,9 +1,15 @@
-import { Bot, FileUp, PencilLine, SendHorizonal, Sparkles } from "lucide-react";
+import { Bot, FileUp, PencilLine, RotateCcw, SendHorizonal, Sparkles } from "lucide-react";
 import type { ChangeEvent } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -16,6 +22,8 @@ type StepRulesConfigProps = {
   chatInput: string;
   generatedRules: string[];
   generatedAffiliates: string[];
+  aiCompleted: boolean;
+  aiRulesConfirmed: boolean;
   chatLoading: boolean;
   chatError: string | null;
   canStartAi: boolean;
@@ -24,6 +32,10 @@ type StepRulesConfigProps = {
   onChatInputChange: (value: string) => void;
   onStartAi: () => void;
   onSendChat: () => void;
+  onSummarizeNow: () => void;
+  onRetryAi: () => void;
+  onSwitchToManual: () => void;
+  onConfirmAiRules: () => void;
   onImportTextFile: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
@@ -34,6 +46,8 @@ export function StepRulesConfig({
   chatInput,
   generatedRules,
   generatedAffiliates,
+  aiCompleted,
+  aiRulesConfirmed,
   chatLoading,
   chatError,
   canStartAi,
@@ -42,9 +56,14 @@ export function StepRulesConfig({
   onChatInputChange,
   onStartAi,
   onSendChat,
+  onSummarizeNow,
+  onRetryAi,
+  onSwitchToManual,
+  onConfirmAiRules,
   onImportTextFile
 }: StepRulesConfigProps) {
   const aiReady = chatMessages.length > 0;
+  const showSummarizeButton = chatMessages.length >= 6 && !aiCompleted;
 
   return (
     <div className="space-y-6">
@@ -53,7 +72,7 @@ export function StepRulesConfig({
           <Badge variant="accent">步骤 3</Badge>
           <CardTitle>配置审核规则</CardTitle>
           <CardDescription>
-            这里保留两条路径。AI 路径和手动路径可以切换，且会尽量互相保留上下文。
+            这里支持两条路径。AI 生成的内容会尽量回填到手动编辑器，手写内容也会作为 AI 上下文继续使用。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
@@ -81,14 +100,15 @@ export function StepRulesConfig({
               <Badge variant="inverse">AI 引导对话</Badge>
               <CardTitle>start / chat 最小联调</CardTitle>
               <CardDescription>
-                这里会真实调用 `/api/wizard/start` 和 `/api/wizard/chat`。生成结果完成后会展示规则和关联公司。
+                这里直接联后端 `/api/wizard/start` 和 `/api/wizard/chat`。如果 AI
+                迟迟没有结束，你可以强制让它现在总结。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {!aiReady ? (
                 <div className="space-y-4 border-4 border-ink bg-paper p-5 shadow-neo-sm">
                   <p className="text-sm font-bold leading-6">
-                    你可以先让 AI 参考当前模板、模型配置和已有手写规则作为上下文来发起引导。
+                    AI 会参考当前模板、模型配置和现有手写规则草稿，逐步帮你整理审核规则。
                   </p>
                   <Button onClick={onStartAi} disabled={!canStartAi || chatLoading}>
                     <Sparkles size={18} strokeWidth={3} />
@@ -128,6 +148,11 @@ export function StepRulesConfig({
                         <SendHorizonal size={18} strokeWidth={3} />
                         {chatLoading ? "发送中..." : "发送给 AI"}
                       </Button>
+                      {showSummarizeButton ? (
+                        <Button variant="secondary" onClick={onSummarizeNow} disabled={chatLoading}>
+                          现在就总结
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -136,6 +161,15 @@ export function StepRulesConfig({
               {chatError ? (
                 <div className="issue-red p-4">
                   <p className="text-sm font-bold leading-6">{chatError}</p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <Button variant="secondary" onClick={onRetryAi} disabled={chatLoading}>
+                      <RotateCcw size={18} strokeWidth={3} />
+                      重试
+                    </Button>
+                    <Button variant="outline" onClick={onSwitchToManual}>
+                      切换到手动模式
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </CardContent>
@@ -146,7 +180,7 @@ export function StepRulesConfig({
               <Badge variant="secondary">生成结果</Badge>
               <CardTitle>AI 生成的规则和关联公司</CardTitle>
               <CardDescription>
-                当后端返回 `is_complete=true` 时，这里会展示最终结果，并同步保留到手动编辑区。
+                只有当 AI 完成且你确认采用这些规则后，步骤 3 才允许进入下一步。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -155,7 +189,10 @@ export function StepRulesConfig({
                 <div className="space-y-3">
                   {generatedRules.length > 0 ? (
                     generatedRules.map((rule, index) => (
-                      <div key={`${rule}-${index}`} className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                      <div
+                        key={`${rule}-${index}`}
+                        className="border-4 border-ink bg-secondary p-4 shadow-neo-sm"
+                      >
                         <p className="text-sm font-bold leading-6">{rule}</p>
                       </div>
                     ))
@@ -183,6 +220,26 @@ export function StepRulesConfig({
                   )}
                 </div>
               </div>
+
+              <div
+                className={`${aiCompleted ? "issue-blue" : "issue-yellow"} p-4`}
+              >
+                <p className="text-sm font-bold leading-6">
+                  {aiCompleted
+                    ? aiRulesConfirmed
+                      ? "你已经确认采用当前 AI 生成规则，可以进入下一步。"
+                      : "AI 已完成总结，请先确认采用这些规则。"
+                    : "AI 还没有完成总结，当前不能按 AI 路径进入下一步。"}
+                </p>
+              </div>
+
+              <Button
+                variant={aiRulesConfirmed ? "secondary" : "primary"}
+                onClick={onConfirmAiRules}
+                disabled={!aiCompleted || generatedRules.length === 0}
+              >
+                {aiRulesConfirmed ? "已确认采用这些规则" : "确认采用这些规则"}
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -193,7 +250,7 @@ export function StepRulesConfig({
               <Badge variant="muted">手动配置</Badge>
               <CardTitle>自己写规则或导入文本</CardTitle>
               <CardDescription>
-                如果你从 AI 模式切过来，已经生成的规则会自动保留在编辑区，避免内容丢失。
+                手动路径允许规则为空；如果你后续切回 AI 路径，这些内容也会作为继续引导的上下文。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -201,12 +258,17 @@ export function StepRulesConfig({
                 value={manualRulesText}
                 onChange={(event) => onManualRulesChange(event.target.value)}
                 className="min-h-[20rem]"
-                placeholder="每行一条规则，例如：&#10;发票抬头必须与 PO 一致&#10;合同号和 Invoice No. 不允许混用"
+                placeholder={"每行一条规则，例如：\n发票抬头必须与 PO 一致\n合同号和 Invoice No. 不允许混用"}
               />
               <label className="inline-flex cursor-pointer items-center gap-3 border-4 border-ink bg-secondary px-4 py-3 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear hover:-translate-y-0.5">
                 <FileUp size={18} strokeWidth={3} />
                 导入 .txt
-                <input type="file" accept=".txt,text/plain" className="hidden" onChange={onImportTextFile} />
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  className="hidden"
+                  onChange={onImportTextFile}
+                />
               </label>
             </CardContent>
           </Card>
@@ -216,18 +278,20 @@ export function StepRulesConfig({
               <Badge variant="inverse">路径切换说明</Badge>
               <CardTitle>路径 A / B 可以来回切换</CardTitle>
               <CardDescription>
-                手动模式写的内容会作为 AI 启动上下文，AI 生成的结果也会回填到手动编辑器。
+                手写内容会继续喂给 AI，AI 生成结果也会回填到手动编辑器，尽量避免内容丢失。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <p className="text-sm font-bold leading-6">
-                  当前手动规则条数：{manualRulesText.split("\n").filter((line) => line.trim()).length}
+                  当前手动规则条数：
+                  {manualRulesText.split("\n").filter((line) => line.trim()).length}
                 </p>
               </div>
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <p className="text-sm font-bold leading-6">
-                  如果后续切回 AI 模式，我会把这些手写规则作为“已有草稿”传给 `/api/wizard/start`。
+                  如果你稍后切回 AI 模式，我会把这些手写规则作为“已有草稿”传给
+                  `/api/wizard/start`。
                 </p>
               </div>
             </CardContent>

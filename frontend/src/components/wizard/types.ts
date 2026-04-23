@@ -16,6 +16,7 @@ export type WizardTemplateOption = {
   label: string;
   description: string;
   rulesText: string;
+  companyAffiliates: string[];
 };
 
 export type WizardMessage = {
@@ -96,6 +97,10 @@ export type WizardFormState = {
   deepseekApiKey: string;
   zhipuApiKey: string;
   zhipuOcrApiKey: string;
+  hasOpenaiKey: boolean;
+  hasDeepseekKey: boolean;
+  hasZhipuKey: boolean;
+  hasZhipuOcrKey: boolean;
   selectedTemplateId: WizardTemplateOptionId;
   ruleMode: WizardRuleMode;
   manualRulesText: string;
@@ -104,6 +109,8 @@ export type WizardFormState = {
   chatInput: string;
   generatedRules: string[];
   generatedAffiliates: string[];
+  aiCompleted: boolean;
+  aiRulesConfirmed: boolean;
   companyMode: WizardCompanyMode;
   affiliateRoles: WizardAffiliateRole[];
 };

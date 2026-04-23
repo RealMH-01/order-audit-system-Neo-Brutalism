@@ -2,10 +2,19 @@ import { Building2, GitBranch, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-import type { WizardAffiliateRole, WizardCompanyMode } from "@/components/wizard/types";
+import type {
+  WizardAffiliateRole,
+  WizardCompanyMode
+} from "@/components/wizard/types";
 
 type StepCompanyInfoProps = {
   companyMode: WizardCompanyMode;
@@ -14,7 +23,11 @@ type StepCompanyInfoProps = {
   onCompanyModeChange: (mode: WizardCompanyMode) => void;
   onAddAffiliate: () => void;
   onRemoveAffiliate: (index: number) => void;
-  onChangeAffiliate: (index: number, field: "company" | "role", value: string) => void;
+  onChangeAffiliate: (
+    index: number,
+    field: "company" | "role",
+    value: string
+  ) => void;
   onApplyGeneratedAffiliates: () => void;
 };
 
@@ -35,7 +48,15 @@ export function StepCompanyInfo({
           <Badge variant="accent">步骤 4</Badge>
           <CardTitle>公司架构信息</CardTitle>
           <CardDescription>
-            这里直接对齐后端字段 `company_affiliates` 和 `company_affiliates_roles`，不另外发明新字段。
+            这里直接对齐后端字段
+            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+              company_affiliates
+            </code>
+            和
+            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+              company_affiliates_roles
+            </code>
+            ，不会再引入额外字段。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
@@ -59,12 +80,12 @@ export function StepCompanyInfo({
       {companyMode === "single" ? (
         <Card className="bg-muted">
           <CardHeader>
-            <Badge variant="secondary">单主体</Badge>
+            <Badge variant="secondary">单主体模式</Badge>
             <CardTitle>当前按独立公司处理</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm font-bold leading-6">
-              如果你的业务没有多个关联主体，这里不需要再补充公司列表。你仍然可以继续下一步完成确认。
+              如果你的业务没有多个关联主体，这里可以不填写集团信息，直接进入确认步骤即可。
             </p>
           </CardContent>
         </Card>
@@ -75,7 +96,7 @@ export function StepCompanyInfo({
               <Badge variant="inverse">集团信息</Badge>
               <CardTitle>维护关联公司和分工</CardTitle>
               <CardDescription>
-                你可以手动维护关联公司，也可以把 AI 生成的公司名单一键带入这里。
+                你可以手动维护关联公司，也可以把上一步 AI 生成的关联公司一键带入这里继续编辑。
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
@@ -102,14 +123,20 @@ export function StepCompanyInfo({
                       <Badge variant="muted">关联主体 {index + 1}</Badge>
                       <CardTitle>公司与分工说明</CardTitle>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => onRemoveAffiliate(index)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRemoveAffiliate(index)}
+                    >
                       <Trash2 size={18} strokeWidth={3} />
                       删除
                     </Button>
                   </CardHeader>
                   <CardContent className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2">
-                      <span className="text-sm font-bold uppercase tracking-[0.14em]">公司名称</span>
+                      <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                        公司名称
+                      </span>
                       <Input
                         value={item.company}
                         onChange={(event) =>
@@ -119,10 +146,14 @@ export function StepCompanyInfo({
                       />
                     </label>
                     <label className="space-y-2">
-                      <span className="text-sm font-bold uppercase tracking-[0.14em]">分工说明</span>
+                      <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                        分工说明
+                      </span>
                       <Input
                         value={item.role}
-                        onChange={(event) => onChangeAffiliate(index, "role", event.target.value)}
+                        onChange={(event) =>
+                          onChangeAffiliate(index, "role", event.target.value)
+                        }
                         placeholder="例如：下单主体 / 出货主体 / 收款主体"
                       />
                     </label>
@@ -133,7 +164,7 @@ export function StepCompanyInfo({
               <Card className="bg-paper">
                 <CardContent>
                   <p className="text-sm font-bold leading-6">
-                    还没有填写任何关联主体。你可以新增，也可以先让 AI 在上一步给出建议后再回到这里。
+                    还没有填写任何关联主体。你可以手动新增，也可以先让 AI 给出建议后再带入这里。
                   </p>
                 </CardContent>
               </Card>

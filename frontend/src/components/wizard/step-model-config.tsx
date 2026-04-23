@@ -1,18 +1,33 @@
-import { AlertCircle, Cable, CheckCircle2, FlaskConical } from "lucide-react";
+import {
+  AlertCircle,
+  Cable,
+  CheckCircle2,
+  FlaskConical
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 
-import type { WizardConnectionTestResponse, WizardProvider } from "@/components/wizard/types";
+import type {
+  WizardAuthMode,
+  WizardConnectionTestResponse,
+  WizardProvider
+} from "@/components/wizard/types";
 
 type StepModelConfigProps = {
   email: string;
   password: string;
-  authMode: "login" | "register";
+  authMode: WizardAuthMode;
   authenticated: boolean;
   authLoading: boolean;
   authError: string | null;
@@ -30,7 +45,10 @@ type StepModelConfigProps = {
   onTestConnection: () => void;
 };
 
-const providerModels: Record<WizardProvider, { label: string; value: string }[]> = {
+const providerModels: Record<
+  WizardProvider,
+  Array<{ label: string; value: string }>
+> = {
   openai: [
     { label: "OpenAI GPT-4o", value: "gpt-4o" },
     { label: "OpenAI o3-mini", value: "o3-mini" }
@@ -77,15 +95,17 @@ export function StepModelConfig({
       <Card className="bg-paper">
         <CardHeader>
           <Badge variant="accent">步骤 1</Badge>
-          <CardTitle>先建立当前引导会话</CardTitle>
+          <CardTitle>建立当前引导会话</CardTitle>
           <CardDescription>
-            这一轮为了把 wizard 页面真正接到后端，页面内部会先完成最小登录或注册，再进入模型配置。
+            为了让 wizard 页面可以直接联后端，这里先完成最小登录或注册，再继续模型配置。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">邮箱</span>
+              <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                邮箱
+              </span>
               <Input
                 value={email}
                 onChange={(event) => onFieldChange("email", event.target.value)}
@@ -93,15 +113,20 @@ export function StepModelConfig({
               />
             </label>
             <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">密码</span>
+              <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                密码
+              </span>
               <Input
                 type="password"
                 value={password}
-                onChange={(event) => onFieldChange("password", event.target.value)}
+                onChange={(event) =>
+                  onFieldChange("password", event.target.value)
+                }
                 placeholder="至少 6 位"
               />
             </label>
           </div>
+
           <div className="flex flex-wrap gap-3">
             <Button
               variant={authMode === "login" ? "primary" : "outline"}
@@ -116,14 +141,20 @@ export function StepModelConfig({
               注册
             </Button>
             <Button onClick={onAuthenticate} disabled={authLoading}>
-              {authLoading ? "提交中..." : authMode === "login" ? "登录并继续" : "注册并继续"}
+              {authLoading
+                ? "提交中..."
+                : authMode === "login"
+                  ? "登录并继续"
+                  : "注册并继续"}
             </Button>
           </div>
+
           {authenticated ? (
             <div className="issue-blue p-4">
               <p className="flex items-center gap-2 text-sm font-bold leading-6">
                 <CheckCircle2 size={18} strokeWidth={3} />
-                当前会话已经就绪，后续步骤可以真实调用 `/api/wizard/*` 和 `/api/settings/*`。
+                当前会话已经就绪，后续步骤将使用真实 Bearer token 调用
+                `/api/wizard/*` 和 `/api/settings/*`。
               </p>
             </div>
           ) : authError ? (
@@ -142,16 +173,21 @@ export function StepModelConfig({
           <Badge variant="inverse">模型与密钥</Badge>
           <CardTitle>选择 provider、模型和 API Key</CardTitle>
           <CardDescription>
-            保持和现有 `settings/profile` 字段一致，不改字段名。测试连接会调用真实后端接口。
+            这一页的值只暂存在前端 state，最终会在步骤 5 一次性写入
+            `settings/profile`。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">Provider</span>
+              <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                Provider
+              </span>
               <Select
                 value={provider}
-                onChange={(event) => onFieldChange("provider", event.target.value)}
+                onChange={(event) =>
+                  onFieldChange("provider", event.target.value)
+                }
               >
                 <option value="openai">OpenAI</option>
                 <option value="deepseek">DeepSeek</option>
@@ -159,10 +195,14 @@ export function StepModelConfig({
               </Select>
             </label>
             <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">模型</span>
+              <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                模型
+              </span>
               <Select
                 value={selectedModel}
-                onChange={(event) => onFieldChange("selectedModel", event.target.value)}
+                onChange={(event) =>
+                  onFieldChange("selectedModel", event.target.value)
+                }
               >
                 {providerModels[provider].map((item) => (
                   <option key={item.value} value={item.value}>
@@ -194,7 +234,7 @@ export function StepModelConfig({
                   event.target.value
                 )
               }
-              placeholder="可留空，若后端已有保存密钥则会使用保存值"
+              placeholder="若后端已有保存密钥，这里可以暂时留空"
             />
           </label>
 
@@ -206,15 +246,19 @@ export function StepModelConfig({
               <Input
                 type="password"
                 value={zhipuOcrApiKey}
-                onChange={(event) => onFieldChange("zhipuOcrApiKey", event.target.value)}
-                placeholder="扫描件场景可补充智谱 OCR Key"
+                onChange={(event) =>
+                  onFieldChange("zhipuOcrApiKey", event.target.value)
+                }
+                placeholder="扫描件场景可以补充智谱 OCR Key"
               />
             </label>
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
             <div className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">深度思考</span>
+              <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                深度思考
+              </span>
               <div className="flex min-h-[3.5rem] items-center justify-between border-4 border-ink bg-paper px-4 shadow-neo-sm">
                 <div className="space-y-1">
                   <p className="text-sm font-bold">增强推理模式</p>
@@ -224,11 +268,19 @@ export function StepModelConfig({
                       : "OpenAI / DeepSeek 会按后端能力映射到对应模型。"}
                   </p>
                 </div>
-                <Tooltip content={provider === "zhipuai" ? "智谱不支持深度思考" : "切换深度思考"}>
+                <Tooltip
+                  content={
+                    provider === "zhipuai"
+                      ? "智谱不支持深度思考"
+                      : "切换深度思考"
+                  }
+                >
                   <button
                     type="button"
                     disabled={provider === "zhipuai"}
-                    onClick={() => onFieldChange("deepThinkEnabled", !deepThinkEnabled)}
+                    onClick={() =>
+                      onFieldChange("deepThinkEnabled", !deepThinkEnabled)
+                    }
                     className={`inline-flex h-10 min-w-[5.5rem] items-center justify-center border-4 border-ink font-black uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear ${
                       provider === "zhipuai"
                         ? "cursor-not-allowed bg-paper"
@@ -237,7 +289,11 @@ export function StepModelConfig({
                           : "bg-muted"
                     }`}
                   >
-                    {provider === "zhipuai" ? "禁用" : deepThinkEnabled ? "已开启" : "已关闭"}
+                    {provider === "zhipuai"
+                      ? "禁用"
+                      : deepThinkEnabled
+                        ? "已开启"
+                        : "已关闭"}
                   </button>
                 </Tooltip>
               </div>
@@ -254,7 +310,9 @@ export function StepModelConfig({
           </div>
 
           {testStatus ? (
-            <div className={`${testStatus.success ? "issue-blue" : "issue-red"} p-4`}>
+            <div
+              className={`${testStatus.success ? "issue-blue" : "issue-red"} p-4`}
+            >
               <p className="flex items-center gap-2 text-sm font-bold leading-6">
                 {testStatus.success ? (
                   <FlaskConical size={18} strokeWidth={3} />

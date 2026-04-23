@@ -2,9 +2,20 @@ import { ArrowLeftRight, CheckCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 
-import type { WizardAffiliateRole, WizardProvider, WizardRuleMode, WizardTemplateOption } from "@/components/wizard/types";
+import type {
+  WizardAffiliateRole,
+  WizardProvider,
+  WizardRuleMode,
+  WizardTemplateOption
+} from "@/components/wizard/types";
 
 type StepConfirmProps = {
   provider: WizardProvider;
@@ -44,7 +55,19 @@ export function StepConfirm({
           <Badge variant="accent">步骤 5</Badge>
           <CardTitle>确认总结</CardTitle>
           <CardDescription>
-            最后一步会汇总模型配置、模板选择、审核规则和公司架构，并调用 `/api/wizard/complete` 或 `/api/wizard/skip`。
+            最后一步只做确认。点击“完成设置”后，前端会一次性写入
+            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+              /api/settings/profile
+            </code>
+            ，然后再调用
+            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+              /api/wizard/complete
+            </code>
+            或
+            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+              /api/wizard/skip
+            </code>
+            。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -55,7 +78,9 @@ export function StepConfirm({
             <div className="space-y-2">
               <Badge variant="inverse">模型配置</Badge>
               <CardTitle>{provider.toUpperCase()}</CardTitle>
-              <CardDescription>当前选择的 provider、模型和深度思考状态。</CardDescription>
+              <CardDescription>
+                当前模型、Provider 和深度思考开关都会在完成时统一保存。
+              </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(0)}>
               <ArrowLeftRight size={18} strokeWidth={3} />
@@ -82,7 +107,7 @@ export function StepConfirm({
           </CardHeader>
           <CardContent>
             <p className="whitespace-pre-line text-sm font-bold leading-6">
-              {selectedTemplate.rulesText || "当前没有预置模板规则。"}
+              {selectedTemplate.rulesText || "当前没有使用预设模板规则。"}
             </p>
           </CardContent>
         </Card>
@@ -92,7 +117,13 @@ export function StepConfirm({
             <div className="space-y-2">
               <Badge variant="accent">审核规则</Badge>
               <CardTitle>{ruleMode === "ai" ? "AI 引导生成" : "手动编写"}</CardTitle>
-              <CardDescription>最终将写回到当前用户的 `active_custom_rules`。</CardDescription>
+              <CardDescription>
+                最终会写入当前用户的
+                <code className="mx-1 rounded-none border-2 border-ink bg-paper px-2 py-1">
+                  active_custom_rules
+                </code>
+                。
+              </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(2)}>
               <ArrowLeftRight size={18} strokeWidth={3} />
@@ -102,13 +133,18 @@ export function StepConfirm({
           <CardContent className="space-y-3">
             {finalRules.length > 0 ? (
               finalRules.map((rule, index) => (
-                <div key={`${rule}-${index}`} className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <div
+                  key={`${rule}-${index}`}
+                  className="border-4 border-ink bg-paper p-4 shadow-neo-sm"
+                >
                   <p className="text-sm font-bold leading-6">{rule}</p>
                 </div>
               ))
             ) : (
-              <div className="issue-red p-4">
-                <p className="text-sm font-bold leading-6">当前还没有可提交的审核规则。</p>
+              <div className="issue-yellow p-4">
+                <p className="text-sm font-bold leading-6">
+                  当前没有填写规则。手动路径允许规则为空，但建议你在完成前再确认一次。
+                </p>
               </div>
             )}
           </CardContent>
@@ -119,7 +155,17 @@ export function StepConfirm({
             <div className="space-y-2">
               <Badge variant="muted">公司架构</Badge>
               <CardTitle>{companyMode === "single" ? "独立公司" : "集团公司"}</CardTitle>
-              <CardDescription>最终会写回 `company_affiliates` 和 `company_affiliates_roles`。</CardDescription>
+              <CardDescription>
+                最终会写回
+                <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+                  company_affiliates
+                </code>
+                和
+                <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
+                  company_affiliates_roles
+                </code>
+                。
+              </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(3)}>
               <ArrowLeftRight size={18} strokeWidth={3} />
@@ -128,16 +174,25 @@ export function StepConfirm({
           </CardHeader>
           <CardContent className="space-y-3">
             {companyMode === "single" ? (
-              <p className="text-sm font-bold leading-6">当前按单主体公司处理。</p>
+              <p className="text-sm font-bold leading-6">当前按单一主体公司处理。</p>
             ) : affiliateRoles.length > 0 ? (
               affiliateRoles.map((item, index) => (
-                <div key={`${item.company}-${index}`} className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-                  <p className="text-sm font-bold leading-6">{item.company || `关联公司 ${index + 1}`}</p>
-                  <p className="mt-2 text-sm font-bold leading-6">{item.role || "未填写分工说明"}</p>
+                <div
+                  key={`${item.company}-${index}`}
+                  className="border-4 border-ink bg-secondary p-4 shadow-neo-sm"
+                >
+                  <p className="text-sm font-bold leading-6">
+                    {item.company || `关联公司 ${index + 1}`}
+                  </p>
+                  <p className="mt-2 text-sm font-bold leading-6">
+                    {item.role || "未填写分工说明"}
+                  </p>
                 </div>
               ))
             ) : (
-              <p className="text-sm font-bold leading-6">集团模式下还没有填写关联主体。</p>
+              <p className="text-sm font-bold leading-6">
+                当前选择了集团模式，但还没有填写关联主体。
+              </p>
             )}
           </CardContent>
         </Card>
@@ -155,7 +210,7 @@ export function StepConfirm({
       ) : null}
 
       <div className="flex flex-wrap justify-end gap-3">
-        <Button onClick={onSubmit} disabled={saving || finalRules.length === 0}>
+        <Button onClick={onSubmit} disabled={saving}>
           <CheckCheck size={18} strokeWidth={3} />
           {saving ? "提交中..." : "完成设置"}
         </Button>

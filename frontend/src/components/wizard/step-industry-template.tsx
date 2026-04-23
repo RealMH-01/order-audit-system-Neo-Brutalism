@@ -1,7 +1,16 @@
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 
-import type { WizardTemplateOption, WizardTemplateOptionId } from "@/components/wizard/types";
+import type {
+  WizardTemplateOption,
+  WizardTemplateOptionId
+} from "@/components/wizard/types";
 
 type StepIndustryTemplateProps = {
   options: WizardTemplateOption[];
@@ -21,7 +30,7 @@ export function StepIndustryTemplate({
           <Badge variant="accent">步骤 2</Badge>
           <CardTitle>选择行业模板</CardTitle>
           <CardDescription>
-            这一轮先固定支持三种模板来源，状态只保留在前端并传给 wizard 后端接口。
+            模板选择只保留在前端 state 中，不会直接写库。它只作为步骤 3 的规则预填与 AI 上下文来源。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -48,8 +57,8 @@ export function StepIndustryTemplate({
                 </CardHeader>
                 <CardContent>
                   <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-                    <p className="text-sm font-bold leading-6 whitespace-pre-line">
-                      {option.rulesText || "不预设规则，由你自己从零开始。"}
+                    <p className="whitespace-pre-line text-sm font-bold leading-6">
+                      {option.rulesText || "不预设规则，由你自己从零开始配置。"}
                     </p>
                   </div>
                 </CardContent>
