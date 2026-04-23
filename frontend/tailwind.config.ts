@@ -5,25 +5,60 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        display: ["var(--font-space-grotesk)", "sans-serif"],
-        body: ["var(--font-space-grotesk)", "sans-serif"]
+        display: [
+          "var(--font-space-grotesk)",
+          "Space Grotesk",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Noto Sans SC",
+          "sans-serif"
+        ],
+        body: [
+          "var(--font-space-grotesk)",
+          "Space Grotesk",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Noto Sans SC",
+          "sans-serif"
+        ]
       },
       colors: {
-        canvas: "var(--color-canvas)",
-        ink: "var(--color-ink)",
-        paper: "var(--color-paper)",
-        acid: "var(--color-acid)",
-        coral: "var(--color-coral)",
-        sky: "var(--color-sky)",
-        mint: "var(--color-mint)",
-        danger: "var(--color-danger)"
+        black: "#000000",
+        white: "#FFFFFF",
+        canvas: "var(--neo-canvas)",
+        paper: "var(--neo-paper)",
+        ink: "var(--neo-ink)",
+        acid: "var(--neo-accent)",
+        coral: "var(--neo-accent)",
+        sky: "var(--neo-muted)",
+        mint: "var(--neo-secondary)",
+        danger: "var(--neo-danger)",
+        accent: "var(--neo-accent)",
+        secondary: "var(--neo-secondary)",
+        muted: "var(--neo-muted)",
+        "issue-blue": "var(--neo-issue-blue)"
       },
       boxShadow: {
-        brutal: "8px 8px 0 0 var(--color-ink)",
-        "brutal-sm": "4px 4px 0 0 var(--color-ink)"
+        "neo-sm": "4px 4px 0 0 #000000",
+        "neo-md": "8px 8px 0 0 #000000",
+        "neo-lg": "12px 12px 0 0 #000000",
+        "neo-xl": "16px 16px 0 0 #000000",
+        brutal: "8px 8px 0 0 #000000",
+        "brutal-sm": "4px 4px 0 0 #000000"
       },
       borderRadius: {
-        brutal: "1.25rem"
+        brutal: "0px"
+      },
+      keyframes: {
+        "spin-slow": {
+          from: { transform: "rotate(0deg)" },
+          to: { transform: "rotate(360deg)" }
+        }
+      },
+      animation: {
+        "spin-slow": "spin-slow 10s linear infinite"
       }
     }
   },

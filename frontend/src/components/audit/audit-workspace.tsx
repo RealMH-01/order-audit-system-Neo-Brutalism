@@ -31,7 +31,10 @@ export function AuditWorkspace() {
         <BrutalCard title="工作区总览" tone="paper">
           <div className="grid gap-4 md:grid-cols-3">
             {sections.map((section) => (
-              <div key={section.title} className="rounded-[1rem] border-4 border-ink bg-sky p-4">
+              <div
+                key={section.title}
+                className="border-4 border-ink bg-muted p-4 shadow-neo-sm"
+              >
                 <h3 className="mb-2 text-base font-black uppercase">{section.title}</h3>
                 <p className="text-sm leading-6">{section.description}</p>
               </div>
@@ -57,4 +60,3 @@ export function AuditWorkspace() {
     </section>
   );
 }
-

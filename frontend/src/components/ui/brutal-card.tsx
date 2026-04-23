@@ -1,18 +1,20 @@
 import type { ReactNode } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 type BrutalCardProps = {
   title: string;
   children: ReactNode;
-  tone?: "paper" | "mint" | "coral" | "sky";
+  tone?: "paper" | "mint" | "coral" | "sky" | "muted";
 };
 
 const toneMap = {
   paper: "bg-paper",
-  mint: "bg-mint",
-  coral: "bg-coral",
-  sky: "bg-sky"
+  mint: "bg-secondary",
+  coral: "bg-acid",
+  sky: "bg-muted",
+  muted: "bg-muted"
 };
 
 export function BrutalCard({
@@ -21,15 +23,11 @@ export function BrutalCard({
   tone = "paper"
 }: BrutalCardProps) {
   return (
-    <article
-      className={cn(
-        "rounded-brutal border-4 border-ink p-5 shadow-brutal-sm",
-        toneMap[tone]
-      )}
-    >
-      <h2 className="mb-3 text-xl font-black uppercase">{title}</h2>
-      {children}
-    </article>
+    <Card className={cn(toneMap[tone])}>
+      <CardHeader className="border-b-4 border-ink pb-3">
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
-

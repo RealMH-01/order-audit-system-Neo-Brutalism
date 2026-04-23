@@ -1,5 +1,6 @@
 import { BrutalButton } from "@/components/ui/brutal-button";
 import { BrutalCard } from "@/components/ui/brutal-card";
+import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/ui/status-pill";
 
 type AuthPanelProps = {
@@ -16,15 +17,12 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
           <p className="max-w-xl leading-7">{description}</p>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-sm uppercase">邮箱</span>
-              <input className="w-full rounded-[1rem] border-4 border-ink bg-paper px-4 py-3" />
+              <span className="text-sm uppercase tracking-[0.14em]">邮箱</span>
+              <Input placeholder="name@example.com" />
             </label>
             <label className="space-y-2">
-              <span className="text-sm uppercase">密码</span>
-              <input
-                type="password"
-                className="w-full rounded-[1rem] border-4 border-ink bg-paper px-4 py-3"
-              />
+              <span className="text-sm uppercase tracking-[0.14em]">密码</span>
+              <Input type="password" placeholder="请输入密码" />
             </label>
           </div>
           <BrutalButton>{mode === "login" ? "登录" : "注册"}</BrutalButton>
@@ -33,11 +31,10 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
       <BrutalCard title="认证骨架状态" tone="sky">
         <div className="space-y-3 text-sm leading-6">
           <StatusPill label="Skeleton Only" tone="warning" />
-          <p>状态容器、页面路由和 API 抽象已经就位。</p>
-          <p>真实 Supabase 注册、登录、会话刷新和权限控制将在后续轮次接入。</p>
+          <p>页面结构、基础输入组件和 API 承接位已经就绪，方便后续接入真实认证链路。</p>
+          <p>真实 Supabase 注册、登录、会话刷新和权限控制仍会在后续轮次继续接入。</p>
         </div>
       </BrutalCard>
     </section>
   );
 }
-

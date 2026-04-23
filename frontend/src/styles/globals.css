@@ -3,34 +3,59 @@
 @tailwind utilities;
 
 :root {
-  --color-canvas: #f6f13d;
-  --color-paper: #fffdf4;
-  --color-ink: #111111;
-  --color-acid: #ff7a00;
-  --color-coral: #ff5874;
-  --color-sky: #5cd6ff;
-  --color-mint: #79f2aa;
-  --color-danger: #ff335f;
+  --neo-canvas: #fffdf5;
+  --neo-paper: #ffffff;
+  --neo-ink: #000000;
+  --neo-accent: #ff6b6b;
+  --neo-secondary: #ffd93d;
+  --neo-muted: #c4b5fd;
+  --neo-danger: #ff4d4f;
+  --neo-issue-blue: #5da9e9;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
-  background:
-    radial-gradient(circle at top left, rgba(255, 88, 116, 0.22), transparent 30%),
-    radial-gradient(circle at top right, rgba(92, 214, 255, 0.2), transparent 25%),
-    var(--color-canvas);
+  background: var(--neo-canvas);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  color: var(--color-ink);
-  background: transparent;
-  font-family: var(--font-space-grotesk), sans-serif;
+  background: var(--neo-canvas);
+  color: var(--neo-ink);
+  font-family:
+    var(--font-space-grotesk),
+    "Space Grotesk",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Noto Sans SC",
+    sans-serif;
   font-weight: 700;
+  text-rendering: geometricPrecision;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family:
+    var(--font-space-grotesk),
+    "Space Grotesk",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Noto Sans SC",
+    sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.04em;
 }
 
 a {
@@ -45,28 +70,167 @@ select {
   font: inherit;
 }
 
-.brutal-grid {
-  background-image:
-    linear-gradient(rgba(17, 17, 17, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(17, 17, 17, 0.08) 1px, transparent 1px);
-  background-size: 24px 24px;
+::selection {
+  background: var(--neo-secondary);
+  color: var(--neo-ink);
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--neo-ink);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .neo-panel {
+    @apply rounded-none border-4 border-ink bg-paper shadow-neo-md;
+  }
+
+  .neo-panel-muted {
+    @apply rounded-none border-4 border-ink bg-muted shadow-neo-md;
+  }
+
+  .neo-panel-secondary {
+    @apply rounded-none border-4 border-ink bg-secondary shadow-neo-md;
+  }
+
+  .neo-panel-accent {
+    @apply rounded-none border-4 border-ink bg-acid shadow-neo-md;
+  }
+
+  .neo-button-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-none border-4 border-ink font-bold uppercase tracking-[0.16em] transition-all duration-100 ease-linear focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-50 active:translate-x-[4px] active:translate-y-[4px] active:shadow-none;
+  }
+
+  .neo-input-base {
+    @apply h-14 w-full rounded-none border-4 border-ink bg-paper px-4 text-base font-bold text-ink shadow-neo-sm transition-all duration-100 ease-linear placeholder:text-black/40 focus-visible:bg-secondary focus-visible:shadow-neo-md focus-visible:outline-none focus-visible:ring-0;
+  }
+
+  .neo-textarea-base {
+    @apply min-h-[8rem] w-full rounded-none border-4 border-ink bg-paper px-4 py-3 text-base font-bold text-ink shadow-neo-sm transition-all duration-100 ease-linear placeholder:text-black/40 focus-visible:bg-secondary focus-visible:shadow-neo-md focus-visible:outline-none focus-visible:ring-0;
+  }
+
+  .neo-select-base {
+    @apply neo-input-base appearance-none pr-11;
+    background-image:
+      linear-gradient(45deg, transparent 50%, #000000 50%),
+      linear-gradient(135deg, #000000 50%, transparent 50%);
+    background-position:
+      calc(100% - 24px) calc(50% - 2px),
+      calc(100% - 16px) calc(50% - 2px);
+    background-size: 8px 8px, 8px 8px;
+    background-repeat: no-repeat;
+  }
+
+  .neo-badge-base {
+    @apply inline-flex w-fit items-center gap-2 rounded-full border-4 border-ink px-3 py-1 text-xs font-black uppercase tracking-[0.18em] shadow-neo-sm;
+  }
+
+  .neo-dialog-overlay {
+    @apply fixed inset-0 z-40 bg-black/40;
+  }
+
+  .neo-dialog-panel {
+    @apply neo-panel relative z-50 w-full max-w-2xl p-6;
+  }
+
+  .neo-tabs-list {
+    @apply inline-flex flex-wrap gap-3 rounded-none border-4 border-ink bg-secondary p-2 shadow-neo-sm;
+  }
+
+  .neo-tabs-trigger {
+    @apply inline-flex min-h-[3rem] items-center justify-center rounded-none border-4 border-ink bg-paper px-4 text-sm font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear hover:-translate-y-0.5 data-[active=true]:bg-acid data-[active=true]:shadow-neo-md;
+  }
+
+  .neo-progress-track {
+    @apply h-5 overflow-hidden rounded-none border-4 border-ink bg-paper shadow-neo-sm;
+  }
+
+  .neo-progress-indicator {
+    @apply h-full bg-acid transition-all duration-200 ease-out;
+  }
+
+  .neo-tooltip-content {
+    @apply rounded-none border-4 border-ink bg-secondary px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-ink shadow-neo-sm;
+  }
+
+  .neo-scroll-area {
+    @apply rounded-none border-4 border-ink bg-paper shadow-neo-sm;
+    scrollbar-color: #000000 #fffdf5;
+    scrollbar-width: auto;
+  }
+
+  .neo-scroll-area::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+
+  .neo-scroll-area::-webkit-scrollbar-thumb {
+    background: #000000;
+  }
+
+  .neo-scroll-area::-webkit-scrollbar-track {
+    background: #fffdf5;
+  }
 }
 
 @layer utilities {
+  .page-shell {
+    @apply mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-4 py-8 md:px-8 md:py-10;
+  }
+
+  .bg-halftone {
+    background-image: radial-gradient(#000000 1.5px, transparent 1.5px);
+    background-size: 20px 20px;
+  }
+
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, rgba(0, 0, 0, 0.1) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .text-stroke-2 {
+    -webkit-text-stroke: 2px #000000;
+    color: transparent;
+  }
+
+  .issue-red {
+    @apply border-l-[10px] border-[#000000] bg-acid text-ink;
+  }
+
+  .issue-yellow {
+    @apply border-l-[10px] border-[#000000] bg-secondary text-ink;
+  }
+
+  .issue-blue {
+    border-left: 10px solid #000000;
+    background: var(--neo-issue-blue);
+    color: var(--neo-ink);
+  }
+
   .surface-paper {
-    @apply border-4 border-ink bg-paper shadow-brutal;
+    @apply neo-panel;
   }
 
   .surface-mint {
-    @apply border-4 border-ink bg-mint shadow-brutal-sm;
+    @apply neo-panel-secondary;
   }
 
   .surface-coral {
-    @apply border-4 border-ink bg-coral shadow-brutal-sm;
-  }
-
-  .page-shell {
-    @apply mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 md:px-8 md:py-8;
+    @apply neo-panel-accent;
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
