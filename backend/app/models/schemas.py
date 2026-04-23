@@ -439,13 +439,18 @@ class WizardStartRequest(BaseModel):
     """Wizard start request."""
 
     first_message: str | None = None
+    selected_template: str | None = None
+    template_rules: str | None = None
+    provider: Literal["openai", "deepseek", "zhipuai"] | None = None
 
 
 class WizardStartResponse(BaseModel):
     """Wizard start response."""
 
     session_id: str
-    message: str
+    ai_message: str
+    step: str
+    is_complete: bool = False
 
 
 class WizardChatRequest(BaseModel):
@@ -459,19 +464,37 @@ class WizardChatResponse(BaseModel):
     """Wizard chat response."""
 
     session_id: str
-    reply: str
+    ai_message: str
+    step: str
+    is_complete: bool = False
+    generated_rules: list[str] = Field(default_factory=list)
+    generated_affiliates: list[str] = Field(default_factory=list)
 
 
 class WizardCompleteRequest(BaseModel):
     """Wizard complete request."""
 
     session_id: str
+    final_rules: list[str] = Field(default_factory=list)
+    generated_affiliates: list[str] = Field(default_factory=list)
+    generated_affiliate_roles: list[dict[str, str]] = Field(default_factory=list)
+
+
+class WizardSkipRequest(BaseModel):
+    """Wizard skip request."""
+
+    rules_text: list[str] = Field(default_factory=list)
+    generated_affiliates: list[str] = Field(default_factory=list)
+    generated_affiliate_roles: list[dict[str, str]] = Field(default_factory=list)
 
 
 class WizardSkipResponse(BaseModel):
     """Wizard skip/complete common response."""
 
     message: str
+    is_complete: bool = True
+    generated_rules: list[str] = Field(default_factory=list)
+    generated_affiliates: list[str] = Field(default_factory=list)
 
 
 class DatabaseTableSpec(BaseModel):

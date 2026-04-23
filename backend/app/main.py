@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,14 +8,23 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.errors import AppError
 from app.routers import api_router
+from app.services.wizard_engine import run_wizard_cleanup_loop
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
+    cleanup_task = asyncio.create_task(run_wizard_cleanup_loop())
     if settings.debug:
         print("Application is running in minimal-backend mode.")
-    yield
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:

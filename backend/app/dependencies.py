@@ -71,8 +71,10 @@ def get_report_generator_service() -> ReportGeneratorService:
 def get_wizard_engine_service(
     settings: Settings = Depends(get_app_settings),
     store: RuntimeStore = Depends(get_runtime_state),
+    llm_client: LLMClientService = Depends(get_llm_client_service),
+    cipher: ApiKeyCipher = Depends(get_api_cipher),
 ) -> WizardEngineService:
-    return WizardEngineService(settings=settings, store=store)
+    return WizardEngineService(settings=settings, store=store, llm_client=llm_client, cipher=cipher)
 
 
 def get_settings_service(

@@ -7,6 +7,7 @@ from app.models.schemas import (
     WizardChatRequest,
     WizardChatResponse,
     WizardCompleteRequest,
+    WizardSkipRequest,
     WizardSkipResponse,
     WizardStartRequest,
     WizardStartResponse,
@@ -29,7 +30,7 @@ async def start_wizard(
     current_user: CurrentUser = Depends(get_current_user),
     service: WizardEngineService = Depends(get_wizard_engine_service),
 ) -> WizardStartResponse:
-    return service.start(current_user, payload)
+    return await service.start(current_user, payload)
 
 
 @router.post("/chat", response_model=WizardChatResponse)
@@ -38,7 +39,7 @@ async def chat_wizard(
     current_user: CurrentUser = Depends(get_current_user),
     service: WizardEngineService = Depends(get_wizard_engine_service),
 ) -> WizardChatResponse:
-    return service.chat(current_user, payload)
+    return await service.chat(current_user, payload)
 
 
 @router.post("/complete", response_model=WizardSkipResponse)
@@ -52,7 +53,8 @@ async def complete_wizard(
 
 @router.post("/skip", response_model=WizardSkipResponse)
 async def skip_wizard(
+    payload: WizardSkipRequest,
     current_user: CurrentUser = Depends(get_current_user),
     service: WizardEngineService = Depends(get_wizard_engine_service),
 ) -> WizardSkipResponse:
-    return service.skip(current_user)
+    return service.skip(current_user, payload)
