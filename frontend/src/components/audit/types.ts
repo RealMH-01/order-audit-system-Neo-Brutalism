@@ -2,6 +2,10 @@ export type AuditDocumentType =
   | "invoice"
   | "packing_list"
   | "shipping_instruction"
+  | "bill_of_lading"
+  | "certificate_of_origin"
+  | "customs_declaration"
+  | "letter_of_credit"
   | "other";
 
 export type AuditFileRecord = {

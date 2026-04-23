@@ -33,14 +33,18 @@ function resolveIssueClass(level: AuditIssue["level"]) {
 
 function renderConfidence(issue: AuditIssue) {
   if (typeof issue.confidence !== "number") {
-    return "后端暂未返回置信度";
+    return "置信度待补充";
   }
 
   return `置信度 ${Math.round(issue.confidence * 100)}%`;
 }
 
 function renderSuggestion(issue: AuditIssue) {
-  return issue.suggestion?.trim() || "后端暂未返回修正建议。";
+  return issue.suggestion?.trim() || "当前结果未附修正建议，请结合原单据与 PO 继续人工复核。";
+}
+
+function renderDocumentLabel(issue: AuditIssue) {
+  return issue.document_label?.trim() || "当前结果未标注文档归属";
 }
 
 function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
@@ -51,11 +55,9 @@ function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
           <div className="flex flex-wrap gap-2">
             <Badge variant="inverse">{issue.level}</Badge>
             <Badge variant="neutral">
-              {issue.field_name || "后端未返回字段名"}
+              {issue.field_name || "当前结果未标注字段名"}
             </Badge>
-            <Badge variant="muted">
-              {issue.document_label?.trim() || "后端未返回文档归属"}
-            </Badge>
+            <Badge variant="muted">{renderDocumentLabel(issue)}</Badge>
           </div>
           <p className="text-sm font-black leading-6">{issue.message}</p>
         </div>
@@ -153,7 +155,7 @@ export function ResultsPanel({
               ))}
             </div>
 
-            <ScrollArea className="max-h-[34rem] bg-paper">
+            <ScrollArea className="max-h-[34rem] p-0">
               <div className="space-y-5">
                 {filter === "ALL"
                   ? groups.map((group) => {

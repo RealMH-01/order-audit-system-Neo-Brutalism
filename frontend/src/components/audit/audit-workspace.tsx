@@ -83,6 +83,18 @@ function resolveDefaultDocumentType(detectedType: string): AuditDocumentType {
   if (detectedType === "shipping_instruction") {
     return "shipping_instruction";
   }
+  if (detectedType === "bill_of_lading") {
+    return "bill_of_lading";
+  }
+  if (detectedType === "certificate_of_origin") {
+    return "certificate_of_origin";
+  }
+  if (detectedType === "customs_declaration") {
+    return "customs_declaration";
+  }
+  if (detectedType === "letter_of_credit") {
+    return "letter_of_credit";
+  }
   return "other";
 }
 

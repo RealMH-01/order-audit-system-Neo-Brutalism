@@ -36,6 +36,10 @@ _DOC_TYPE_HINTS = {
     "invoice": {"invoice", "commercial_invoice", "inv"},
     "packing_list": {"packing_list", "packing", "plist"},
     "shipping_instruction": {"shipping_instruction", "shipping", "si"},
+    "bill_of_lading": {"bill_of_lading", "bol", "b_l", "b-l"},
+    "certificate_of_origin": {"certificate_of_origin", "coo", "c_o"},
+    "customs_declaration": {"customs_declaration", "customs", "declaration"},
+    "letter_of_credit": {"letter_of_credit", "lc", "l_c"},
     "po": {"po", "purchase_order"},
 }
 
@@ -579,6 +583,9 @@ class AuditOrchestratorService:
                 level=str(issue.get("level", "YELLOW")).upper(),
                 field_name=str(issue.get("field_name", "unspecified_field")),
                 message=str(issue.get("finding") or issue.get("message", "")),
+                confidence=float(issue.get("confidence")) if issue.get("confidence") is not None else None,
+                suggestion=str(issue.get("suggestion")).strip() if issue.get("suggestion") else None,
+                document_label=str(issue.get("document_label")).strip() if issue.get("document_label") else None,
             )
             for issue in aggregate_result.get("issues", [])
             if isinstance(issue, dict)

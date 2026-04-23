@@ -408,6 +408,9 @@ class AuditIssue(BaseModel):
     level: Literal["RED", "YELLOW", "BLUE"]
     field_name: str
     message: str
+    confidence: float | None = None
+    suggestion: str | None = None
+    document_label: str | None = None
 
 
 class AuditResultResponse(BaseModel):

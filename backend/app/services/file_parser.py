@@ -303,6 +303,14 @@ class FileParserService:
             return "packing_list"
         if "shipping" in name or "si" in name:
             return "shipping_instruction"
+        if "bill_of_lading" in name or "b/l" in name or "bol" in name:
+            return "bill_of_lading"
+        if "certificate_of_origin" in name or "coo" in name:
+            return "certificate_of_origin"
+        if "customs" in name or "declaration" in name:
+            return "customs_declaration"
+        if "letter_of_credit" in name or "_lc" in name or " lc" in name:
+            return "letter_of_credit"
         if extension in {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"}:
             return extension
         return "other"

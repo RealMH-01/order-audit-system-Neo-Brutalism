@@ -115,6 +115,26 @@ Document-specific focus for shipping instruction:
 - Compare shipper, consignee, notify party, ports, Incoterm, cargo description, marks, package count, and booking-related references.
 - Port or consignee changes that alter execution meaning are substantive and should not be treated as harmless wording differences.
 """.strip(),
+    "bill_of_lading": """
+Document-specific focus for bill of lading:
+- Compare shipper, consignee, notify party, vessel or voyage, ports, marks, package count, gross weight, and cargo description.
+- Bill number, consignee, notify party, and port discrepancies should be treated as high-impact shipping risks.
+""".strip(),
+    "certificate_of_origin": """
+Document-specific focus for certificate of origin:
+- Compare exporter, consignee, goods description, quantity, weight, origin declaration, and certificate references against the PO and supporting documents.
+- Origin statement conflicts or certificate reference mismatches should be highlighted clearly.
+""".strip(),
+    "customs_declaration": """
+Document-specific focus for customs declaration:
+- Compare importer or exporter details, HS-related description, quantity, weight, declared value, currency, and declaration references.
+- Quantity, amount, and declaration reference mismatches should be treated as material.
+""".strip(),
+    "letter_of_credit": """
+Document-specific focus for letter of credit:
+- Compare applicant, beneficiary, issuing bank, amount, currency, shipment deadlines, presentation terms, and required document references.
+- Expiry, amount, beneficiary, and presentation-condition mismatches should be called out explicitly.
+""".strip(),
     "generic": """
 Document-specific focus:
 - Audit all key identifiers, parties, product details, quantities, amounts, dates, transport terms, and special instructions visible in the document.
