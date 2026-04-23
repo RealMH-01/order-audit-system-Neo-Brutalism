@@ -1,0 +1,92 @@
+export type AuditDocumentType =
+  | "invoice"
+  | "packing_list"
+  | "shipping_instruction"
+  | "other";
+
+export type AuditFileRecord = {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  detected_type: string;
+  preview_text: string;
+  uploaded_at: string;
+};
+
+export type AuditFileUploadResponse = {
+  file: AuditFileRecord;
+  message: string;
+};
+
+export type AuditDeleteResponse = {
+  file_id: string;
+  message: string;
+};
+
+export type AuditBucketFile = AuditFileRecord & {
+  documentType?: AuditDocumentType;
+  label?: string;
+};
+
+export type AuditStartPayload = {
+  po_file_id: string;
+  target_files: Array<{
+    file_id: string;
+    document_type: AuditDocumentType;
+    label?: string | null;
+  }>;
+  prev_ticket_files: Array<{
+    file_id: string;
+    document_type: AuditDocumentType;
+    label?: string | null;
+  }>;
+  template_file_id: string | null;
+  reference_file_ids: string[];
+  deep_think: boolean;
+};
+
+export type AuditStartResponse = {
+  task_id: string;
+  status: string;
+  message: string;
+};
+
+export type AuditProgressPayload = {
+  task_id: string;
+  status: string;
+  progress_percent: number;
+  message: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuditIssue = {
+  level: "RED" | "YELLOW" | "BLUE";
+  field_name: string;
+  message: string;
+  confidence?: number;
+};
+
+export type AuditResultResponse = {
+  task_id: string;
+  status: string;
+  summary: {
+    red: number;
+    yellow: number;
+    blue: number;
+  };
+  issues: AuditIssue[];
+  message: string;
+};
+
+export type AuditCancelResponse = {
+  task_id: string;
+  status: string;
+  message: string;
+};
+
+export type AuditReportResponse = {
+  task_id: string;
+  message: string;
+};
