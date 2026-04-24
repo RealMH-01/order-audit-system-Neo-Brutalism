@@ -21,6 +21,15 @@ type StreamOptions<T> = {
   onMessage: (payload: T) => void;
 };
 
+type DownloadAuditReportOptions = {
+  token?: string | null;
+};
+
+type DownloadAuditReportResult = {
+  blob: Blob;
+  filename: string;
+};
+
 async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
   if (!response.ok) {
     let detail = "请求失败，请稍后重试。";
@@ -54,6 +63,27 @@ function buildHeaders(token?: string | null): HeadersInit {
 
 function buildAuthHeaders(token?: string | null): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function parseFilenameFromDisposition(
+  contentDisposition: string | null,
+  fallbackFilename: string
+) {
+  if (!contentDisposition) {
+    return fallbackFilename;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+
+  const asciiMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  if (asciiMatch?.[1]) {
+    return asciiMatch[1];
+  }
+
+  return fallbackFilename;
 }
 
 async function request<T>(
@@ -118,6 +148,57 @@ export async function apiUploadFile<T>(
   });
 
   return parseResponse<T>(response);
+}
+
+export async function downloadAuditReport(
+  taskId: string,
+  reportType: "marked" | "detailed" | "zip",
+  options: DownloadAuditReportOptions = {}
+): Promise<DownloadAuditReportResult> {
+  const fallbackFilename = {
+    marked: `audit_marked_${taskId}.xlsx`,
+    detailed: `audit_detailed_${taskId}.xlsx`,
+    zip: `audit_reports_${taskId}.zip`
+  }[reportType];
+
+  const response = await fetch(
+    `${API_BASE_URL}/audit/tasks/${taskId}/reports/${reportType}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: buildAuthHeaders(options.token)
+    }
+  );
+
+  if (!response.ok) {
+    let detail = "报告下载失败，请稍后重试。";
+
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {
+      const rawText = await response.text();
+      if (rawText) {
+        detail = rawText;
+      }
+    }
+
+    const error: ApiError = {
+      status: response.status,
+      detail
+    };
+    throw error;
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: parseFilenameFromDisposition(
+      response.headers.get("Content-Disposition"),
+      fallbackFilename
+    )
+  };
 }
 
 function extractEventData(bufferChunk: string) {

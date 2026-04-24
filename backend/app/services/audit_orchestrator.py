@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
@@ -54,6 +55,25 @@ _DOWNGRADE_ALLOWED_FIELDS = {
 }
 
 _DOWNGRADE_BLOCKED_KEYWORDS = {"buyer", "consignee", "importer", "收货人", "买方"}
+
+
+_REPORT_DOWNLOADS = {
+    "marked": {
+        "bundle_key": "marked_report",
+        "filename": "audit_marked_{task_id}.xlsx",
+        "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+    "detailed": {
+        "bundle_key": "detailed_report",
+        "filename": "audit_detailed_{task_id}.xlsx",
+        "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+    "zip": {
+        "bundle_key": "report_zip",
+        "filename": "audit_reports_{task_id}.zip",
+        "media_type": "application/zip",
+    },
+}
 
 
 class AuditOrchestratorService:
@@ -261,7 +281,7 @@ class AuditOrchestratorService:
 
         task = self._get_task(current_user.id, task_id)
         if task.get("report_bundle"):
-            return AuditReportResponse(task_id=task_id, message="报告已生成，下载接口将在后续轮次接通。")
+            return AuditReportResponse(task_id=task_id, message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。")
         return AuditReportResponse(task_id=task_id, message="报告尚未生成，请先等待审核任务完成。")
 
     def get_history(self, current_user: CurrentUser) -> AuditHistoryListResponse:
@@ -729,6 +749,43 @@ class AuditOrchestratorService:
         if not task or task.get("user_id") != user_id:
             raise AppError("未找到指定审核任务。", status_code=404)
         return task
+
+    def get_report_download(
+        self,
+        current_user: CurrentUser,
+        task_id: str,
+        report_type: str,
+    ) -> tuple[io.BytesIO, str, str]:
+        """从当前进程内的 report_bundle 读取可下载报告。"""
+
+        task = self._get_task(current_user.id, task_id)
+        report_meta = _REPORT_DOWNLOADS.get(report_type)
+        if report_meta is None:
+            raise AppError("不支持的报告类型。", status_code=400)
+
+        report_bundle = task.get("report_bundle")
+        if not isinstance(report_bundle, dict):
+            raise AppError("报告尚未生成或已失效。", status_code=404)
+
+        report_obj = report_bundle.get(report_meta["bundle_key"])
+        if report_obj is None:
+            raise AppError("报告尚未生成或已失效。", status_code=404)
+
+        if isinstance(report_obj, io.BytesIO):
+            report_bytes = report_obj.getvalue()
+        elif isinstance(report_obj, (bytes, bytearray)):
+            report_bytes = bytes(report_obj)
+        else:
+            raise AppError("报告尚未生成或已失效。", status_code=404)
+
+        if not report_bytes:
+            raise AppError("报告尚未生成或已失效。", status_code=404)
+
+        return (
+            io.BytesIO(report_bytes),
+            str(report_meta["filename"]).format(task_id=task_id),
+            str(report_meta["media_type"]),
+        )
 
     @staticmethod
     def _normalize_affiliate_text(value: str) -> str:

@@ -1,10 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Download,
-  ExternalLink,
   Loader2,
   Play,
   ScanSearch,
@@ -18,6 +17,7 @@ import {
   apiPost,
   apiPut,
   apiUploadFile,
+  downloadAuditReport,
   getStoredAccessToken,
   streamJsonEvents
 } from "@/lib/api";
@@ -32,6 +32,7 @@ import type {
   AuditFileUploadResponse,
   AuditProgressPayload,
   AuditReportResponse,
+  AuditReportType,
   AuditResultResponse,
   AuditStartPayload,
   AuditStartResponse
@@ -158,37 +159,58 @@ function resolveBucketName(key: BucketKey) {
   }
 }
 
-function resolveReportState(message: string | null) {
+const REPORT_DOWNLOAD_BUTTONS: Array<{
+  type: AuditReportType;
+  label: string;
+}> = [
+  { type: "marked", label: "下载标记版 Excel" },
+  { type: "detailed", label: "下载详情版 Excel" },
+  { type: "zip", label: "下载全部报告 ZIP" }
+];
+
+function resolveReportState(
+  message: string | null,
+  taskId: string | null,
+  taskStatus: string
+) {
+  if (!taskId) {
+    return {
+      kind: "unavailable" as const,
+      title: "报告暂不可下载",
+      description: "当前还没有可用任务，请先运行一次审核。"
+    };
+  }
+
+  if (message?.includes("已失效")) {
+    return {
+      kind: "expired" as const,
+      title: "报告已失效",
+      description: message
+    };
+  }
+
+  if (message?.includes("尚未生成")) {
+    return {
+      kind: "pending" as const,
+      title: "报告尚未生成",
+      description: message
+    };
+  }
+
+  if (taskStatus === "completed") {
+    return {
+      kind: "download" as const,
+      title: "报告已可下载",
+      description:
+        "当前进程中的报告 bundle 已就绪，可直接下载标记版 Excel、详情版 Excel 和 ZIP。"
+    };
+  }
+
   if (!message) {
     return {
       kind: "idle" as const,
       title: "尚未获取报告状态",
       description: "审核完成后，这里会显示报告状态。"
-    };
-  }
-
-  if (/^https?:\/\//i.test(message) || message.startsWith("/")) {
-    return {
-      kind: "download" as const,
-      title: "报告已可下载",
-      description: "当前后端已经返回可用下载地址，你可以直接打开或下载。",
-      href: message
-    };
-  }
-
-  if (message.includes("下载接口将在后续轮次接通")) {
-    return {
-      kind: "placeholder" as const,
-      title: "报告已生成，但下载仍是占位",
-      description: message
-    };
-  }
-
-  if (message.includes("尚未生成")) {
-    return {
-      kind: "pending" as const,
-      title: "报告尚未生成",
-      description: message
     };
   }
 
@@ -232,6 +254,12 @@ export function AuditWorkspace() {
   const [resultFilter, setResultFilter] = useState<ResultFilter>("ALL");
   const [reportLoading, setReportLoading] = useState(false);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [reportDownloadError, setReportDownloadError] = useState<string | null>(null);
+  const [downloadingReports, setDownloadingReports] = useState<Record<AuditReportType, boolean>>({
+    marked: false,
+    detailed: false,
+    zip: false
+  });
 
   const provider = useMemo(
     () => resolveProviderFromModel(profile?.selected_model ?? "gpt-4o"),
@@ -245,7 +273,10 @@ export function AuditWorkspace() {
     : auditLocked
       ? "审核进行中时会锁定文件区，避免本轮任务和当前文件状态互相污染。"
       : null;
-  const reportState = useMemo(() => resolveReportState(reportMessage), [reportMessage]);
+  const reportState = useMemo(
+    () => resolveReportState(reportMessage, taskId, taskStatus),
+    [reportMessage, taskId, taskStatus]
+  );
 
   const clearRunState = useCallback((nextMessage?: string) => {
     progressAbortRef.current?.abort();
@@ -260,6 +291,12 @@ export function AuditWorkspace() {
     setResultFilter("ALL");
     setReportMessage(null);
     setReportLoading(false);
+    setReportDownloadError(null);
+    setDownloadingReports({
+      marked: false,
+      detailed: false,
+      zip: false
+    });
     if (nextMessage) {
       setWorkspaceMessage(nextMessage);
     }
@@ -654,6 +691,7 @@ export function AuditWorkspace() {
 
     setReportLoading(true);
     setWorkspaceError(null);
+    setReportDownloadError(null);
 
     try {
       const { data } = await apiGet<AuditReportResponse>(`/audit/report/${taskId}`, {
@@ -666,6 +704,42 @@ export function AuditWorkspace() {
       setReportLoading(false);
     }
   }, [taskId, token]);
+
+  const handleDownloadReport = useCallback(
+    async (reportType: AuditReportType) => {
+      if (!token || !taskId) {
+        setReportDownloadError("报告暂不可下载，请先运行一次审核。");
+        return;
+      }
+
+      setReportDownloadError(null);
+      setWorkspaceError(null);
+      setDownloadingReports((previous) => ({ ...previous, [reportType]: true }));
+
+      try {
+        const { blob, filename } = await downloadAuditReport(taskId, reportType, {
+          token
+        });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.URL.revokeObjectURL(objectUrl);
+      } catch (error) {
+        const detail = normalizeError(error, "下载报告失败，请稍后重试。");
+        setReportDownloadError(detail);
+        if (typeof error === "object" && error && "status" in error && error.status === 404) {
+          setReportMessage("报告已失效，请重新运行审核。");
+        }
+      } finally {
+        setDownloadingReports((previous) => ({ ...previous, [reportType]: false }));
+      }
+    },
+    [taskId, token]
+  );
 
   const handleAcceptDisclaimer = useCallback(async () => {
     if (!token) {
@@ -1033,17 +1107,35 @@ export function AuditWorkspace() {
                   {reportLoading ? "读取中..." : "刷新报告状态"}
                 </Button>
 
-                {reportState.kind === "download" && reportState.href ? (
-                  <a
-                    href={reportState.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="neo-button-base h-12 w-auto border-4 border-ink bg-acid px-5 text-sm text-ink shadow-neo-md"
-                  >
-                    <ExternalLink size={18} strokeWidth={3} />
-                    打开下载入口
-                  </a>
-                ) : null}
+                {reportState.kind === "download"
+                  ? REPORT_DOWNLOAD_BUTTONS.map((item) => (
+                      <Button
+                        key={item.type}
+                        variant={item.type === "zip" ? "primary" : "outline"}
+                        onClick={() => void handleDownloadReport(item.type)}
+                        disabled={downloadingReports[item.type]}
+                      >
+                        {downloadingReports[item.type] ? (
+                          <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+                        ) : (
+                          <Download size={18} strokeWidth={3} />
+                        )}
+                        {downloadingReports[item.type] ? "下载中..." : item.label}
+                      </Button>
+                    ))
+                  : null}
+              </div>
+
+              {reportDownloadError ? (
+                <div className="issue-red p-4">
+                  <p className="text-sm font-bold leading-6">{reportDownloadError}</p>
+                </div>
+              ) : null}
+
+              <div className="issue-blue p-4">
+                <p className="text-sm font-bold leading-6">
+                  Round 6 报告下载仅在当前进程生命周期内有效；后端重启后如需再次下载，请重新运行审核。
+                </p>
               </div>
             </CardContent>
           </Card>

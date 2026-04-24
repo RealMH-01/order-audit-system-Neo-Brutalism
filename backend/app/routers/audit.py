@@ -18,6 +18,20 @@ from app.services.audit_orchestrator import AuditOrchestratorService
 router = APIRouter()
 
 
+def _build_report_download_response(
+    current_user: CurrentUser,
+    service: AuditOrchestratorService,
+    task_id: str,
+    report_type: str,
+) -> StreamingResponse:
+    file_obj, filename, media_type = service.get_report_download(current_user, task_id, report_type)
+    return StreamingResponse(
+        file_obj,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/capabilities", response_model=AuditCapability, summary="审核能力说明")
 async def get_audit_capabilities(
     service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
@@ -71,6 +85,33 @@ async def get_audit_report(
     service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
 ) -> AuditReportResponse:
     return service.get_report_placeholder(current_user, task_id)
+
+
+@router.get("/tasks/{task_id}/reports/marked")
+async def download_marked_report(
+    task_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
+) -> StreamingResponse:
+    return _build_report_download_response(current_user, service, task_id, "marked")
+
+
+@router.get("/tasks/{task_id}/reports/detailed")
+async def download_detailed_report(
+    task_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
+) -> StreamingResponse:
+    return _build_report_download_response(current_user, service, task_id, "detailed")
+
+
+@router.get("/tasks/{task_id}/reports/zip")
+async def download_report_zip(
+    task_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
+) -> StreamingResponse:
+    return _build_report_download_response(current_user, service, task_id, "zip")
 
 
 @router.get("/history", response_model=AuditHistoryListResponse)

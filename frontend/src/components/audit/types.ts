@@ -97,3 +97,5 @@ export type AuditReportResponse = {
   task_id: string;
   message: string;
 };
+
+export type AuditReportType = "marked" | "detailed" | "zip";
