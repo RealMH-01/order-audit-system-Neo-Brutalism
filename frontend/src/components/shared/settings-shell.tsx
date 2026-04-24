@@ -231,17 +231,20 @@ export function SettingsShell() {
         state.provider === "openai"
           ? {
               provider: "openai",
+              model: state.selectedModel,
               use_saved_key: !state.openaiApiKey.trim(),
               api_key: state.openaiApiKey.trim() || null
             }
           : state.provider === "deepseek"
             ? {
                 provider: "deepseek",
+                model: state.selectedModel,
                 use_saved_key: !state.deepseekApiKey.trim(),
                 api_key: state.deepseekApiKey.trim() || null
               }
             : {
                 provider: "zhipuai",
+                model: state.selectedModel,
                 use_saved_key: !state.zhipuApiKey.trim(),
                 api_key: state.zhipuApiKey.trim() || null
               };
