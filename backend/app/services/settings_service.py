@@ -1,10 +1,11 @@
-"""提供 profile/settings 的最小读写闭环。"""
+"""Profile and settings service with Supabase fallback orchestration."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from app.config import Settings
+from app.db.repository import SupabaseRepository
 from app.db.supabase_client import ApiKeyCipher
 from app.errors import AppError
 from app.models.schemas import (
@@ -17,18 +18,30 @@ from app.models.schemas import (
 )
 from app.services.runtime_store import RuntimeStore
 
+API_KEY_FIELDS = (
+    "deepseek_api_key",
+    "zhipu_api_key",
+    "zhipu_ocr_api_key",
+    "openai_api_key",
+)
+
 
 class SettingsService:
-    """管理用户 profile、免责声明状态和 API key 基础检测。"""
+    """Manage profile reads and writes while keeping RuntimeStore fallback."""
 
-    def __init__(self, settings: Settings, store: RuntimeStore, cipher: ApiKeyCipher) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: RuntimeStore,
+        cipher: ApiKeyCipher,
+        repo: SupabaseRepository | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
         self.cipher = cipher
+        self.repo = repo
 
     def get_profile(self, current_user: CurrentUser) -> ProfileResponse:
-        """读取当前用户 profile，并将密钥字段转换为布尔标记。"""
-
         profile = self._get_profile_record(current_user.id)
         return self._to_profile_response(profile)
 
@@ -37,18 +50,11 @@ class SettingsService:
         current_user: CurrentUser,
         payload: ProfileUpdateRequest,
     ) -> ProfileResponse:
-        """更新当前用户 profile，并在写入前处理 API key 加密。"""
-
         profile = self._get_profile_record(current_user.id)
         updates = payload.model_dump(exclude_unset=True)
         api_key_fields = {
             field_name: updates.pop(field_name)
-            for field_name in (
-                "deepseek_api_key",
-                "zhipu_api_key",
-                "zhipu_ocr_api_key",
-                "openai_api_key",
-            )
+            for field_name in API_KEY_FIELDS
             if field_name in updates
         }
 
@@ -59,7 +65,11 @@ class SettingsService:
             self._apply_api_key_updates(profile, api_key_fields)
 
         profile["updated_at"] = datetime.now(timezone.utc)
-        self.store.profiles[current_user.id] = profile
+        if self.repo is not None:
+            profile = self.repo.update_profile(current_user.id, profile)
+            self.store.profiles[current_user.id] = profile
+        else:
+            profile = self._save_profile(current_user.id, profile)
         return self._to_profile_response(profile)
 
     def update_disclaimer(
@@ -67,12 +77,18 @@ class SettingsService:
         current_user: CurrentUser,
         payload: DisclaimerUpdateRequest,
     ) -> ProfileResponse:
-        """更新免责声明确认状态。"""
+        if self.repo is not None:
+            profile = self.repo.set_disclaimer_accepted(
+                current_user.id,
+                payload.disclaimer_accepted,
+            )
+            self.store.profiles[current_user.id] = profile
+            return self._to_profile_response(profile)
 
         profile = self._get_profile_record(current_user.id)
         profile["disclaimer_accepted"] = payload.disclaimer_accepted
         profile["updated_at"] = datetime.now(timezone.utc)
-        self.store.profiles[current_user.id] = profile
+        profile = self._save_profile(current_user.id, profile)
         return self._to_profile_response(profile)
 
     def test_connection(
@@ -80,8 +96,6 @@ class SettingsService:
         current_user: CurrentUser,
         payload: ConnectionTestRequest,
     ) -> ConnectionTestResponse:
-        """进行本地层面的最小连接测试，不做真实远程联调。"""
-
         profile = self._get_profile_record(current_user.id)
         field_name = {
             "openai": "openai_api_key",
@@ -95,11 +109,11 @@ class SettingsService:
             raw_key = profile.get(field_name)
 
         if not raw_key:
-            raise AppError("没有可用于测试的 API key，请先保存或临时传入。", status_code=400)
+            raise AppError("No API key is available for this test.", status_code=400)
 
         return ConnectionTestResponse(
             success=True,
-            message="已通过本地配置校验，当前环境未执行远程连通测试。",
+            message="Local validation passed. Remote provider connectivity is not checked in this round.",
         )
 
     def _apply_api_key_updates(
@@ -109,7 +123,7 @@ class SettingsService:
     ) -> None:
         non_empty_values = {key: value for key, value in updates.items() if value not in (None, "")}
         if non_empty_values and not self.cipher.is_configured():
-            raise AppError("缺少 ENCRYPTION_KEY，暂时不能安全保存 API key。", status_code=500)
+            raise AppError("ENCRYPTION_KEY is required before storing API keys.", status_code=500)
 
         if non_empty_values:
             encrypted = self.cipher.encrypt_profile_api_keys(non_empty_values)
@@ -121,9 +135,24 @@ class SettingsService:
                 profile[field_name] = None
 
     def _get_profile_record(self, user_id: str) -> dict[str, object]:
+        if self.repo is not None:
+            profile = self.repo.get_profile(user_id)
+            if profile is not None:
+                self.store.profiles[user_id] = profile
+                return profile
+
         profile = self.store.profiles.get(user_id)
         if not profile:
-            raise AppError("当前用户资料不存在，请重新登录后再试。", status_code=404)
+            raise AppError("Current user profile was not found.", status_code=404)
+        return profile
+
+    def _save_profile(self, user_id: str, profile: dict[str, object]) -> dict[str, object]:
+        if self.repo is not None:
+            if self.repo.get_profile(user_id) is None:
+                profile = self.repo.upsert_profile(user_id, profile)
+            else:
+                profile = self.repo.update_profile(user_id, profile)
+        self.store.profiles[user_id] = profile
         return profile
 
     @staticmethod

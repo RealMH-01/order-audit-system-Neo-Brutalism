@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.config import Settings
+from app.db.repository import SupabaseRepository
 from app.errors import AppError
 from app.models.schemas import (
     AuthLoginRequest,
@@ -17,13 +19,21 @@ from app.models.schemas import (
 )
 from app.services.runtime_store import RuntimeStore
 
+logger = logging.getLogger(__name__)
+
 
 class AuthService:
     """提供注册、登录和当前用户读取的最小闭环。"""
 
-    def __init__(self, settings: Settings, store: RuntimeStore) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: RuntimeStore,
+        repo: SupabaseRepository | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
+        self.repo = repo
 
     def register(self, payload: AuthRegisterRequest) -> AuthTokenResponse:
         """注册用户并创建默认 profile。"""
@@ -32,18 +42,21 @@ class AuthService:
         if email in self.store.user_ids_by_email:
             raise AppError("该邮箱已注册，请直接登录。", status_code=409)
 
-        user_id = str(uuid4())
         role = "admin" if not self.store.users_by_id else "user"
+        password_hash = self._hash_password(payload.password)
         created_at = datetime.now(timezone.utc)
+        user_id = str(uuid4())
+
         self.store.users_by_id[user_id] = {
             "id": user_id,
             "email": email,
-            "password_hash": self._hash_password(payload.password),
+            "password_hash": password_hash,
             "role": role,
             "created_at": created_at,
         }
         self.store.user_ids_by_email[email] = user_id
-        self.store.profiles[user_id] = {
+
+        profile = {
             "id": user_id,
             "display_name": payload.display_name,
             "selected_model": self.settings.default_text_model,
@@ -61,6 +74,18 @@ class AuthService:
             "created_at": created_at,
             "updated_at": created_at,
         }
+        self.store.profiles[user_id] = profile
+        if self.repo is not None:
+            # Round 4 保持内存态 auth；若 profiles.id 依赖 auth.users，
+            # 注册时 Supabase profile 初始化失败不阻断注册，完整 Supabase Auth 留到后续轮次处理。
+            try:
+                persisted_profile = self.repo.upsert_profile(user_id, profile)
+            except AppError as exc:
+                logger.warning("Profile initialization in Supabase failed during register: %s", exc.message)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Unexpected Supabase profile initialization failure during register: %s", exc)
+            else:
+                self.store.profiles[user_id] = persisted_profile
         return self._issue_token(user_id)
 
     def login(self, payload: AuthLoginRequest) -> AuthTokenResponse:
@@ -86,6 +111,7 @@ class AuthService:
 
         user_record = self.store.users_by_id.get(user_id)
         profile_record = self.store.profiles.get(user_id)
+
         if not user_record or not profile_record:
             raise AppError("当前用户不存在或资料未初始化。", status_code=401)
 

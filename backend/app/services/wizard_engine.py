@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.config import Settings
+from app.db.repository import SupabaseRepository
 from app.db.supabase_client import ApiKeyCipher, EncryptionConfigurationError
 from app.errors import AppError
 from app.models.schemas import (
@@ -92,11 +93,13 @@ class WizardEngineService:
         store: RuntimeStore,
         llm_client: LLMClientService,
         cipher: ApiKeyCipher,
+        repo: SupabaseRepository | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.llm_client = llm_client
         self.cipher = cipher
+        self.repo = repo
 
     def get_capability(self) -> WizardCapability:
         """返回当前引导模块能力说明。"""
@@ -206,7 +209,7 @@ class WizardEngineService:
         profile["company_affiliates_roles"] = affiliate_roles
         profile["wizard_completed"] = True
         profile["updated_at"] = datetime.now(timezone.utc)
-        self.store.profiles[current_user.id] = profile
+        profile = self._save_profile(current_user.id, profile)
 
         session.is_complete = True
         session.generated_rules = final_rules
@@ -231,7 +234,7 @@ class WizardEngineService:
             profile["company_affiliates_roles"] = list(payload.generated_affiliate_roles)
         profile["wizard_completed"] = True
         profile["updated_at"] = datetime.now(timezone.utc)
-        self.store.profiles[current_user.id] = profile
+        profile = self._save_profile(current_user.id, profile)
 
         return WizardSkipResponse(
             message="已跳过 AI 引导，并保存当前规则配置。",
@@ -342,6 +345,12 @@ class WizardEngineService:
     def _get_profile(self, user_id: str) -> dict[str, object]:
         """读取当前用户 profile。"""
 
+        if self.repo is not None:
+            profile = self.repo.get_profile(user_id)
+            if profile:
+                self.store.profiles[user_id] = profile
+                return profile
+
         profile = self.store.profiles.get(user_id)
         if not profile:
             raise AppError("当前用户资料不存在，请重新登录后再试。", status_code=404)
@@ -357,6 +366,12 @@ class WizardEngineService:
         if not selected:
             return None, None
 
+        if self.repo is not None:
+            template = self.repo.get_template(selected)
+            if template:
+                self.store.templates[str(template["id"])] = template
+                return str(template.get("name") or selected), str(template.get("rules_text") or "")
+
         if selected in self.store.templates:
             template = self.store.templates[selected]
             return str(template.get("name") or selected), str(template.get("rules_text") or "")
@@ -366,6 +381,36 @@ class WizardEngineService:
                 return str(template.get("name")), str(template.get("rules_text") or "")
 
         return selected, None
+
+    def _save_profile(self, user_id: str, profile: dict[str, object]) -> dict[str, object]:
+        if self.repo is not None:
+            updates = {
+                "active_custom_rules": profile.get("active_custom_rules", []),
+                "company_affiliates": profile.get("company_affiliates", []),
+                "company_affiliates_roles": profile.get("company_affiliates_roles", []),
+                "wizard_completed": profile.get("wizard_completed", False),
+                "updated_at": profile.get("updated_at"),
+            }
+            if self.repo.get_profile(user_id) is None:
+                profile = self.repo.upsert_profile(user_id, profile)
+            else:
+                if bool(profile.get("wizard_completed")):
+                    profile = self.repo.mark_wizard_completed(
+                        user_id,
+                        list(profile.get("active_custom_rules", [])),
+                    )
+                    profile = self.repo.update_profile(
+                        user_id,
+                        {
+                            "company_affiliates": updates["company_affiliates"],
+                            "company_affiliates_roles": updates["company_affiliates_roles"],
+                            "updated_at": updates["updated_at"],
+                        },
+                    )
+                else:
+                    profile = self.repo.update_profile(user_id, updates)
+        self.store.profiles[user_id] = profile
+        return profile
 
     def _resolve_api_key(self, profile: dict[str, object], provider: str) -> str | None:
         """根据 provider 读取并尽量解密 API key。"""

@@ -1,6 +1,7 @@
 """Database helpers, bootstrap logic and secret-storage preparation."""
 
 from app.db.init_data import DatabaseInitializer
+from app.db.repository import SupabaseRepository, get_data_store
 from app.db.supabase_client import (
     ApiKeyCipher,
     EncryptionConfigurationError,
@@ -14,6 +15,8 @@ __all__ = [
     "DatabaseInitializer",
     "EncryptionConfigurationError",
     "get_api_key_cipher",
+    "get_data_store",
     "get_supabase_client",
     "is_supabase_configured",
+    "SupabaseRepository",
 ]

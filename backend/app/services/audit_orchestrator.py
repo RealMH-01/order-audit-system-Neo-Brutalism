@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from app.config import Settings
+from app.db.repository import SupabaseRepository
 from app.errors import AppError
 from app.models.schemas import (
     AuditCapability,
@@ -66,6 +67,7 @@ class AuditOrchestratorService:
         report_generator: ReportGeneratorService,
         token_utils: TokenUtilityService,
         store: RuntimeStore,
+        repo: SupabaseRepository | None = None,
     ) -> None:
         self.settings = settings
         self.file_parser = file_parser
@@ -73,6 +75,7 @@ class AuditOrchestratorService:
         self.report_generator = report_generator
         self.token_utils = token_utils
         self.store = store
+        self.repo = repo
         self.audit_engine = AuditEngineService()
 
     def get_capability(self) -> AuditCapability:
@@ -115,7 +118,7 @@ class AuditOrchestratorService:
         for file_id in payload.reference_file_ids:
             self.file_parser.get_user_file(current_user.id, file_id)
 
-        profile = self.store.profiles.get(current_user.id, {})
+        profile = self._get_profile(current_user.id)
         task_id = str(uuid4())
         now = datetime.now(timezone.utc)
         self.store.audit_tasks[task_id] = {
@@ -152,7 +155,7 @@ class AuditOrchestratorService:
         """执行完整审核主干：解析 -> 第一轮审核 -> 自定义规则 -> 交叉比对 -> 报告。"""
 
         task = self._get_task(user_id, task_id)
-        profile = self.store.profiles.get(user_id, {})
+        profile = self._get_profile(user_id)
         company_affiliates = list(profile.get("company_affiliates", []))
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
@@ -275,16 +278,25 @@ class AuditOrchestratorService:
                 deep_think_used=bool(item["deep_think_used"]),
                 created_at=item.get("created_at"),
             )
-            for item in self.store.audit_history.get(current_user.id, [])
+            for item in (
+                self.repo.list_audit_history(current_user.id)
+                if self.repo is not None
+                else self.store.audit_history.get(current_user.id, [])
+            )
         ]
         return AuditHistoryListResponse(items=items)
 
     def get_history_detail(self, current_user: CurrentUser, history_id: str) -> AuditHistoryDetailResponse:
         """读取单条历史记录。"""
 
-        for item in self.store.audit_history.get(current_user.id, []):
-            if str(item["id"]) == history_id:
+        if self.repo is not None:
+            item = self.repo.get_audit_history(history_id, current_user.id)
+            if item is not None:
                 return AuditHistoryDetailResponse(item=item)
+        else:
+            for item in self.store.audit_history.get(current_user.id, []):
+                if str(item["id"]) == history_id:
+                    return AuditHistoryDetailResponse(item=item)
         raise AppError("未找到指定审核历史记录。", status_code=404)
 
     async def _run_single_target_audit(
@@ -564,6 +576,9 @@ class AuditOrchestratorService:
                 "updated_at": datetime.now(timezone.utc),
             }
             self.store.audit_history.setdefault(user_id, []).insert(0, history_item)
+            if self.repo is not None:
+                persisted_history = self.repo.create_audit_history(user_id, history_item)
+                self.store.audit_history[user_id][0] = persisted_history
         except asyncio.CancelledError:
             await self._finalize_cancel(task)
         except AppError as exc:
@@ -697,6 +712,15 @@ class AuditOrchestratorService:
             message="任务已取消，未生成正式审核结果。",
         )
         task["updated_at"] = datetime.now(timezone.utc)
+
+    def _get_profile(self, user_id: str) -> dict[str, Any]:
+        if self.repo is not None:
+            profile = self.repo.get_profile(user_id)
+            if profile is not None:
+                self.store.profiles[user_id] = profile
+                return profile
+
+        return self.store.profiles.get(user_id, {})
 
     def _get_task(self, user_id: str, task_id: str) -> dict[str, object]:
         """按用户读取任务。"""
