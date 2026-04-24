@@ -225,7 +225,7 @@ class _RestGoTrueClient:
             json_body=body,
         )
         return _AuthObject(
-            user=self._build_user(payload.get("user") if isinstance(payload, dict) else None or payload),
+            user=self._build_user(payload),
             session=self._build_session(payload),
         )
 
