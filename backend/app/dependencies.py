@@ -97,9 +97,16 @@ def get_settings_service(
     settings: Settings = Depends(get_app_settings),
     store: RuntimeStore = Depends(get_runtime_state),
     cipher: ApiKeyCipher = Depends(get_api_cipher),
+    llm_client: LLMClientService = Depends(get_llm_client_service),
     repo: SupabaseRepository | None = Depends(get_repository),
 ) -> SettingsService:
-    return SettingsService(settings=settings, store=store, cipher=cipher, repo=repo)
+    return SettingsService(
+        settings=settings,
+        store=store,
+        cipher=cipher,
+        llm_client=llm_client,
+        repo=repo,
+    )
 
 
 def get_audit_orchestrator_service(

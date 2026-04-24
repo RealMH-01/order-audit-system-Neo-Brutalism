@@ -164,6 +164,7 @@ class ConnectionTestRequest(BaseModel):
     provider: Literal["openai", "deepseek", "zhipuai", "zhipu-ocr"]
     use_saved_key: bool = True
     api_key: str | None = None
+    model: str | None = None
 
 
 class ConnectionTestResponse(BaseModel):
@@ -171,6 +172,7 @@ class ConnectionTestResponse(BaseModel):
 
     success: bool
     message: str
+    response_preview: str | None = None
 
 
 class IndustryTemplateSeed(BaseModel):
