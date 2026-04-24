@@ -168,12 +168,167 @@ class RestSupabaseTable:
         return str(value)
 
 
+class _AuthObject:
+    """Lightweight container for auth payloads returned by GoTrue (user/session)."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _RestGoTrueClient:
+    """Minimal GoTrue client implemented on top of Supabase's /auth/v1 REST API.
+
+    Supports only the three operations AuthService needs:
+      * sign_up({"email", "password", "options": {"data": {...}}})
+      * sign_in_with_password({"email", "password"})
+      * get_user(jwt)
+
+    Return shape is intentionally compatible with supabase-py's AuthResponse/UserResponse:
+    the returned object exposes `.user` (with `.id`, `.email`) and, for sign operations,
+    `.session` (with `.access_token`).
+    """
+
+    def __init__(self, settings: Settings, anon_key: str) -> None:
+        self.settings = settings
+        self.anon_key = anon_key
+
+    # ----- sign_up ------------------------------------------------------
+
+    def sign_up(self, credentials: dict[str, Any]) -> Any:
+        email = credentials.get("email")
+        password = credentials.get("password")
+        options = credentials.get("options") or {}
+        data = options.get("data") if isinstance(options, dict) else None
+
+        body: dict[str, Any] = {"email": email, "password": password}
+        if data:
+            body["data"] = data
+
+        payload = self._request("POST", "/auth/v1/signup", json_body=body)
+        return _AuthObject(
+            user=self._build_user(payload),
+            session=self._build_session(payload),
+        )
+
+    # ----- sign_in_with_password ---------------------------------------
+
+    def sign_in_with_password(self, credentials: dict[str, Any]) -> Any:
+        body = {
+            "email": credentials.get("email"),
+            "password": credentials.get("password"),
+        }
+        payload = self._request(
+            "POST",
+            "/auth/v1/token",
+            params={"grant_type": "password"},
+            json_body=body,
+        )
+        return _AuthObject(
+            user=self._build_user(payload.get("user") if isinstance(payload, dict) else None or payload),
+            session=self._build_session(payload),
+        )
+
+    # ----- get_user -----------------------------------------------------
+
+    def get_user(self, jwt: str | None = None) -> Any:
+        if not jwt:
+            return None
+        try:
+            payload = self._request(
+                "GET",
+                "/auth/v1/user",
+                extra_headers={"Authorization": f"Bearer {jwt}"},
+                override_auth=True,
+            )
+        except AppError:
+            return None
+        if not payload:
+            return None
+        return _AuthObject(user=self._build_user(payload))
+
+    # ----- internals ----------------------------------------------------
+
+    def _build_user(self, payload: Any) -> Any | None:
+        if not isinstance(payload, dict):
+            return None
+        user_dict = payload.get("user") if "user" in payload and isinstance(payload.get("user"), dict) else payload
+        if not isinstance(user_dict, dict):
+            return None
+        user_id = user_dict.get("id")
+        email = user_dict.get("email")
+        if not user_id:
+            return None
+        return _AuthObject(
+            id=str(user_id),
+            email=email,
+            user_metadata=user_dict.get("user_metadata") or {},
+        )
+
+    def _build_session(self, payload: Any) -> Any | None:
+        if not isinstance(payload, dict):
+            return None
+        # sign_up returns session at top level; token endpoint returns tokens at top level too.
+        access_token = payload.get("access_token")
+        if not access_token and isinstance(payload.get("session"), dict):
+            access_token = payload["session"].get("access_token")
+        if not access_token:
+            return None
+        return _AuthObject(access_token=access_token)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json_body: Any = None,
+        extra_headers: dict[str, str] | None = None,
+        override_auth: bool = False,
+    ) -> Any:
+        if not self.settings.supabase_url or not self.anon_key:
+            raise AppError("Supabase is not configured.", status_code=500)
+
+        headers = {"apikey": self.anon_key}
+        if not override_auth:
+            headers["Authorization"] = f"Bearer {self.anon_key}"
+        if json_body is not None:
+            headers["Content-Type"] = "application/json"
+        if extra_headers:
+            headers.update(extra_headers)
+
+        url = f"{self.settings.supabase_url.rstrip('/')}{path}"
+        response = httpx.request(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json=json_body,
+            timeout=30.0,
+            trust_env=False,
+        )
+        if response.status_code >= 400:
+            detail = response.text.strip() or response.reason_phrase
+            raise AppError(f"Supabase auth request failed: {detail}", status_code=response.status_code)
+        if not response.text.strip():
+            return {}
+        try:
+            return response.json()
+        except Exception:
+            return {}
+
+
 class RestSupabaseClient:
     """HTTPX-based fallback client compatible with the repository usage in this project."""
 
     def __init__(self, settings: Settings, access_key: str) -> None:
         self.settings = settings
         self.access_key = access_key
+        # Auth requests always go through the anon key (GoTrue rejects service_role
+        # for end-user sign-up flows). When the anon key is absent we still instantiate
+        # the wrapper; it will raise a clear error only if auth methods are actually used.
+        anon_key = settings.supabase_anon_key or access_key
+        self.auth = _RestGoTrueClient(settings=settings, anon_key=anon_key)
 
     def table(self, table_name: str) -> RestSupabaseTable:
         return RestSupabaseTable(self, table_name)
@@ -263,6 +418,49 @@ def get_supabase_client(use_service_role: bool = True) -> SupabaseClient | RestS
 def is_supabase_configured(settings: Settings | None = None) -> bool:
     effective_settings = settings or get_settings()
     return bool(effective_settings.supabase_url and effective_settings.supabase_service_role_key)
+
+
+@lru_cache
+def get_supabase_auth_client() -> SupabaseClient | RestSupabaseClient | None:
+    """Return a Supabase client dedicated to GoTrue auth operations (uses anon key).
+
+    Supabase Auth (GoTrue) expects the project anon key in the `apikey` header for
+    sign-up / sign-in / token verification. We keep this client separate from the
+    service-role client used by SupabaseRepository so RLS-sensitive data access
+    remains service-role while auth flows stay on the anon path.
+    """
+
+    settings = get_settings()
+    access_key = settings.supabase_anon_key
+    if not settings.supabase_url or not access_key:
+        return None
+
+    if access_key.startswith("sb_"):
+        return RestSupabaseClient(settings=settings, access_key=access_key)
+
+    if create_client is None:
+        return RestSupabaseClient(settings=settings, access_key=access_key)
+
+    try:
+        return create_client(settings.supabase_url, access_key)
+    except Exception:
+        return RestSupabaseClient(settings=settings, access_key=access_key)
+
+
+def is_supabase_auth_available(settings: Settings | None = None) -> bool:
+    """Return True when Supabase Auth (GoTrue) credentials are present.
+
+    Supabase Auth requires at minimum a project URL and the anon key
+    (used as the apikey header on GoTrue REST calls). The service-role key
+    alone is not sufficient because GoTrue rejects service_role tokens for
+    sign-up / sign-in flows. When this function returns False the backend
+    transparently falls back to the legacy in-memory auth path.
+    """
+
+    effective_settings = settings or get_settings()
+    if not effective_settings.supabase_url:
+        return False
+    return bool(effective_settings.supabase_anon_key)
 
 
 @lru_cache
