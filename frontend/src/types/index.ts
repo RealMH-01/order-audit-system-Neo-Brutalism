@@ -12,6 +12,8 @@ export type ApiError = {
 export type AuthUser = {
   id: string;
   email: string;
+  display_name?: string | null;
+  role: "user" | "admin";
 };
 
 export type AuthState = {
@@ -63,4 +65,3 @@ export type AuditContextValue = {
   dispatch: Dispatch<AuditAction>;
   reset: () => void;
 };
-

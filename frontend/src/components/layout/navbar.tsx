@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Menu, Sparkles, X } from "lucide-react";
+import { LogOut, Menu, Sparkles, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { clearStoredAccessToken } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -17,7 +20,17 @@ const navItems = [
 ];
 
 export function Navbar() {
+  const router = useRouter();
+  const { state, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const isAuthenticated = state.status === "authenticated" && state.user !== null;
+
+  const handleLogout = () => {
+    clearStoredAccessToken();
+    signOut();
+    setOpen(false);
+    router.replace("/login");
+  };
 
   return (
     <header className="relative z-20 border-b-4 border-ink bg-canvas">
@@ -45,6 +58,12 @@ export function Navbar() {
               {item.label}
             </Link>
           ))}
+          {isAuthenticated ? (
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut size={18} strokeWidth={3} />
+              退出登录
+            </Button>
+          ) : null}
         </nav>
 
         <div className="flex items-center gap-3">
@@ -77,6 +96,12 @@ export function Navbar() {
               {item.label}
             </Link>
           ))}
+          {isAuthenticated ? (
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut size={18} strokeWidth={3} />
+              退出登录
+            </Button>
+          ) : null}
         </nav>
       </div>
     </header>

@@ -1,10 +1,12 @@
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { AuditWorkspace } from "@/components/audit/audit-workspace";
 
 export default function AuditPage() {
   return (
-    <main className="page-shell">
-      <AuditWorkspace />
-    </main>
+    <AuthGuard>
+      <main className="page-shell">
+        <AuditWorkspace />
+      </main>
+    </AuthGuard>
   );
 }
-
