@@ -15,8 +15,12 @@ except Exception:  # pragma: no cover
 _MODEL_TOKEN_LIMITS = {
     "gpt-4o": 128000,
     "o3-mini": 200000,
-    "deepseek-chat": 64000,
-    "deepseek-reasoner": 64000,
+    # DeepSeek V4 主路径
+    "deepseek-v4-flash": 1000000,
+    "deepseek-v4-pro": 1000000,
+    # DeepSeek 旧模型名：保留兼容，避免历史 profile 崩
+    "deepseek-chat": 1000000,
+    "deepseek-reasoner": 1000000,
     "glm-4-flash": 128000,
     "glm-4v": 32000,
 }

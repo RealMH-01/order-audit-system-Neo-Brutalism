@@ -67,4 +67,4 @@ async def test_connection(
     current_user: CurrentUser = Depends(get_current_user),
     service: SettingsService = Depends(get_settings_service),
 ) -> ConnectionTestResponse:
-    return service.test_connection(current_user, payload)
+    return await service.test_connection(current_user, payload)

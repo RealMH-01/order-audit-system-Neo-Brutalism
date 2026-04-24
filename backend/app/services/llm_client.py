@@ -23,6 +23,16 @@ except Exception:  # pragma: no cover
 class LLMClientService:
     """统一封装 OpenAI、DeepSeek、智谱的调用入口。"""
 
+    # 连接测试默认超时（秒），不影响正式审核链路的超时策略。
+    _CONNECTION_TEST_TIMEOUT_SECONDS = 20.0
+
+    # DeepSeek 旧模型名 -> V4 新模型名的兼容映射。
+    # 放在 _resolve_model 里使用，避免影响 _resolve_provider 的模型名前缀判断。
+    _DEEPSEEK_LEGACY_MODEL_MAP = {
+        "deepseek-chat": "deepseek-v4-flash",
+        "deepseek-reasoner": "deepseek-v4-pro",
+    }
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
@@ -79,10 +89,16 @@ class LLMClientService:
         """根据 provider 与场景选择默认模型。"""
 
         if requested_model:
+            normalized_request = requested_model.strip().lower()
+            # DeepSeek 兼容：旧模型名 deepseek-chat / deepseek-reasoner 自动映射到 V4。
+            # 仅对 DeepSeek provider 做归一化，避免把 OpenAI / Zhipu 模型误伤。
+            if provider == "deepseek" and normalized_request in self._DEEPSEEK_LEGACY_MODEL_MAP:
+                return self._DEEPSEEK_LEGACY_MODEL_MAP[normalized_request]
             return requested_model
 
         if provider == "deepseek":
-            return "deepseek-reasoner" if deep_think else "deepseek-chat"
+            # 非深度思考 -> V4 Flash；深度思考 / reasoner 场景 -> V4 Pro。
+            return "deepseek-v4-pro" if deep_think else "deepseek-v4-flash"
         if provider == "zhipuai":
             return "glm-4v" if vision else "glm-4-flash"
         if vision:
@@ -173,21 +189,33 @@ class LLMClientService:
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> dict[str, Any]:
-        """做一次最小远程连接测试。"""
+        """做一次最小远程连接测试，控制在短时超时范围内。"""
 
-        response = await self.call_llm(
-            [{"role": "user", "content": "Reply with OK only."}],
-            provider=provider,
-            requested_model=requested_model,
-            api_key=api_key,
-            base_url=base_url,
-            deep_think=False,
-            temperature=0.0,
-        )
+        try:
+            response = await asyncio.wait_for(
+                self.call_llm(
+                    [{"role": "user", "content": "Reply with OK."}],
+                    provider=provider,
+                    requested_model=requested_model,
+                    api_key=api_key,
+                    base_url=base_url,
+                    deep_think=False,
+                    temperature=0.0,
+                ),
+                timeout=self._CONNECTION_TEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            normalized_provider = self._resolve_provider(provider, requested_model)
+            raise AppError(
+                f"{normalized_provider} 连接测试超时，请稍后重试或检查网络。",
+                status_code=504,
+            ) from exc
+
+        preview = (response or "").strip()
         return {
             "success": True,
             "message": "模型连接测试已返回响应。",
-            "response_preview": response[:120],
+            "response_preview": preview[:120],
         }
 
     async def _call_openai_compatible(
@@ -302,14 +330,86 @@ class LLMClientService:
 
     @staticmethod
     def _map_exception(provider: str, exc: Exception) -> AppError:
-        """把底层 SDK 异常映射成中文友好错误。"""
+        """把底层 SDK 异常映射成中文友好错误。
+
+        注意：不要把完整 API key 写入错误文案或日志。
+        """
 
         message = str(exc)
         lowered = message.lower()
-        if "401" in lowered or "unauthorized" in lowered or "invalid api key" in lowered:
-            return AppError(f"{provider} 鉴权失败，请检查 API key 是否正确。", status_code=401)
-        if "429" in lowered or "rate limit" in lowered:
-            return AppError(f"{provider} 调用过于频繁，请稍后重试。", status_code=429)
-        if "timeout" in lowered:
+
+        # 401 / 403：鉴权失败
+        if (
+            "401" in lowered
+            or "403" in lowered
+            or "unauthorized" in lowered
+            or "forbidden" in lowered
+            or "invalid api key" in lowered
+            or "incorrect api key" in lowered
+            or "authentication" in lowered
+        ):
+            return AppError(
+                f"{provider} 鉴权失败：API key 无效或没有调用权限。",
+                status_code=401,
+            )
+
+        # 429：限流 / 余额不足
+        if (
+            "429" in lowered
+            or "rate limit" in lowered
+            or "too many requests" in lowered
+            or "quota" in lowered
+            or "insufficient" in lowered
+            or "balance" in lowered
+        ):
+            return AppError(
+                f"{provider} 调用被限流或余额不足，请稍后重试或检查账户额度。",
+                status_code=429,
+            )
+
+        # 404：模型或 endpoint 不存在
+        if "404" in lowered or "not found" in lowered or "does not exist" in lowered:
+            return AppError(
+                f"{provider} 找不到目标模型或接口，请检查模型名是否正确。",
+                status_code=404,
+            )
+
+        # 超时
+        if "timeout" in lowered or "timed out" in lowered:
             return AppError(f"{provider} 请求超时，请稍后重试。", status_code=504)
+
+        # 网络错误
+        if (
+            "connection" in lowered
+            or "network" in lowered
+            or "dns" in lowered
+            or "unreachable" in lowered
+            or "ssl" in lowered
+            or "socket" in lowered
+        ):
+            return AppError(
+                f"{provider} 网络连接失败，请检查网络或 endpoint 配置。",
+                status_code=502,
+            )
+
+        # 5xx：供应商服务异常
+        if any(code in lowered for code in ("500", "502", "503", "504")) or "server error" in lowered:
+            return AppError(
+                f"{provider} 供应商服务暂时异常，请稍后重试。",
+                status_code=502,
+            )
+
+        # 400：请求参数或模型名不支持
+        if (
+            "400" in lowered
+            or "bad request" in lowered
+            or "invalid" in lowered
+            or "unsupported" in lowered
+            or "model" in lowered
+        ):
+            return AppError(
+                f"{provider} 请求被拒：请求参数或模型名可能不受支持。详情：{message}",
+                status_code=400,
+            )
+
         return AppError(f"{provider} 调用失败：{message}", status_code=502)

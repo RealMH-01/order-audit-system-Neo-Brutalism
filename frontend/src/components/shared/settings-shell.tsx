@@ -60,8 +60,8 @@ const providerModels: Record<
     { label: "OpenAI o3-mini", value: "o3-mini" }
   ],
   deepseek: [
-    { label: "DeepSeek Chat", value: "deepseek-chat" },
-    { label: "DeepSeek Reasoner", value: "deepseek-reasoner" }
+    { label: "DeepSeek V4 Flash", value: "deepseek-v4-flash" },
+    { label: "DeepSeek V4 Pro", value: "deepseek-v4-pro" }
   ],
   zhipuai: [
     { label: "智谱 GLM-4-Flash", value: "glm-4-flash" },
@@ -100,6 +100,21 @@ function resolveProviderFromModel(model: string) {
   return "openai" as const;
 }
 
+// DeepSeek 旧模型名在前端向 V4 归一化，保证下拉框可以正确展示当前选中项。
+// 后端依然保留对旧值的兼容，这里只是视觉层面的迁移。
+const DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
+  "deepseek-chat": "deepseek-v4-flash",
+  "deepseek-reasoner": "deepseek-v4-pro"
+};
+
+function normalizeModelForDisplay(model: string) {
+  const normalized = model.trim().toLowerCase();
+  if (normalized in DEEPSEEK_LEGACY_MODEL_MAP) {
+    return DEEPSEEK_LEGACY_MODEL_MAP[normalized];
+  }
+  return model;
+}
+
 export function SettingsShell() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
@@ -132,6 +147,7 @@ export function SettingsShell() {
         token: accessToken
       });
       const provider = resolveProviderFromModel(data.selected_model);
+      const displayModel = normalizeModelForDisplay(data.selected_model);
       const affiliateRoles =
         data.company_affiliates_roles.length > 0
           ? data.company_affiliates_roles
@@ -140,7 +156,7 @@ export function SettingsShell() {
       setState({
         displayName: data.display_name ?? "",
         provider,
-        selectedModel: data.selected_model,
+        selectedModel: displayModel,
         deepThinkEnabled: data.deep_think_enabled && provider !== "zhipuai",
         openaiApiKey: "",
         deepseekApiKey: "",
@@ -189,7 +205,7 @@ export function SettingsShell() {
             provider === "openai"
               ? "gpt-4o"
               : provider === "deepseek"
-                ? "deepseek-chat"
+                ? "deepseek-v4-flash"
                 : "glm-4-flash";
           if (provider === "zhipuai") {
             next.deepThinkEnabled = false;
@@ -215,17 +231,20 @@ export function SettingsShell() {
         state.provider === "openai"
           ? {
               provider: "openai",
+              model: state.selectedModel,
               use_saved_key: !state.openaiApiKey.trim(),
               api_key: state.openaiApiKey.trim() || null
             }
           : state.provider === "deepseek"
             ? {
                 provider: "deepseek",
+                model: state.selectedModel,
                 use_saved_key: !state.deepseekApiKey.trim(),
                 api_key: state.deepseekApiKey.trim() || null
               }
             : {
                 provider: "zhipuai",
+                model: state.selectedModel,
                 use_saved_key: !state.zhipuApiKey.trim(),
                 api_key: state.zhipuApiKey.trim() || null
               };
