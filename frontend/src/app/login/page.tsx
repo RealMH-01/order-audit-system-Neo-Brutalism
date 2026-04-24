@@ -6,9 +6,8 @@ export default function LoginPage() {
       <AuthPanel
         mode="login"
         title="登录审核系统"
-        description="Supabase Auth 的实际接入会在后续轮次补齐，这里先保留完整页面骨架。"
+        description="这里已接到当前可用的 auth 接口。登录成功后会按现有系统状态进入向导或审核工作台。"
       />
     </main>
   );
 }
-
