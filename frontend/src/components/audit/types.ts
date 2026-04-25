@@ -73,6 +73,11 @@ export type AuditIssue = {
   confidence?: number;
   suggestion?: string;
   document_label?: string | null;
+  document_type?: string | null;
+  file_id?: string | null;
+  matched_po_value?: string | null;
+  observed_value?: string | null;
+  source_excerpt?: string | null;
 };
 
 export type AuditResultResponse = {

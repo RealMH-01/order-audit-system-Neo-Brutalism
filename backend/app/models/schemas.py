@@ -407,12 +407,18 @@ class AuditProgressPayload(BaseModel):
 class AuditIssue(BaseModel):
     """Minimal audit-issue payload."""
 
+    id: str | None = None
     level: Literal["RED", "YELLOW", "BLUE"]
     field_name: str
     message: str
     confidence: float | None = None
     suggestion: str | None = None
     document_label: str | None = None
+    document_type: str | None = None
+    file_id: str | None = None
+    matched_po_value: str | None = None
+    observed_value: str | None = None
+    source_excerpt: str | None = None
 
 
 class AuditResultResponse(BaseModel):

@@ -47,6 +47,62 @@ function renderDocumentLabel(issue: AuditIssue) {
   return issue.document_label?.trim() || "当前结果未标注文档归属";
 }
 
+function renderOptionalText(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+function DetailTile({
+  label,
+  value,
+  className = ""
+}: {
+  label: string;
+  value: unknown;
+  className?: string;
+}) {
+  const text = renderOptionalText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  return (
+    <div className={`border-4 border-ink bg-canvas p-3 shadow-neo-sm ${className}`}>
+      <p className="text-xs font-black uppercase tracking-[0.14em]">{label}</p>
+      <p className="mt-2 break-words text-sm font-bold leading-6">{text}</p>
+    </div>
+  );
+}
+
+function IssueContextGrid({ issue }: { issue: AuditIssue }) {
+  const hasContext = [
+    issue.document_label,
+    issue.document_type,
+    issue.matched_po_value,
+    issue.observed_value,
+    issue.source_excerpt
+  ].some((value) => renderOptionalText(value));
+
+  if (!hasContext) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <DetailTile label="来源单据" value={issue.document_label} />
+      <DetailTile label="单据类型" value={issue.document_type} />
+      <DetailTile label="PO 基准值" value={issue.matched_po_value} />
+      <DetailTile label="目标观察值" value={issue.observed_value} />
+      <DetailTile label="来源摘录" value={issue.source_excerpt} className="md:col-span-2" />
+    </div>
+  );
+}
+
 function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
   return (
     <details className={`${resolveIssueClass(issue.level)} group p-4`} open={index < 2}>
@@ -83,6 +139,7 @@ function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
           <p className="mt-2 text-sm font-bold leading-6">{renderSuggestion(issue)}</p>
         </div>
       </div>
+      <IssueContextGrid issue={issue} />
     </details>
   );
 }

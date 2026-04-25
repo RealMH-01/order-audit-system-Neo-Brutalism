@@ -613,14 +613,28 @@ class AuditOrchestratorService:
     def _to_api_result(self, task_id: str, aggregate_result: dict[str, Any]) -> AuditResultResponse:
         """把完整审核结果收敛成当前 API 响应模型。"""
 
+        def optional_issue_text(issue: dict[str, Any], key: str) -> str | None:
+            value = issue.get(key)
+            if value in (None, ""):
+                return None
+
+            text = str(value).strip()
+            return text or None
+
         api_issues = [
             AuditIssue(
+                id=optional_issue_text(issue, "id"),
                 level=str(issue.get("level", "YELLOW")).upper(),
                 field_name=str(issue.get("field_name", "unspecified_field")),
                 message=str(issue.get("finding") or issue.get("message", "")),
                 confidence=float(issue.get("confidence")) if issue.get("confidence") is not None else None,
                 suggestion=str(issue.get("suggestion")).strip() if issue.get("suggestion") else None,
                 document_label=str(issue.get("document_label")).strip() if issue.get("document_label") else None,
+                document_type=optional_issue_text(issue, "document_type"),
+                file_id=optional_issue_text(issue, "file_id"),
+                matched_po_value=optional_issue_text(issue, "matched_po_value"),
+                observed_value=optional_issue_text(issue, "observed_value"),
+                source_excerpt=optional_issue_text(issue, "source_excerpt"),
             )
             for issue in aggregate_result.get("issues", [])
             if isinstance(issue, dict)
