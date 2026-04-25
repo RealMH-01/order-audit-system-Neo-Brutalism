@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
@@ -15,6 +16,8 @@ from app.db.supabase_client import (
     is_supabase_configured,
 )
 from app.errors import AppError
+
+logger = logging.getLogger(__name__)
 
 API_KEY_FIELDS = (
     "deepseek_api_key",
@@ -223,6 +226,21 @@ class SupabaseRepository:
 
     def create_audit_history(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
         payload = self._encode({"user_id": user_id, **data})
+        try:
+            return self._create_audit_history_payload(user_id, payload)
+        except AppError as exc:
+            if self._is_report_metadata_column_error(exc):
+                legacy_payload = dict(payload)
+                legacy_payload.pop("task_id", None)
+                legacy_payload.pop("report_paths", None)
+                logger.warning(
+                    "Audit history report metadata columns are unavailable; retrying legacy history insert.",
+                    exc_info=True,
+                )
+                return self._create_audit_history_payload(user_id, legacy_payload)
+            raise
+
+    def _create_audit_history_payload(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._execute(
             "create audit history",
             lambda: self.client.table("audit_history").insert(payload).execute(),
@@ -232,6 +250,48 @@ class SupabaseRepository:
         if record is None:
             raise AppError("Audit history creation succeeded but no record was returned.", status_code=500)
         return record
+
+    def get_audit_history_by_task_id(self, user_id: str, task_id: str) -> dict[str, Any] | None:
+        return self._select_one(
+            "audit_history",
+            "read audit history by task",
+            lambda table: table.select("*").eq("user_id", user_id).eq("task_id", task_id).limit(1),
+        )
+
+    def upload_report_file(self, bucket: str, path: str, data: bytes, content_type: str) -> bool:
+        try:
+            if hasattr(self.client, "upload_storage_object"):
+                self.client.upload_storage_object(bucket, path, data, content_type)
+            else:
+                storage = getattr(self.client, "storage", None)
+                if storage is None:
+                    raise AppError("Supabase storage is not available.", status_code=500)
+                storage.from_(bucket).upload(
+                    path,
+                    data,
+                    file_options={
+                        "content-type": content_type,
+                        "upsert": "true",
+                    },
+                )
+            return True
+        except Exception:
+            logger.warning("Supabase report upload failed for %s/%s.", bucket, path, exc_info=True)
+            return False
+
+    def download_report_file(self, bucket: str, path: str) -> bytes | None:
+        try:
+            if hasattr(self.client, "download_storage_object"):
+                data = self.client.download_storage_object(bucket, path)
+            else:
+                storage = getattr(self.client, "storage", None)
+                if storage is None:
+                    raise AppError("Supabase storage is not available.", status_code=500)
+                data = storage.from_(bucket).download(path)
+            return bytes(data) if isinstance(data, (bytes, bytearray)) else None
+        except Exception:
+            logger.warning("Supabase report download failed for %s/%s.", bucket, path, exc_info=True)
+            return None
 
     def list_audit_history(self, user_id: str) -> list[dict[str, Any]]:
         return self._select_many(
@@ -316,6 +376,29 @@ class SupabaseRepository:
         except Exception as exc:
             raise AppError(f"Supabase {action} failed.", status_code=500) from exc
         return self._normalize_rows(response)
+
+    @staticmethod
+    def _is_report_metadata_column_error(error: Exception) -> bool:
+        messages: list[str] = []
+        current: BaseException | None = error
+        while current is not None:
+            messages.append(str(current))
+            current = current.__cause__
+
+        normalized = " ".join(messages).lower()
+        mentions_report_metadata = "task_id" in normalized or "report_paths" in normalized
+        mentions_schema_issue = any(
+            token in normalized
+            for token in (
+                "column",
+                "schema cache",
+                "could not find",
+                "unknown",
+                "undefined",
+                "pgrst204",
+            )
+        )
+        return mentions_report_metadata and mentions_schema_issue
 
     @staticmethod
     def _normalize_rows(response: Any) -> list[dict[str, Any]]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -352,6 +353,39 @@ class RestSupabaseClient:
             access_key=self.access_key,
         )
 
+    def upload_storage_object(
+        self,
+        bucket: str,
+        path: str,
+        data: bytes,
+        content_type: str,
+    ) -> Any:
+        safe_bucket = quote(bucket, safe="")
+        safe_path = quote(path.lstrip("/"), safe="/")
+        return supabase_storage_request(
+            "POST",
+            f"/storage/v1/object/{safe_bucket}/{safe_path}",
+            content=data,
+            extra_headers={
+                "Cache-Control": "3600",
+                "Content-Type": content_type,
+                "x-upsert": "true",
+            },
+            settings=self.settings,
+            access_key=self.access_key,
+        )
+
+    def download_storage_object(self, bucket: str, path: str) -> bytes:
+        safe_bucket = quote(bucket, safe="")
+        safe_path = quote(path.lstrip("/"), safe="/")
+        return supabase_storage_request(
+            "GET",
+            f"/storage/v1/object/{safe_bucket}/{safe_path}",
+            expect_bytes=True,
+            settings=self.settings,
+            access_key=self.access_key,
+        )
+
 
 def supabase_http_request(
     method: str,
@@ -394,6 +428,53 @@ def supabase_http_request(
     if not response.text.strip():
         return []
     return response.json()
+
+
+def supabase_storage_request(
+    method: str,
+    path: str,
+    *,
+    content: bytes | None = None,
+    extra_headers: dict[str, str] | None = None,
+    expect_bytes: bool = False,
+    settings: Settings | None = None,
+    access_key: str | None = None,
+) -> Any:
+    effective_settings = settings or get_settings()
+    key = access_key or effective_settings.supabase_service_role_key
+    if not effective_settings.supabase_url or not key:
+        raise AppError("Supabase is not configured.", status_code=500)
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
+    url = f"{effective_settings.supabase_url.rstrip('/')}{path}"
+    response = httpx.request(
+        method=method,
+        url=url,
+        headers=headers,
+        content=content,
+        timeout=30.0,
+        trust_env=False,
+    )
+    if response.status_code >= 400:
+        detail = response.text.strip() or response.reason_phrase
+        raise AppError(f"Supabase storage request failed: {detail}", status_code=response.status_code)
+
+    if expect_bytes:
+        return response.content
+    if not response.text.strip():
+        return {}
+    try:
+        return response.json()
+    except Exception:
+        return {}
+
+
 @lru_cache
 def get_supabase_client(use_service_role: bool = True) -> SupabaseClient | RestSupabaseClient | None:
     """Return the configured Supabase client, falling back to raw REST for secret keys."""

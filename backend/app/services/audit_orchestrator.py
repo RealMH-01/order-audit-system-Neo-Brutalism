@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
@@ -33,6 +34,8 @@ from app.services.llm_client import LLMClientService
 from app.services.report_generator import ReportGeneratorService
 from app.services.runtime_store import RuntimeStore
 from app.services.token_utils import TokenUtilityService
+
+logger = logging.getLogger(__name__)
 
 _DOC_TYPE_HINTS = {
     "invoice": {"invoice", "commercial_invoice", "inv"},
@@ -73,6 +76,13 @@ _REPORT_DOWNLOADS = {
         "filename": "audit_reports_{task_id}.zip",
         "media_type": "application/zip",
     },
+}
+
+_AUDIT_REPORT_BUCKET = "audit-reports"
+_REPORT_STORAGE_FILENAMES = {
+    "marked": "marked.xlsx",
+    "detailed": "detailed.xlsx",
+    "zip": "reports.zip",
 }
 
 
@@ -573,17 +583,21 @@ class AuditOrchestratorService:
             )
 
             aggregate_result = result_bundle["aggregate_result"]
+            report_bundle = result_bundle["report_bundle"]
             task["full_result"] = aggregate_result
-            task["report_bundle"] = result_bundle["report_bundle"]
+            task["report_bundle"] = report_bundle
             task["result"] = self._to_api_result(task_id, aggregate_result)
             task["status"] = "completed"
             task["progress_percent"] = 100
             task["message"] = "审核任务已完成。"
             task["updated_at"] = datetime.now(timezone.utc)
+            report_paths = self._upload_report_bundle(user_id, task_id, report_bundle)
 
             history_item = {
                 "id": str(uuid4()),
                 "user_id": user_id,
+                "task_id": task_id,
+                "report_paths": report_paths,
                 "document_count": len(task["target_files"]) + 1,
                 "red_count": aggregate_result["summary"]["red"],
                 "yellow_count": aggregate_result["summary"]["yellow"],
@@ -597,8 +611,11 @@ class AuditOrchestratorService:
             }
             self.store.audit_history.setdefault(user_id, []).insert(0, history_item)
             if self.repo is not None:
-                persisted_history = self.repo.create_audit_history(user_id, history_item)
-                self.store.audit_history[user_id][0] = persisted_history
+                try:
+                    persisted_history = self.repo.create_audit_history(user_id, history_item)
+                    self.store.audit_history[user_id][0] = persisted_history
+                except Exception:
+                    logger.warning("Audit history persistence failed; keeping RuntimeStore history only.", exc_info=True)
         except asyncio.CancelledError:
             await self._finalize_cancel(task)
         except AppError as exc:
@@ -764,33 +781,102 @@ class AuditOrchestratorService:
             raise AppError("未找到指定审核任务。", status_code=404)
         return task
 
+    def _upload_report_bundle(
+        self,
+        user_id: str,
+        task_id: str,
+        report_bundle: dict[str, Any] | None,
+    ) -> dict[str, str] | None:
+        if self.repo is None or not isinstance(report_bundle, dict):
+            return None
+
+        report_paths: dict[str, str] = {}
+        for report_type, report_meta in _REPORT_DOWNLOADS.items():
+            report_obj = report_bundle.get(str(report_meta["bundle_key"]))
+            report_bytes = self._report_bytes_from_object(report_obj)
+            if not report_bytes:
+                logger.warning("Report bundle is missing %s for task %s; skipping Storage persistence.", report_type, task_id)
+                return None
+
+            path = self._build_report_storage_path(user_id, task_id, report_type)
+            uploaded = self.repo.upload_report_file(
+                _AUDIT_REPORT_BUCKET,
+                path,
+                report_bytes,
+                str(report_meta["media_type"]),
+            )
+            if not uploaded:
+                logger.warning("Report upload did not complete for task %s type %s; keeping memory fallback.", task_id, report_type)
+                return None
+            report_paths[report_type] = path
+
+        return report_paths
+
+    @staticmethod
+    def _build_report_storage_path(user_id: str, task_id: str, report_type: str) -> str:
+        filename = _REPORT_STORAGE_FILENAMES[report_type]
+        return f"reports/{user_id}/{task_id}/{filename}"
+
+    @staticmethod
+    def _report_bytes_from_object(report_obj: Any) -> bytes | None:
+        if isinstance(report_obj, io.BytesIO):
+            report_bytes = report_obj.getvalue()
+        elif isinstance(report_obj, (bytes, bytearray)):
+            report_bytes = bytes(report_obj)
+        else:
+            return None
+        return report_bytes or None
+
+    def _get_memory_report_bytes(self, user_id: str, task_id: str, report_meta: dict[str, str]) -> bytes | None:
+        try:
+            task = self._get_task(user_id, task_id)
+        except AppError:
+            return None
+
+        report_bundle = task.get("report_bundle")
+        if not isinstance(report_bundle, dict):
+            return None
+
+        return self._report_bytes_from_object(report_bundle.get(report_meta["bundle_key"]))
+
+    def _get_storage_report_bytes(self, user_id: str, task_id: str, report_type: str) -> bytes | None:
+        if self.repo is None:
+            return None
+
+        try:
+            history_item = self.repo.get_audit_history_by_task_id(user_id, task_id)
+        except Exception:
+            logger.warning("Audit history lookup by task_id failed during report download fallback.", exc_info=True)
+            return None
+
+        if not history_item:
+            return None
+
+        report_paths = history_item.get("report_paths")
+        if not isinstance(report_paths, dict):
+            return None
+
+        path = report_paths.get(report_type)
+        if not path:
+            return None
+
+        return self.repo.download_report_file(_AUDIT_REPORT_BUCKET, str(path))
+
     def get_report_download(
         self,
         current_user: CurrentUser,
         task_id: str,
         report_type: str,
     ) -> tuple[io.BytesIO, str, str]:
-        """从当前进程内的 report_bundle 读取可下载报告。"""
+        """优先从内存 report_bundle 读取报告，必要时回退到 Supabase Storage。"""
 
-        task = self._get_task(current_user.id, task_id)
         report_meta = _REPORT_DOWNLOADS.get(report_type)
         if report_meta is None:
             raise AppError("不支持的报告类型。", status_code=400)
 
-        report_bundle = task.get("report_bundle")
-        if not isinstance(report_bundle, dict):
-            raise AppError("报告尚未生成或已失效。", status_code=404)
-
-        report_obj = report_bundle.get(report_meta["bundle_key"])
-        if report_obj is None:
-            raise AppError("报告尚未生成或已失效。", status_code=404)
-
-        if isinstance(report_obj, io.BytesIO):
-            report_bytes = report_obj.getvalue()
-        elif isinstance(report_obj, (bytes, bytearray)):
-            report_bytes = bytes(report_obj)
-        else:
-            raise AppError("报告尚未生成或已失效。", status_code=404)
+        report_bytes = self._get_memory_report_bytes(current_user.id, task_id, report_meta)
+        if report_bytes is None:
+            report_bytes = self._get_storage_report_bytes(current_user.id, task_id, report_type)
 
         if not report_bytes:
             raise AppError("报告尚未生成或已失效。", status_code=404)
