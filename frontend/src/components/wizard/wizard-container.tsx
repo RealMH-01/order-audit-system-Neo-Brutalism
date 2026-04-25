@@ -10,8 +10,7 @@ import {
   apiPost,
   apiPut,
   clearStoredAccessToken,
-  getStoredAccessToken,
-  setStoredAccessToken
+  getStoredAccessToken
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,6 @@ import { StepModelConfig } from "@/components/wizard/step-model-config";
 import { StepRulesConfig } from "@/components/wizard/step-rules-config";
 import type {
   WizardAffiliateRole,
-  WizardAuthResponse,
   WizardChatApiResponse,
   WizardCompleteApiResponse,
   WizardConnectionTestResponse,
@@ -182,8 +180,6 @@ export function WizardContainer() {
   const [form, setForm] = useState<WizardFormState>(initialFormState);
   const [currentStep, setCurrentStep] = useState(0);
   const [pageLoading, setPageLoading] = useState(true);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
@@ -268,9 +264,10 @@ export function WizardContainer() {
       } catch {
         clearStoredAccessToken();
         setForm((previous) => ({ ...previous, token: null }));
+        router.replace("/login");
       }
     },
-    [loadProfile]
+    [loadProfile, router]
   );
 
   useEffect(() => {
@@ -410,36 +407,6 @@ export function WizardContainer() {
     },
     [applyTemplateSelection, pendingTemplateId]
   );
-
-  const handleAuthenticate = useCallback(async () => {
-    setAuthLoading(true);
-    setAuthError(null);
-
-    try {
-      const path = form.authMode === "login" ? "/auth/login" : "/auth/register";
-      const payload =
-        form.authMode === "login"
-          ? { email: form.email, password: form.password }
-          : {
-              email: form.email,
-              password: form.password,
-              display_name: "Wizard User"
-            };
-
-      const { data } = await apiPost<WizardAuthResponse>(path, payload);
-      setStoredAccessToken(data.access_token);
-      await loadProfile(data.access_token);
-      setForm((previous) => ({ ...previous, token: data.access_token }));
-    } catch (error) {
-      setAuthError(
-        typeof error === "object" && error && "detail" in error
-          ? String(error.detail)
-          : "登录或注册失败，请稍后重试。"
-      );
-    } finally {
-      setAuthLoading(false);
-    }
-  }, [form.authMode, form.email, form.password, loadProfile]);
 
   const handleTestConnection = useCallback(async () => {
     if (!form.token) {
@@ -777,12 +744,7 @@ export function WizardContainer() {
       case "model":
         return (
           <StepModelConfig
-            email={form.email}
-            password={form.password}
-            authMode={form.authMode}
             authenticated={Boolean(form.token)}
-            authLoading={authLoading}
-            authError={authError}
             provider={form.provider}
             selectedModel={form.selectedModel}
             deepThinkEnabled={form.deepThinkEnabled}
@@ -795,8 +757,8 @@ export function WizardContainer() {
             onFieldChange={(field, value) =>
               updateField(field as keyof WizardFormState, value as never)
             }
-            onAuthenticate={handleAuthenticate}
             onTestConnection={handleTestConnection}
+            onNext={handleNextStep}
           />
         );
       case "template":

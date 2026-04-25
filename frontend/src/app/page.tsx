@@ -57,8 +57,8 @@ export default function HomePage() {
               <BrutalButton href="/login" icon={ArrowRight}>
                 登录 / 注册
               </BrutalButton>
-              <BrutalButton href="#capabilities" variant="outline" icon={FileSearch}>
-                了解更多
+              <BrutalButton href="/audit" variant="outline" icon={ArrowRight}>
+                进入工作台
               </BrutalButton>
             </div>
           </div>
