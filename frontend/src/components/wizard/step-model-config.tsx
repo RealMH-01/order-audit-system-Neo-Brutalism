@@ -19,18 +19,12 @@ import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import type {
-  WizardAuthMode,
   WizardConnectionTestResponse,
   WizardProvider
 } from "@/components/wizard/types";
 
 type StepModelConfigProps = {
-  email: string;
-  password: string;
-  authMode: WizardAuthMode;
   authenticated: boolean;
-  authLoading: boolean;
-  authError: string | null;
   provider: WizardProvider;
   selectedModel: string;
   deepThinkEnabled: boolean;
@@ -41,8 +35,8 @@ type StepModelConfigProps = {
   testStatus: WizardConnectionTestResponse | null;
   testingProvider: WizardProvider | null;
   onFieldChange: (field: string, value: string | boolean) => void;
-  onAuthenticate: () => void;
   onTestConnection: () => void;
+  onNext: () => void;
 };
 
 const providerModels: Record<
@@ -64,12 +58,7 @@ const providerModels: Record<
 };
 
 export function StepModelConfig({
-  email,
-  password,
-  authMode,
   authenticated,
-  authLoading,
-  authError,
   provider,
   selectedModel,
   deepThinkEnabled,
@@ -80,8 +69,8 @@ export function StepModelConfig({
   testStatus,
   testingProvider,
   onFieldChange,
-  onAuthenticate,
-  onTestConnection
+  onTestConnection,
+  onNext
 }: StepModelConfigProps) {
   const currentKey =
     provider === "openai"
@@ -97,74 +86,29 @@ export function StepModelConfig({
           <Badge variant="accent">步骤 1</Badge>
           <CardTitle>建立当前引导会话</CardTitle>
           <CardDescription>
-            为了让 wizard 页面可以直接联后端，这里先完成最小登录或注册，再继续模型配置。
+            你已经通过登录入口进入向导，这里只确认当前会话状态。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                邮箱
-              </span>
-              <Input
-                value={email}
-                onChange={(event) => onFieldChange("email", event.target.value)}
-                placeholder="name@example.com"
-              />
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                密码
-              </span>
-              <Input
-                type="password"
-                value={password}
-                onChange={(event) =>
-                  onFieldChange("password", event.target.value)
-                }
-                placeholder="至少 6 位"
-              />
-            </label>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant={authMode === "login" ? "primary" : "outline"}
-              onClick={() => onFieldChange("authMode", "login")}
-            >
-              登录
-            </Button>
-            <Button
-              variant={authMode === "register" ? "primary" : "outline"}
-              onClick={() => onFieldChange("authMode", "register")}
-            >
-              注册
-            </Button>
-            <Button onClick={onAuthenticate} disabled={authLoading}>
-              {authLoading
-                ? "提交中..."
-                : authMode === "login"
-                  ? "登录并继续"
-                  : "注册并继续"}
-            </Button>
-          </div>
-
           {authenticated ? (
             <div className="issue-blue p-4">
               <p className="flex items-center gap-2 text-sm font-bold leading-6">
                 <CheckCircle2 size={18} strokeWidth={3} />
-                当前会话已经就绪，后续步骤将使用真实 Bearer token 调用
-                `/api/wizard/*` 和 `/api/settings/*`。
+                当前已登录，点击下一步开始配置。
               </p>
             </div>
-          ) : authError ? (
+          ) : (
             <div className="issue-red p-4">
               <p className="flex items-center gap-2 text-sm font-bold leading-6">
                 <AlertCircle size={18} strokeWidth={3} />
-                {authError}
+                登录状态未就绪，请返回登录页后再进入向导。
               </p>
             </div>
-          ) : null}
+          )}
+
+          <Button onClick={onNext} disabled={!authenticated}>
+            下一步
+          </Button>
         </CardContent>
       </Card>
 
