@@ -317,6 +317,8 @@ export function AuditWorkspace() {
     () => resolveReportState(reportMessage, taskId, taskStatus),
     [reportMessage, taskId, taskStatus]
   );
+  const hasAnyKey =
+    profile?.has_deepseek_key || profile?.has_openai_key || profile?.has_zhipu_key || false;
 
   const clearRunState = useCallback((nextMessage?: string) => {
     progressAbortRef.current?.abort();
@@ -633,6 +635,11 @@ export function AuditWorkspace() {
       return;
     }
 
+    if (!hasAnyKey) {
+      setWorkspaceError("请先在设置页配置 API Key，否则无法启动审核。");
+      return;
+    }
+
     if (auditLocked) {
       setWorkspaceError("当前已有审核任务正在进行，请等待完成或先取消。");
       return;
@@ -690,6 +697,7 @@ export function AuditWorkspace() {
     auditLocked,
     clearRunState,
     disclaimerOpen,
+    hasAnyKey,
     poFile,
     prevTicketFiles,
     provider,
@@ -1060,20 +1068,18 @@ export function AuditWorkspace() {
                 </div>
               </div>
 
-              <div className="issue-blue p-4">
-                <p className="text-sm font-bold leading-6">
-                  当前请求体会严格使用：
-                  <code className="mx-1 rounded-none border-2 border-ink bg-paper px-2 py-1">
-                    po_file_id / target_files / prev_ticket_files / template_file_id /
-                    reference_file_ids / deep_think
-                  </code>
-                </p>
-              </div>
+              {!profileLoading && !hasAnyKey ? (
+                <div className="issue-yellow p-4">
+                  <p className="text-sm font-bold leading-6">
+                    请先在设置页配置 API Key，否则无法启动审核。
+                  </p>
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap gap-3">
                 <Button
                   onClick={() => void handleStartAudit()}
-                  disabled={startLoading || auditLocked || disclaimerOpen}
+                  disabled={startLoading || auditLocked || disclaimerOpen || !hasAnyKey}
                 >
                   {startLoading ? (
                     <Loader2 size={18} strokeWidth={3} className="animate-spin" />

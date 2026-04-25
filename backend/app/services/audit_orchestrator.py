@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.config import Settings
 from app.db.repository import SupabaseRepository
+from app.db.supabase_client import ApiKeyCipher, EncryptionConfigurationError
 from app.errors import AppError
 from app.models.schemas import (
     AuditCapability,
@@ -58,6 +59,12 @@ _DOWNGRADE_ALLOWED_FIELDS = {
 }
 
 _DOWNGRADE_BLOCKED_KEYWORDS = {"buyer", "consignee", "importer", "收货人", "买方"}
+
+_PROVIDER_PROFILE_KEY_FIELDS = {
+    "openai": "openai_api_key",
+    "deepseek": "deepseek_api_key",
+    "zhipuai": "zhipu_api_key",
+}
 
 
 _REPORT_DOWNLOADS = {
@@ -106,6 +113,7 @@ class AuditOrchestratorService:
         self.token_utils = token_utils
         self.store = store
         self.repo = repo
+        self.cipher = ApiKeyCipher(settings)
         self.audit_engine = AuditEngineService()
 
     def get_capability(self) -> AuditCapability:
@@ -149,6 +157,10 @@ class AuditOrchestratorService:
             self.file_parser.get_user_file(current_user.id, file_id)
 
         profile = self._get_profile(current_user.id)
+        selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
+        primary_provider = self.llm_client._resolve_provider(None, selected_model)
+        self._require_profile_api_key(profile, primary_provider)
+
         task_id = str(uuid4())
         now = datetime.now(timezone.utc)
         self.store.audit_tasks[task_id] = {
@@ -211,6 +223,7 @@ class AuditOrchestratorService:
 
         async def _audit_target(index: int, target_item: dict[str, Any]) -> dict[str, Any]:
             result = await self._run_single_target_audit(
+                user_id=user_id,
                 index=index,
                 target_item=target_item,
                 po_record=po_record,
@@ -332,6 +345,7 @@ class AuditOrchestratorService:
     async def _run_single_target_audit(
         self,
         *,
+        user_id: str,
         index: int,
         target_item: dict[str, Any],
         po_record: dict[str, Any],
@@ -349,12 +363,14 @@ class AuditOrchestratorService:
 
         self._ensure_not_cancelled(should_cancel)
 
+        profile = self._get_profile(user_id)
         target_record = self._ensure_runtime_file(target_item["file_id"])
         doc_type = self._resolve_doc_type(target_item.get("document_type"), target_record)
         prev_text = self._collect_previous_ticket_text(doc_type, prev_records)
         template_text = str(template_record.get("text", "")) if template_record else ""
         reference_texts = [str(record.get("text", "")) for record in reference_records if record.get("text")]
         provider_for_call = primary_provider
+        user_api_key = self._require_profile_api_key(profile, provider_for_call)
 
         messages = self.audit_engine.build_audit_prompt(
             po_text=self._prepare_text_context(str(po_record.get("text", "")), selected_model),
@@ -368,12 +384,14 @@ class AuditOrchestratorService:
         )
 
         if bool(target_record.get("needs_ocr")) and target_record.get("page_images"):
-            provider_for_call = self._select_ocr_provider(primary_provider)
+            provider_for_call = self._select_ocr_provider(primary_provider, profile)
+            user_api_key = self._require_profile_api_key(profile, provider_for_call)
             raw_response = await self.llm_client.call_llm_with_image(
                 messages,
                 image_payloads=list(target_record.get("page_images", [])),
                 provider=provider_for_call,
                 requested_model=selected_model,
+                api_key=user_api_key,
                 deep_think=deep_think,
             )
         else:
@@ -381,6 +399,7 @@ class AuditOrchestratorService:
                 messages,
                 provider=provider_for_call,
                 requested_model=selected_model,
+                api_key=user_api_key,
                 deep_think=deep_think,
             )
 
@@ -400,6 +419,7 @@ class AuditOrchestratorService:
                 custom_messages,
                 provider=provider_for_call,
                 requested_model=selected_model,
+                api_key=user_api_key,
                 deep_think=deep_think,
             )
             parsed_result = self._post_process_force_downgrade(
@@ -422,6 +442,7 @@ class AuditOrchestratorService:
                 cross_check_messages,
                 provider=provider_for_call,
                 requested_model=selected_model,
+                api_key=user_api_key,
                 deep_think=False,
             )
             parsed_result = self._post_process_force_downgrade(
@@ -454,16 +475,16 @@ class AuditOrchestratorService:
 
         return detected_type or "generic"
 
-    def _select_ocr_provider(self, primary_provider: str) -> str:
+    def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> str:
         """当主 provider 不适合视觉/OCR 时，选择降级/切换 provider。"""
 
         if primary_provider != "deepseek":
             return primary_provider
-        if self.settings.zhipuai_api_key:
+        if self._get_profile_api_key(profile, "zhipuai"):
             return "zhipuai"
-        if self.settings.openai_api_key:
+        if self._get_profile_api_key(profile, "openai"):
             return "openai"
-        raise AppError("当前扫描件需要视觉/OCR 模型，但未配置可用的 OpenAI 或智谱 API key。", status_code=400)
+        raise AppError("当前扫描件需要视觉/OCR 模型，但未配置可用的 OpenAI 或智谱 API Key。", status_code=400)
 
     def _collect_previous_ticket_text(self, doc_type: str, prev_records: list[dict[str, Any]]) -> str:
         """收集上一票文本，优先拼出和当前 doc_type 相关的上下文。"""
@@ -772,6 +793,34 @@ class AuditOrchestratorService:
                 return profile
 
         return self.store.profiles.get(user_id, {})
+
+    def _require_profile_api_key(self, profile: dict[str, Any], provider: str) -> str:
+        user_api_key = self._get_profile_api_key(profile, provider)
+        if not user_api_key:
+            raise AppError("请先在设置页配置当前模型对应的 API Key，才能启动审核。", status_code=400)
+        return user_api_key
+
+    def _get_profile_api_key(self, profile: dict[str, Any], provider: str) -> str | None:
+        key_field = _PROVIDER_PROFILE_KEY_FIELDS.get(provider)
+        if key_field is None:
+            return None
+
+        stored_value = profile.get(key_field)
+        if not stored_value:
+            return None
+
+        user_api_key = self._decrypt_stored_key(str(stored_value)).strip()
+        return user_api_key or None
+
+    def _decrypt_stored_key(self, stored_value: str) -> str:
+        if not self.cipher.is_configured():
+            return stored_value
+        try:
+            return self.cipher.decrypt(stored_value)
+        except EncryptionConfigurationError:
+            return stored_value
+        except Exception:
+            return stored_value
 
     def _get_task(self, user_id: str, task_id: str) -> dict[str, object]:
         """按用户读取任务。"""
