@@ -64,6 +64,7 @@ Design note:
 
 Purpose:
 - store audit run summary and later detailed snapshots
+- track persisted audit report locations in Supabase Storage
 
 Key fields:
 - `document_count`
@@ -74,6 +75,8 @@ Key fields:
 - `model_used`
 - `custom_rules_snapshot`
 - `deep_think_used`
+- `task_id` — opaque identifier of the audit task that produced this row; used to look up persisted reports
+- `report_paths` — JSON object mapping report type to Storage object path, e.g. `{"marked": "reports/<user_id>/<task_id>/marked.xlsx", "detailed": "...", "zip": "..."}`. `null` when reports have not been persisted yet (in-memory fallback).
 
 ### system_rules
 
@@ -134,3 +137,59 @@ Recommended usage:
 - encrypt API key values before writing to `deepseek_api_key`, `zhipu_api_key`, `zhipu_ocr_api_key`, and `openai_api_key`
 - decrypt only on the server side
 - never return plaintext API keys to frontend clients
+
+## Storage
+
+### audit-reports bucket
+
+Purpose:
+- persist audit report artifacts produced by the audit pipeline so users can re-download them after the backend process restarts
+- all reports are written by the backend using the Supabase service-role key; the bucket is private and the frontend never accesses Storage directly
+
+Configuration:
+- Bucket name: `audit-reports`
+- Visibility: **private** (do not enable the public flag)
+- Created manually via Supabase Dashboard → Storage → New bucket; see [deployment.md](./deployment.md#24-创建-storage-bucket)
+
+Path layout:
+
+```
+reports/{user_id}/{task_id}/marked.xlsx
+reports/{user_id}/{task_id}/detailed.xlsx
+reports/{user_id}/{task_id}/reports.zip
+```
+
+- `{user_id}` matches `audit_history.user_id` (the Supabase auth user id)
+- `{task_id}` matches `audit_history.task_id`
+- The exact filenames `marked.xlsx`, `detailed.xlsx`, `reports.zip` are produced by `backend/app/services/audit_orchestrator.py` and consumed by the report download endpoints under `/api/audit/tasks/{task_id}/reports/...`
+
+Access pattern:
+- Backend uploads with the service-role key after the audit pipeline finishes
+- Backend downloads with the service-role key when handling authenticated report download requests
+- Frontend never receives signed URLs and never calls Supabase Storage directly; it always goes through the backend's report download endpoints, which enforce ownership against `audit_history.user_id`
+
+This round does not introduce additional Storage RLS policies: privacy is enforced by keeping the bucket private and routing every read/write through the backend with the service-role key.
+
+## Migrations
+
+Migrations live under `backend/sql/migrations/` and must be applied manually in the Supabase SQL Editor.
+
+### 001_auth_profiles_trigger.sql
+
+- Purpose: install an `auth.users` insert trigger that auto-creates the matching `profiles` row, mirroring what `AuthService.register` does
+- Acts as a safety net for users created from the Supabase Dashboard rather than the API
+- Idempotent: re-runs are safe (uses `create or replace` and `drop trigger if exists`)
+
+### 002_audit_report_paths.sql
+
+- Purpose: add `task_id` (text) and `report_paths` (jsonb) columns to `audit_history` so that reports can be persisted in the `audit-reports` Storage bucket and re-downloaded later
+- Required for any database that was bootstrapped before Round 9A
+- Idempotent: uses `add column if not exists`, so it is safe to run on a fresh database where `supabase_schema.sql` already provides these columns, and it is safe to run multiple times
+
+Recommended order for a fresh database:
+
+1. `backend/sql/supabase_schema.sql`
+2. `backend/sql/migrations/001_auth_profiles_trigger.sql`
+3. `backend/sql/migrations/002_audit_report_paths.sql`
+
+For an existing database deployed before Round 9A, only step 3 is strictly required (steps 1–2 are already applied).
