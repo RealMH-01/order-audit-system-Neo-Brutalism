@@ -1,3 +1,6 @@
+# This Blueprint file lives under backend/.
+# For Render Blueprint, set Blueprint Path to backend/render.yaml.
+# For manual Web Service setup, set Root Directory to backend.
 services:
   - type: web
     name: order-audit-system-backend
@@ -5,6 +8,6 @@ services:
     rootDir: .
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     plan: free
     autoDeploy: true
-

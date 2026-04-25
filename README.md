@@ -59,6 +59,7 @@
       supabase_schema.sql                -- 数据库建表脚本
       migrations/
         001_auth_profiles_trigger.sql    -- 认证触发器
+        002_audit_report_paths.sql       -- 审核报告路径迁移
     docs/               -- 项目文档
     requirements.txt
     Dockerfile
@@ -110,9 +111,11 @@ npm run dev
 首次使用 Supabase 时需要完成以下配置：
 
 1. 在 Supabase Dashboard 中关闭邮件确认：Authentication - Providers - Email - Confirm email - 关闭
-2. 在 SQL Editor 中执行 `backend/sql/supabase_schema.sql`，创建 `profiles`、`industry_templates`、`audit_history`、`system_rules` 四张表
-3. 可选：执行 `backend/sql/migrations/001_auth_profiles_trigger.sql`，当用户通过 Dashboard 手动创建时自动生成 profile
-4. 在后端 `.env` 中填入 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`ENCRYPTION_KEY`
+2. 在 SQL Editor 中按顺序执行以下 SQL：
+   - `backend/sql/supabase_schema.sql`
+   - `backend/sql/migrations/001_auth_profiles_trigger.sql`
+   - `backend/sql/migrations/002_audit_report_paths.sql`
+3. 在后端 `.env` 中填入 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`ENCRYPTION_KEY`
 
 `ENCRYPTION_KEY` 必须是有效的 Fernet key，可通过以下命令生成：
 
@@ -148,6 +151,6 @@ DeepSeek V4 于 2026 年 4 月发布。旧模型名 `deepseek-chat` 和 `deepsee
 
 ## 已知限制
 
-- 审核报告目前仅在当前进程生命周期内可下载，后端重启后需重新运行审核。生产级报告留存需接入 Supabase Storage 或对象存储。
+- 审核报告已持久化到 Supabase Storage，后端重启后仍可通过审核历史页面重新下载。
 - DeepSeek 不支持视觉/OCR 输入，扫描件审核时系统会自动切换到 OpenAI 或智谱。
 - 连接测试仅验证 API Key 有效性和基本连通性，不测试完整审核链路。
