@@ -1,119 +1,122 @@
-import { ArrowRight, ClipboardCheck, FolderKanban, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  ClipboardCheck,
+  FileSearch,
+  ShieldCheck,
+  Sparkles,
+  Workflow
+} from "lucide-react";
 
 import { BrutalButton } from "@/components/ui/brutal-button";
 import { BrutalCard } from "@/components/ui/brutal-card";
-import { SectionHeading } from "@/components/ui/section-heading";
 
-const navigationCards = [
+const capabilityCards = [
   {
-    title: "登录",
-    description: "基础认证页骨架和状态容器入口。",
-    href: "/login",
-    tone: "paper" as const
+    title: "单据一致性审核",
+    description:
+      "围绕 PO、商业发票、装箱单、托书等外贸跟单资料，快速发现字段不一致、缺失和潜在风险。",
+    tone: "mint" as const,
+    icon: FileSearch
   },
   {
-    title: "注册",
-    description: "注册页面骨架与后续接入位。",
-    href: "/register",
-    tone: "sky" as const
+    title: "规则驱动的风险分层",
+    description:
+      "用 RED、YELLOW、BLUE 分层表达问题严重程度，让跟单、业务和管理者能更快对齐处理优先级。",
+    tone: "coral" as const,
+    icon: ShieldCheck
   },
   {
-    title: "审核工作台",
-    description: "PO 基准、待审单据和结果区域骨架。",
-    href: "/audit",
-    tone: "mint" as const
-  },
-  {
-    title: "历史记录",
-    description: "审核历史和在线查看的后续入口。",
-    href: "/history",
-    tone: "paper" as const
-  },
-  {
-    title: "系统设置",
-    description: "模型平台、规则偏好和 API Key 承接页。",
-    href: "/settings",
-    tone: "coral" as const
-  },
-  {
-    title: "新手引导",
-    description: "Wizard 问答式流程的页面壳层。",
-    href: "/wizard",
-    tone: "sky" as const
-  },
-  {
-    title: "规则管理",
-    description: "行业模板和规则管理后台入口。",
-    href: "/admin/rules",
-    tone: "mint" as const
+    title: "从上传到报告的闭环",
+    description:
+      "将资料上传、审核启动、过程追踪、结果查看和报告下载串成一条清晰工作流。",
+    tone: "sky" as const,
+    icon: Workflow
   }
 ];
 
-const highlights = [
-  {
-    title: "PO 作为审核基准",
-    description: "为后续商业发票、装箱单和托书建立统一校验锚点。"
-  },
-  {
-    title: "多模型能力预留",
-    description: "预留 OpenAI、DeepSeek 和智谱 GLM 的接入位。"
-  },
-  {
-    title: "新手到专业双模式",
-    description: "后续可同时支撑 wizard 引导流与专业审核工作台。"
-  }
-];
+const workflowSteps = ["上传 PO 与待审单据", "启动智能审核", "查看风险分层结果", "下载审核报告"];
 
 export default function HomePage() {
   return (
     <main className="page-shell gap-8">
-      <section className="surface-paper rounded-brutal p-6 md:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-4">
-            <p className="inline-flex w-fit items-center gap-2 rounded-full border-4 border-ink bg-sky px-4 py-2 text-sm uppercase tracking-[0.18em]">
+      <section className="surface-paper overflow-hidden rounded-brutal p-6 md:p-8">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div className="space-y-6">
+            <p className="inline-flex w-fit -rotate-1 items-center gap-2 border-4 border-ink bg-sky px-4 py-2 text-sm font-black uppercase tracking-[0.18em] shadow-neo-sm">
               <Sparkles size={18} strokeWidth={3} />
-              Round 2 Structure Alignment
+              外贸单据智能审核
             </p>
-            <h1 className="text-4xl font-black uppercase leading-none md:text-6xl">
-              Order Audit System
-              <span className="block text-acid">Neo-Brutalism</span>
-            </h1>
-            <p className="max-w-2xl text-base leading-7 md:text-lg">
-              这一轮重点是把目录结构、模块边界和导入路径统一到稳定的工程层次，为后续业务开发铺路。
-            </p>
+            <div className="space-y-4">
+              <h1 className="max-w-4xl text-4xl font-black uppercase leading-none tracking-tight md:text-6xl">
+                让跟单审核从反复核对，变成清晰可追踪的风险判断。
+              </h1>
+              <p className="max-w-2xl text-base font-bold leading-7 md:text-lg">
+                Order Audit System 面向外贸跟单场景，帮助团队把多份单据中的关键字段、业务规则和风险等级集中到一个可执行的审核流程里。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <BrutalButton href="/login" icon={ArrowRight}>
+                登录开始审核
+              </BrutalButton>
+              <BrutalButton href="/register" variant="secondary" icon={ClipboardCheck}>
+                注册账号
+              </BrutalButton>
+              <BrutalButton href="/audit" variant="outline" icon={ArrowRight}>
+                登录后进入工作台
+              </BrutalButton>
+            </div>
           </div>
-          <BrutalButton href="/audit" icon={ArrowRight}>
-            进入审核工作台
-          </BrutalButton>
+
+          <div className="relative border-4 border-ink bg-acid p-5 shadow-neo-lg">
+            <div className="absolute -right-4 -top-4 h-16 w-16 border-4 border-ink bg-secondary shadow-neo-sm" />
+            <div className="relative space-y-4">
+              <p className="text-sm font-black uppercase tracking-[0.18em]">Audit Flow</p>
+              {workflowSteps.map((step, index) => (
+                <div
+                  key={step}
+                  className="flex items-center gap-3 border-4 border-ink bg-paper p-3 shadow-neo-sm"
+                >
+                  <span className="inline-flex h-9 w-9 items-center justify-center border-4 border-ink bg-sky text-sm font-black shadow-neo-sm">
+                    {index + 1}
+                  </span>
+                  <p className="font-black">{step}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        {highlights.map((item) => (
-          <BrutalCard key={item.title} title={item.title} tone="mint">
-            <p className="text-sm leading-6">{item.description}</p>
-          </BrutalCard>
-        ))}
+        {capabilityCards.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <BrutalCard key={item.title} title={item.title} tone={item.tone}>
+              <div className="space-y-4">
+                <div className="inline-flex border-4 border-ink bg-paper p-3 shadow-neo-sm">
+                  <Icon size={22} strokeWidth={3} />
+                </div>
+                <p className="text-sm font-bold leading-6">{item.description}</p>
+              </div>
+            </BrutalCard>
+          );
+        })}
       </section>
 
-      <section className="space-y-4">
-        <SectionHeading
-          title="基础路由"
-          description="下面这些页面都已经迁移到 frontend/src/app，并保留清晰的扩展入口。"
-          icon={FolderKanban}
-        />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {navigationCards.map((item) => (
-            <BrutalCard key={item.href} title={item.title} tone={item.tone}>
-              <p className="mb-4 text-sm leading-6">{item.description}</p>
-              <BrutalButton href={item.href} variant="secondary" icon={ClipboardCheck}>
-                打开页面
-              </BrutalButton>
-            </BrutalCard>
-          ))}
+      <section className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="border-4 border-ink bg-secondary p-6 shadow-neo-md">
+          <p className="text-sm font-black uppercase tracking-[0.18em]">For Teams</p>
+          <h2 className="mt-3 text-3xl font-black uppercase leading-none md:text-4xl">
+            更适合多人协作的单据审核入口
+          </h2>
+        </div>
+        <div className="border-4 border-ink bg-paper p-6 shadow-neo-md">
+          <p className="text-base font-bold leading-7">
+            未登录用户可以先登录或注册，已有账号的用户可以直接进入审核工作台。工作台会自动保护审核数据，只允许登录用户访问。
+          </p>
         </div>
       </section>
     </main>
   );
 }
-
