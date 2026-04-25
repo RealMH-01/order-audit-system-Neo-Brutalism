@@ -59,6 +59,8 @@ create table if not exists public.audit_history (
   model_used text not null,
   custom_rules_snapshot jsonb not null default '[]'::jsonb,
   deep_think_used boolean not null default false,
+  task_id text,
+  report_paths jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
