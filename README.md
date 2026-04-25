@@ -39,6 +39,8 @@
 - 前端：Vercel
 - 数据库与认证：Supabase
 
+详细部署指南请参考 [部署文档](backend/docs/deployment.md) 和 [部署检查清单](docs/deploy-checklist.md)。
+
 ## 项目结构
 
 ```text
