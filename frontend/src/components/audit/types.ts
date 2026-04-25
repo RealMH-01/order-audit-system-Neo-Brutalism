@@ -90,6 +90,8 @@ export type AuditResultResponse = {
   };
   issues: AuditIssue[];
   message: string;
+  confidence?: number;
+  notes?: string[];
 };
 
 export type AuditCancelResponse = {

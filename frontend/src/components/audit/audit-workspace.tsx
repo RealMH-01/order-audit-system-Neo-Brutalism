@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Download,
+  History,
   Loader2,
   Play,
   ScanSearch,
@@ -1053,6 +1054,10 @@ export function AuditWorkspace() {
                   <Settings2 size={18} strokeWidth={3} />
                   前往设置页
                 </Button>
+                <Button variant="outline" onClick={() => router.push("/history")}>
+                  <History size={18} strokeWidth={3} />
+                  审核历史
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -1073,6 +1078,7 @@ export function AuditWorkspace() {
             result={result}
             filter={resultFilter}
             onFilterChange={setResultFilter}
+            onNavigateHistory={() => router.push("/history")}
           />
 
           <Card className="bg-muted">
@@ -1132,10 +1138,18 @@ export function AuditWorkspace() {
                 </div>
               ) : null}
 
-              <div className="issue-blue p-4">
+              <div className="issue-blue p-4 space-y-3">
                 <p className="text-sm font-bold leading-6">
-                  Round 6 报告下载仅在当前进程生命周期内有效；后端重启后如需再次下载，请重新运行审核。
+                  审核报告已持久化到云端存储，后端重启后仍可通过「审核历史」页面重新下载。
                 </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push("/history")}
+                >
+                  <History size={16} strokeWidth={3} />
+                  前往审核历史
+                </Button>
               </div>
             </CardContent>
           </Card>

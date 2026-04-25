@@ -83,6 +83,44 @@ function formatEventTime(value: string) {
   }).format(date);
 }
 
+const FINISHED_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+function safeParseTimestamp(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+  const ms = new Date(value).getTime();
+  if (!Number.isFinite(ms)) {
+    return null;
+  }
+  return ms;
+}
+
+function resolveDurationSeconds(events: AuditProgressPayload[]): number | null {
+  if (events.length < 2) {
+    return null;
+  }
+
+  const firstEvent = events[0];
+  const lastEvent = events[events.length - 1];
+
+  const firstTime = safeParseTimestamp(firstEvent?.created_at);
+  const lastTime =
+    safeParseTimestamp(lastEvent?.updated_at) ??
+    safeParseTimestamp(lastEvent?.created_at);
+
+  if (firstTime === null || lastTime === null) {
+    return null;
+  }
+
+  const durationSeconds = (lastTime - firstTime) / 1000;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return null;
+  }
+
+  return durationSeconds;
+}
+
 export function ProgressPanel({
   taskId,
   status,
@@ -121,6 +159,13 @@ export function ProgressPanel({
 
     return now - lastTimestamp >= 15000;
   }, [active, lastEventAt, now]);
+
+  const durationSeconds = useMemo(() => {
+    if (!FINISHED_STATUSES.has(status)) {
+      return null;
+    }
+    return resolveDurationSeconds(events);
+  }, [events, status]);
 
   const canCancel = active;
 
@@ -161,6 +206,14 @@ export function ProgressPanel({
             </div>
           ) : null}
         </div>
+
+        {durationSeconds !== null ? (
+          <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+            <p className="text-sm font-bold leading-6">
+              本轮审核耗时：{durationSeconds.toFixed(1)} 秒
+            </p>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-3">
           <Button

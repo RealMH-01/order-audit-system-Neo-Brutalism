@@ -1,4 +1,4 @@
-import { ChevronDown, Filter, ShieldAlert } from "lucide-react";
+import { ChevronDown, Filter, History, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,35 @@ type ResultsPanelProps = {
   result: AuditResultResponse | null;
   filter: ResultFilter;
   onFilterChange: (filter: ResultFilter) => void;
+  onNavigateHistory?: () => void;
 };
+
+function resolveConfidencePercent(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const clamped = Math.max(0, Math.min(1, value));
+  return Math.round(clamped * 100);
+}
+
+function resolveValidNotes(notes: unknown): string[] {
+  if (!Array.isArray(notes)) {
+    return [];
+  }
+
+  const cleaned: string[] = [];
+  for (const note of notes) {
+    if (typeof note !== "string") {
+      continue;
+    }
+    const trimmed = note.trim();
+    if (trimmed.length > 0) {
+      cleaned.push(trimmed);
+    }
+  }
+  return cleaned;
+}
 
 function resolveIssueClass(level: AuditIssue["level"]) {
   if (level === "RED") {
@@ -147,7 +175,8 @@ function IssueCard({ issue, index }: { issue: AuditIssue; index: number }) {
 export function ResultsPanel({
   result,
   filter,
-  onFilterChange
+  onFilterChange,
+  onNavigateHistory
 }: ResultsPanelProps) {
   const groups: Array<{ level: AuditIssue["level"]; title: string }> = [
     { level: "RED", title: "RED 严重问题" },
@@ -158,6 +187,10 @@ export function ResultsPanel({
   const filteredIssues =
     result?.issues.filter((issue) => (filter === "ALL" ? true : issue.level === filter)) ?? [];
 
+  const confidencePercent = result ? resolveConfidencePercent(result.confidence) : null;
+  const validNotes = result ? resolveValidNotes(result.notes) : [];
+  const hasSummaryExtras = confidencePercent !== null || validNotes.length > 0;
+
   return (
     <Card className="bg-paper">
       <CardHeader>
@@ -166,6 +199,14 @@ export function ResultsPanel({
         <CardDescription>
           这里会显示汇总、颜色分组和问题列表。当前保持和后端真实返回结构一致，不会把缺失字段伪装成完整数据。
         </CardDescription>
+        {onNavigateHistory ? (
+          <div className="pt-2">
+            <Button variant="outline" size="sm" onClick={onNavigateHistory}>
+              <History size={16} strokeWidth={3} />
+              查看历史记录
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         {result ? (
@@ -198,6 +239,38 @@ export function ResultsPanel({
                 <p className="mt-2 text-sm font-bold leading-6">{result.message}</p>
               </div>
             </div>
+
+            {hasSummaryExtras ? (
+              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                {confidencePercent !== null ? (
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.14em]">
+                      整体置信度
+                    </p>
+                    <p className="mt-2 text-sm font-bold leading-6">
+                      整体置信度：{confidencePercent}%
+                    </p>
+                  </div>
+                ) : null}
+                {validNotes.length > 0 ? (
+                  <div className={confidencePercent !== null ? "mt-3" : ""}>
+                    <p className="text-xs font-black uppercase tracking-[0.14em]">
+                      审核备注
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {validNotes.map((note, index) => (
+                        <li
+                          key={`audit-note-${index}`}
+                          className="text-sm font-bold leading-6"
+                        >
+                          {note}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap gap-3">
               {(["ALL", "RED", "YELLOW", "BLUE"] as const).map((item) => (
