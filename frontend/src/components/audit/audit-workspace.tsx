@@ -53,6 +53,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import type { WizardProfile } from "@/components/wizard/types";
 
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "cancelling"]);
+const MAX_PROGRESS_EVENTS = 24;
 
 type BucketKey = "po" | "target" | "prev" | "template" | "reference";
 type ResultFilter = "ALL" | "RED" | "YELLOW" | "BLUE";
@@ -141,6 +142,44 @@ function mergeFilesByFilename(
     replacedIds,
     replacedNames: Array.from(replacedNames)
   };
+}
+
+function getProgressEventKey(event: AuditProgressPayload) {
+  const eventId = event.event_id ?? event.id;
+  if (eventId) {
+    return `id:${eventId}`;
+  }
+
+  return [
+    event.task_id,
+    event.status,
+    event.progress_percent,
+    event.message,
+    event.created_at
+  ].join("|");
+}
+
+function getProgressEventTime(event: AuditProgressPayload) {
+  const timestamp = new Date(event.updated_at || event.created_at).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeProgressEvents(
+  previous: AuditProgressPayload[],
+  incoming: AuditProgressPayload
+) {
+  const eventsByKey = new Map<string, AuditProgressPayload>();
+
+  for (const event of [...previous, incoming]) {
+    const key = getProgressEventKey(event);
+    if (!eventsByKey.has(key)) {
+      eventsByKey.set(key, event);
+    }
+  }
+
+  return Array.from(eventsByKey.values())
+    .sort((first, second) => getProgressEventTime(first) - getProgressEventTime(second))
+    .slice(-MAX_PROGRESS_EVENTS);
 }
 
 function resolveBucketName(key: BucketKey) {
@@ -352,7 +391,7 @@ export function AuditWorkspace() {
   }, [fetchProfile]);
 
   useEffect(() => {
-    if (!taskId || !token || !ACTIVE_TASK_STATUSES.has(taskStatus)) {
+    if (!taskId || !token) {
       return;
     }
 
@@ -366,7 +405,7 @@ export function AuditWorkspace() {
         setTaskStatus(payload.status);
         setProgressPercent(payload.progress_percent);
         setProgressMessage(payload.message);
-        setProgressEvents((previous) => [...previous, payload].slice(-24));
+        setProgressEvents((previous) => mergeProgressEvents(previous, payload));
 
         if (
           payload.status === "completed" ||
@@ -411,7 +450,7 @@ export function AuditWorkspace() {
     return () => {
       controller.abort();
     };
-  }, [taskId, taskStatus, token]);
+  }, [taskId, token]);
 
   const deleteFilesSilently = useCallback(
     async (fileIds: string[]) => {

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import zipfile
 from typing import Any
 
@@ -125,7 +124,7 @@ class ReportGeneratorService:
         return self._workbook_to_bytes(workbook)
 
     def generate_report_zip(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
-        """把标记版、详情版和 JSON 结果打包为 ZIP。"""
+        """把面向用户的标记版和详情版报告打包为 ZIP。"""
 
         marked = self.generate_marked_report(task_id, audit_result)
         detailed = self.generate_detail_report(task_id, audit_result)
@@ -134,7 +133,6 @@ class ReportGeneratorService:
         with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(f"{task_id}_marked.xlsx", marked.getvalue())
             zf.writestr(f"{task_id}_detailed.xlsx", detailed.getvalue())
-            zf.writestr(f"{task_id}_result.json", json.dumps(audit_result, ensure_ascii=False, indent=2))
 
         archive.seek(0)
         return archive

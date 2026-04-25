@@ -57,6 +57,8 @@ export type AuditStartResponse = {
 };
 
 export type AuditProgressPayload = {
+  id?: string;
+  event_id?: string;
   task_id: string;
   status: string;
   progress_percent: number;
