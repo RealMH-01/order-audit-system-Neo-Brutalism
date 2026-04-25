@@ -235,6 +235,7 @@ export function HistoryShell() {
           item={detail}
           loading={detailLoading}
           error={detailError}
+          token={token}
           onRetry={() => {
             if (!token || !activeId) {
               return;

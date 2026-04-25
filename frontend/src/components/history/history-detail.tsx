@@ -1,4 +1,5 @@
-import { AlertCircle, ArrowRight, ChevronDown, FileText, RefreshCcw } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, ArrowRight, ChevronDown, Download, FileText, RefreshCcw } from "lucide-react";
 
 import {
   formatHistoryDate,
@@ -16,14 +17,149 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { downloadAuditReport } from "@/lib/api";
+
+type HistoryReportType = "marked" | "detailed" | "zip";
 
 type HistoryDetailProps = {
   item: HistoryDetailRecord | null;
   loading: boolean;
   error: string | null;
+  token: string | null;
   onRetry: () => void;
   onGoAudit: () => void;
 };
+
+const REPORT_BUTTONS: Array<{ type: HistoryReportType; label: string }> = [
+  { type: "marked", label: "标记版 Excel" },
+  { type: "detailed", label: "详情版 Excel" },
+  { type: "zip", label: "完整报告 ZIP" }
+];
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // 延迟释放 object URL，规避部分浏览器在 click 同步释放后下载失败的兼容性问题。
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+function normalizeDownloadError(error: unknown, fallback: string) {
+  if (typeof error === "object" && error && "detail" in error) {
+    const detail = (error as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail.length > 0) {
+      return detail;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function HistoryReportSection({
+  taskId,
+  token
+}: {
+  taskId: string | null | undefined;
+  token: string | null;
+}) {
+  const [loadingType, setLoadingType] = useState<HistoryReportType | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<HistoryReportType, string>>>({});
+
+  const hasTask = typeof taskId === "string" && taskId.length > 0;
+
+  const handleDownload = async (reportType: HistoryReportType) => {
+    if (!hasTask || !taskId) {
+      return;
+    }
+    if (!token) {
+      setErrors((prev) => ({
+        ...prev,
+        [reportType]: "登录态已过期，请重新登录后再下载报告。"
+      }));
+      return;
+    }
+
+    setLoadingType(reportType);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[reportType];
+      return next;
+    });
+
+    try {
+      const { blob, filename } = await downloadAuditReport(taskId, reportType, { token });
+      triggerBrowserDownload(blob, filename);
+    } catch (error) {
+      setErrors((prev) => ({
+        ...prev,
+        [reportType]: normalizeDownloadError(error, "下载失败，请稍后重试。")
+      }));
+    } finally {
+      setLoadingType(null);
+    }
+  };
+
+  return (
+    <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+      <div className="flex items-center gap-2">
+        <FileText size={18} strokeWidth={3} />
+        <p className="text-sm font-black uppercase tracking-[0.14em]">报告下载</p>
+      </div>
+
+      {hasTask ? (
+        <>
+          <p className="mt-3 text-sm font-bold leading-6">
+            本条历史记录已关联报告任务，可下载标记版 Excel、详情版 Excel 或完整 ZIP 打包。下载请求会通过后端代理完成鉴权。
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {REPORT_BUTTONS.map(({ type, label }) => {
+              const isLoading = loadingType === type;
+              const disabled = !token || loadingType !== null;
+              return (
+                <div key={type} className="flex flex-col gap-1">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void handleDownload(type);
+                    }}
+                    disabled={disabled}
+                  >
+                    <Download size={18} strokeWidth={3} />
+                    {isLoading ? "下载中..." : label}
+                  </Button>
+                  {errors[type] ? (
+                    <p className="max-w-xs text-xs font-bold leading-5 text-[color:var(--color-danger,#c0392b)]">
+                      {errors[type]}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {!token ? (
+            <p className="mt-3 text-xs font-bold leading-5">
+              当前登录态尚未就绪，按钮已禁用；登录恢复后即可下载。
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <p className="mt-3 text-sm font-bold leading-6">
+          该历史记录为早期版本，报告文件不可用。
+        </p>
+      )}
+    </div>
+  );
+}
 
 function resolveIssueClass(level: HistoryIssue["level"]) {
   if (level === "RED") {
@@ -99,6 +235,7 @@ export function HistoryDetail({
   item,
   loading,
   error,
+  token,
   onRetry,
   onGoAudit
 }: HistoryDetailProps) {
@@ -311,15 +448,7 @@ export function HistoryDetail({
               )}
             </div>
 
-            <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-              <div className="flex items-center gap-2">
-                <FileText size={18} strokeWidth={3} />
-                <p className="text-sm font-black uppercase tracking-[0.14em]">报告信息</p>
-              </div>
-              <p className="mt-3 text-sm font-bold leading-6">
-                当前历史详情接口尚未返回独立报告地址。本页会明确提示这一点；如需查看报告状态，仍应回到 `/audit` 工作台使用现有报告入口。
-              </p>
-            </div>
+            <HistoryReportSection taskId={item.task_id} token={token} />
           </>
         ) : (
           <div className="issue-yellow p-4">

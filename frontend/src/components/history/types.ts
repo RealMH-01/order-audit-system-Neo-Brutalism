@@ -74,6 +74,8 @@ export type HistoryDetailRecord = {
   deep_think_used: boolean;
   created_at: string | null;
   updated_at: string | null;
+  task_id?: string | null;
+  report_paths?: Record<string, string> | null;
 };
 
 export type HistoryDetailResponse = {
