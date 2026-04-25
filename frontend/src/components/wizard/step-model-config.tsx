@@ -1,7 +1,6 @@
 import {
   AlertCircle,
   Cable,
-  CheckCircle2,
   FlaskConical
 } from "lucide-react";
 
@@ -24,7 +23,6 @@ import type {
 } from "@/components/wizard/types";
 
 type StepModelConfigProps = {
-  authenticated: boolean;
   provider: WizardProvider;
   selectedModel: string;
   deepThinkEnabled: boolean;
@@ -36,7 +34,6 @@ type StepModelConfigProps = {
   testingProvider: WizardProvider | null;
   onFieldChange: (field: string, value: string | boolean) => void;
   onTestConnection: () => void;
-  onNext: () => void;
 };
 
 const providerModels: Record<
@@ -58,7 +55,6 @@ const providerModels: Record<
 };
 
 export function StepModelConfig({
-  authenticated,
   provider,
   selectedModel,
   deepThinkEnabled,
@@ -69,8 +65,7 @@ export function StepModelConfig({
   testStatus,
   testingProvider,
   onFieldChange,
-  onTestConnection,
-  onNext
+  onTestConnection
 }: StepModelConfigProps) {
   const currentKey =
     provider === "openai"
@@ -80,82 +75,50 @@ export function StepModelConfig({
         : zhipuApiKey;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-      <Card className="bg-paper">
-        <CardHeader>
-          <Badge variant="accent">步骤 1</Badge>
-          <CardTitle>建立当前引导会话</CardTitle>
-          <CardDescription>
-            你已经通过登录入口进入向导，这里只确认当前会话状态。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {authenticated ? (
-            <div className="issue-blue p-4">
-              <p className="flex items-center gap-2 text-sm font-bold leading-6">
-                <CheckCircle2 size={18} strokeWidth={3} />
-                当前已登录，点击下一步开始配置。
-              </p>
-            </div>
-          ) : (
-            <div className="issue-red p-4">
-              <p className="flex items-center gap-2 text-sm font-bold leading-6">
-                <AlertCircle size={18} strokeWidth={3} />
-                登录状态未就绪，请返回登录页后再进入向导。
-              </p>
-            </div>
-          )}
-
-          <Button onClick={onNext} disabled={!authenticated}>
-            下一步
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-secondary">
-        <CardHeader>
-          <Badge variant="inverse">模型与密钥</Badge>
-          <CardTitle>选择 provider、模型和 API Key</CardTitle>
-          <CardDescription>
-            这一页的值只暂存在前端 state，最终会在步骤 5 一次性写入
-            `settings/profile`。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                Provider
-              </span>
-              <Select
-                value={provider}
-                onChange={(event) =>
-                  onFieldChange("provider", event.target.value)
-                }
-              >
-                <option value="openai">OpenAI</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="zhipuai">智谱 GLM</option>
-              </Select>
-            </label>
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                模型
-              </span>
-              <Select
-                value={selectedModel}
-                onChange={(event) =>
-                  onFieldChange("selectedModel", event.target.value)
-                }
-              >
-                {providerModels[provider].map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          </div>
+    <Card className="bg-secondary">
+      <CardHeader>
+        <Badge variant="inverse">模型与密钥</Badge>
+        <CardTitle>选择 provider、模型和 API Key</CardTitle>
+        <CardDescription>
+          这一页的值只暂存在前端 state，最终会在步骤 5 一次性写入
+          `settings/profile`。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="space-y-2">
+            <span className="text-sm font-bold uppercase tracking-[0.14em]">
+              Provider
+            </span>
+            <Select
+              value={provider}
+              onChange={(event) =>
+                onFieldChange("provider", event.target.value)
+              }
+            >
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="zhipuai">智谱 GLM</option>
+            </Select>
+          </label>
+          <label className="space-y-2">
+            <span className="text-sm font-bold uppercase tracking-[0.14em]">
+              模型
+            </span>
+            <Select
+              value={selectedModel}
+              onChange={(event) =>
+                onFieldChange("selectedModel", event.target.value)
+              }
+            >
+              {providerModels[provider].map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
 
           <label className="space-y-2">
             <span className="text-sm font-bold uppercase tracking-[0.14em]">
@@ -245,7 +208,7 @@ export function StepModelConfig({
             <Button
               variant="secondary"
               onClick={onTestConnection}
-              disabled={!authenticated || testingProvider !== null}
+              disabled={testingProvider !== null}
               className="w-full lg:w-auto"
             >
               <Cable size={18} strokeWidth={3} />
@@ -267,8 +230,7 @@ export function StepModelConfig({
               </p>
             </div>
           ) : null}
-        </CardContent>
-      </Card>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

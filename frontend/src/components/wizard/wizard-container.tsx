@@ -744,7 +744,6 @@ export function WizardContainer() {
       case "model":
         return (
           <StepModelConfig
-            authenticated={Boolean(form.token)}
             provider={form.provider}
             selectedModel={form.selectedModel}
             deepThinkEnabled={form.deepThinkEnabled}
@@ -758,7 +757,6 @@ export function WizardContainer() {
               updateField(field as keyof WizardFormState, value as never)
             }
             onTestConnection={handleTestConnection}
-            onNext={handleNextStep}
           />
         );
       case "template":
