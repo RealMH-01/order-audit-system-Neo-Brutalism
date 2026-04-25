@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { clearStoredAccessToken } from "@/lib/api";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +25,6 @@ export function Navbar() {
   const isAuthenticated = state.status === "authenticated" && state.user !== null;
 
   const handleLogout = () => {
-    clearStoredAccessToken();
     signOut();
     setOpen(false);
     router.replace("/login");
@@ -63,7 +61,11 @@ export function Navbar() {
               <LogOut size={18} strokeWidth={3} />
               退出登录
             </Button>
-          ) : null}
+          ) : (
+            <Link href="/login" className={buttonVariants({ variant: "outline" })}>
+              登录
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-3">
@@ -101,7 +103,15 @@ export function Navbar() {
               <LogOut size={18} strokeWidth={3} />
               退出登录
             </Button>
-          ) : null}
+          ) : (
+            <Link
+              href="/login"
+              className={cn(buttonVariants({ variant: "outline" }), "justify-center")}
+              onClick={() => setOpen(false)}
+            >
+              登录
+            </Link>
+          )}
         </nav>
       </div>
     </header>

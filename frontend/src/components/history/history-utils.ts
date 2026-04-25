@@ -43,7 +43,11 @@ export function formatHistoryTitle(item: HistoryIdentity) {
   return `审核记录 #${item.id.slice(0, 8)}`;
 }
 
-export function resolveHistoryStatus(): HistoryResolvedStatus {
+export function resolveHistoryStatus(
+  _item?: HistoryListItem | HistoryDetailRecord
+): HistoryResolvedStatus {
+  // The current history API only returns completed records, so there is no
+  // separate task-status field to distinguish here yet.
   return "COMPLETED";
 }
 

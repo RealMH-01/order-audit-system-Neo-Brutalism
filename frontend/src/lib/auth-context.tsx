@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   createContext,
   useContext,
   useMemo,
@@ -9,6 +10,7 @@ import {
   type ReactNode
 } from "react";
 
+import { clearStoredAccessToken } from "@/lib/api";
 import type { AuthAction, AuthContextValue, AuthState } from "@/types";
 
 const initialState: AuthState = {
@@ -34,20 +36,21 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function buildValue(
-  state: AuthState,
-  dispatch: Dispatch<AuthAction>
-): AuthContextValue {
-  return {
-    state,
-    dispatch,
-    signOut: () => dispatch({ type: "SIGN_OUT" })
-  };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
-  const value = useMemo(() => buildValue(state, dispatch), [state, dispatch]);
+  const signOut = useCallback(() => {
+    clearStoredAccessToken();
+    dispatch({ type: "SIGN_OUT" });
+  }, [dispatch]);
+
+  const value = useMemo(
+    () => ({
+      state,
+      dispatch,
+      signOut
+    }),
+    [state, dispatch, signOut]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -59,4 +62,3 @@ export function useAuth() {
   }
   return context;
 }
-

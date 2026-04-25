@@ -9,6 +9,7 @@ import { HistoryList } from "@/components/history/history-list";
 import {
   resolveHistoryFilterLabel,
   resolveHistoryIssueTotal,
+  resolveHistoryStatus,
   sortHistoryItems
 } from "@/components/history/history-utils";
 import type {
@@ -110,11 +111,11 @@ export function HistoryShell() {
   }, [fetchList]);
 
   const filteredItems = useMemo(() => {
-    if (filter === "COMPLETED") {
+    if (filter === "ALL") {
       return items;
     }
 
-    return items;
+    return items.filter((item) => resolveHistoryStatus(item) === filter);
   }, [filter, items]);
 
   const visibleIssueTotal = useMemo(
