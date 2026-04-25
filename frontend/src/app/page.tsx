@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  ClipboardCheck,
   FileSearch,
   ShieldCheck,
   Sparkles,
@@ -56,13 +55,10 @@ export default function HomePage() {
             </div>
             <div className="flex flex-wrap gap-3">
               <BrutalButton href="/login" icon={ArrowRight}>
-                登录开始审核
+                登录 / 注册
               </BrutalButton>
-              <BrutalButton href="/register" variant="secondary" icon={ClipboardCheck}>
-                注册账号
-              </BrutalButton>
-              <BrutalButton href="/audit" variant="outline" icon={ArrowRight}>
-                登录后进入工作台
+              <BrutalButton href="#capabilities" variant="outline" icon={FileSearch}>
+                了解更多
               </BrutalButton>
             </div>
           </div>
@@ -87,7 +83,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section id="capabilities" className="grid gap-4 md:grid-cols-3">
         {capabilityCards.map((item) => {
           const Icon = item.icon;
 
