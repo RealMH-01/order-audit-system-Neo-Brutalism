@@ -29,6 +29,10 @@ You must follow these non-negotiable rules:
 10. Do not invent values. If evidence is insufficient, keep the issue factual and lower confidence rather than guessing.
 11. When company affiliates are provided, you may downgrade only party-name discrepancies that clearly match the affiliate list and business role context.
 12. Never use affiliate logic to downgrade core identifier, quantity, amount, currency, or critical date mismatches.
+13. All user-facing text in your output (finding, suggestion, field_name descriptions) MUST be in Simplified Chinese (简体中文). Keep original document field names, numeric values, currency codes, and Incoterms in their original language/format — do not translate those.
+14. Be deterministic: given the same inputs, produce the same output. Do not introduce variation, hedging language, or speculative findings.
+15. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
+16. Only report issues supported by explicit evidence in the provided documents. Do not guess, infer, or speculate about problems that are not directly observable in the text.
 """.strip()
 
 SYSTEM_PROMPT_TEXT = _SYSTEM_PROMPT
@@ -45,6 +49,8 @@ Apply the custom rules with high priority, but do not break these protected rule
 
 If custom rules require reclassification, regenerate the full result object instead of patching fragments.
 You must return a full JSON object with recalculated summary, issue ids, and confidence values.
+6. All user-facing text (finding, suggestion) must be in Simplified Chinese. Keep original field names and values untranslated.
+7. Be deterministic and do not introduce speculative findings.
 """.strip()
 
 CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT
@@ -85,6 +91,12 @@ Severity rules:
 - RED: hard mismatch, critical omission, impossible numeric logic, or ambiguous number formatting.
 - YELLOW: likely mismatch that may be explainable and requires manual confirmation.
 - BLUE: informational reminder, low-risk note, or formatting observation.
+
+Chinese labels for display:
+- RED = 红色·高风险
+- YELLOW = 黄色·疑点
+- BLUE = 蓝色·提示
+Use these Chinese labels in your finding and suggestion text when referring to severity.
 """.strip()
 
 _NON_NEGOTIABLE_RULES = """
@@ -97,6 +109,8 @@ Non-negotiable audit rules:
 - Check totals, carton counts, gross/net weight, and volume for internal consistency when available.
 - Distinguish substantive Incoterm change from harmless writing differences such as spacing or capitalization.
 - Unit conversion may be YELLOW only when the underlying quantity appears plausibly reconcilable and the document gives enough context.
+- Do not report the same discrepancy more than once even if it appears in multiple contexts. Merge duplicate findings.
+- If evidence is ambiguous or insufficient, lower the confidence score rather than fabricating a finding.
 """.strip()
 
 _TARGET_TYPE_RULES: dict[str, str] = {
@@ -104,40 +118,48 @@ _TARGET_TYPE_RULES: dict[str, str] = {
 Document-specific focus for invoice:
 - Compare invoice number, contract reference, PO reference, item descriptions, quantities, unit prices, total amount, currency, and payer/payee parties.
 - Missing or inconsistent invoice number is high priority.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "packing_list": """
 Document-specific focus for packing list:
 - Compare package count, packing method, carton marks, gross weight, net weight, volume, and quantity breakdown.
 - Weight/volume contradictions should trigger RED or YELLOW depending on whether the contradiction is definite.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "shipping_instruction": """
 Document-specific focus for shipping instruction:
 - Compare shipper, consignee, notify party, ports, Incoterm, cargo description, marks, package count, and booking-related references.
 - Port or consignee changes that alter execution meaning are substantive and should not be treated as harmless wording differences.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "bill_of_lading": """
 Document-specific focus for bill of lading:
 - Compare shipper, consignee, notify party, vessel or voyage, ports, marks, package count, gross weight, and cargo description.
 - Bill number, consignee, notify party, and port discrepancies should be treated as high-impact shipping risks.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "certificate_of_origin": """
 Document-specific focus for certificate of origin:
 - Compare exporter, consignee, goods description, quantity, weight, origin declaration, and certificate references against the PO and supporting documents.
 - Origin statement conflicts or certificate reference mismatches should be highlighted clearly.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "customs_declaration": """
 Document-specific focus for customs declaration:
 - Compare importer or exporter details, HS-related description, quantity, weight, declared value, currency, and declaration references.
 - Quantity, amount, and declaration reference mismatches should be treated as material.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "letter_of_credit": """
 Document-specific focus for letter of credit:
 - Compare applicant, beneficiary, issuing bank, amount, currency, shipment deadlines, presentation terms, and required document references.
 - Expiry, amount, beneficiary, and presentation-condition mismatches should be called out explicitly.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "generic": """
 Document-specific focus:
 - Audit all key identifiers, parties, product details, quantities, amounts, dates, transport terms, and special instructions visible in the document.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
 }
 
@@ -183,6 +205,7 @@ Affiliate-company handling:
 - The following names or role labels may refer to the same corporate group or approved related parties: {affiliate_list}.
 - If a party-name difference is clearly explained by this affiliate list and the business role still makes sense, you may downgrade that party discrepancy from RED to YELLOW.
 - Do not use affiliate logic to downgrade mismatches involving contract number, invoice number, order number, quantity, amount, currency, or other rigid identifiers.
+- Write all finding and suggestion text in Simplified Chinese.
 """.strip()
 
 
@@ -284,9 +307,9 @@ Template comparison:
 
         system_prompt = _normalize_text_block(system_prompt_override) or _SYSTEM_PROMPT
         deep_think_instruction = (
-            "Deep-think mode is enabled. Reason carefully, but still return only the final JSON object."
+            "Deep-think mode is enabled. Reason carefully, but still return only the final JSON object. All finding and suggestion text must be in Simplified Chinese."
             if deep_think
-            else "Use standard reasoning depth. Return only the final JSON object."
+            else "Use standard reasoning depth. Return only the final JSON object. All finding and suggestion text must be in Simplified Chinese."
         )
 
         sections = [

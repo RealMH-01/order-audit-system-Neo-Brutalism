@@ -45,7 +45,7 @@ class ReportGeneratorService:
 
         workbook = self._new_workbook()
         sheet = workbook.active
-        sheet.title = "标记版报告"
+        sheet.title = "审核问题标记汇总"
         sheet.append(["任务 ID", task_id])
         sheet.append(["红色", audit_result.get("summary", {}).get("red", 0)])
         sheet.append(["黄色", audit_result.get("summary", {}).get("yellow", 0)])
@@ -54,12 +54,14 @@ class ReportGeneratorService:
 
         headers = ["序号", "级别", "字段", "问题说明", "建议", "文档类型", "文件 ID"]
         sheet.append(headers)
+        self._set_column_widths(sheet, [12, 16, 20, 50, 40, 16, 20])
         self._style_header_row(sheet, row_index=6)
 
         for index, issue in enumerate(self._extract_issues(audit_result), start=1):
+            level = issue.get("level", "YELLOW")
             row = [
                 issue.get("id", f"issue-{index:03d}"),
-                issue.get("level", "YELLOW"),
+                self._localize_level(str(level)),
                 issue.get("field_name", "unspecified_field"),
                 issue.get("finding") or issue.get("message", ""),
                 issue.get("suggestion", ""),
@@ -68,8 +70,10 @@ class ReportGeneratorService:
             ]
             sheet.append(row)
             current_row = sheet.max_row
-            self._mark_issue_row(sheet, current_row, str(issue.get("level", "YELLOW")), float(issue.get("confidence", 0.5)))
+            self._mark_issue_row(sheet, current_row, str(level), float(issue.get("confidence", 0.5)))
 
+        self._apply_wrap_text(sheet, start_row=1)
+        sheet.freeze_panes = "A7"
         return self._workbook_to_bytes(workbook)
 
     def generate_detail_report(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
@@ -100,13 +104,15 @@ class ReportGeneratorService:
             "文件 ID",
         ]
         issue_sheet.append(headers)
+        self._set_column_widths(issue_sheet, [12, 16, 20, 50, 40, 12, 24, 24, 40, 16, 20])
         self._style_header_row(issue_sheet, row_index=1)
 
         for index, issue in enumerate(self._extract_issues(audit_result), start=1):
+            level = issue.get("level", "YELLOW")
             issue_sheet.append(
                 [
                     issue.get("id", f"issue-{index:03d}"),
-                    issue.get("level", "YELLOW"),
+                    self._localize_level(str(level)),
                     issue.get("field_name", "unspecified_field"),
                     issue.get("finding") or issue.get("message", ""),
                     issue.get("suggestion", ""),
@@ -119,8 +125,10 @@ class ReportGeneratorService:
                 ]
             )
             current_row = issue_sheet.max_row
-            self._mark_issue_row(issue_sheet, current_row, str(issue.get("level", "YELLOW")), float(issue.get("confidence", 0.5)))
+            self._mark_issue_row(issue_sheet, current_row, str(level), float(issue.get("confidence", 0.5)))
 
+        self._apply_wrap_text(issue_sheet, start_row=1)
+        issue_sheet.freeze_panes = "A2"
         return self._workbook_to_bytes(workbook)
 
     def generate_report_zip(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
@@ -131,8 +139,8 @@ class ReportGeneratorService:
         archive = io.BytesIO()
 
         with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{task_id}_marked.xlsx", marked.getvalue())
-            zf.writestr(f"{task_id}_detailed.xlsx", detailed.getvalue())
+            zf.writestr(f"{task_id}_审核问题标记汇总.xlsx", marked.getvalue())
+            zf.writestr(f"{task_id}_审核详情报告.xlsx", detailed.getvalue())
 
         archive.seek(0)
         return archive
@@ -182,6 +190,32 @@ class ReportGeneratorService:
             f"模型置信度：{max(0.0, min(1.0, confidence)) * 100:.1f}%",
             "system",
         )
+
+    @staticmethod
+    def _localize_level(level: str) -> str:
+        """将英文级别标签转换为中文显示标签。"""
+
+        mapping = {"RED": "红色·高风险", "YELLOW": "黄色·疑点", "BLUE": "蓝色·提示"}
+        return mapping.get(level.upper().strip(), level)
+
+    @staticmethod
+    def _set_column_widths(sheet, widths: list[int]) -> None:
+        """批量设置列宽。"""
+
+        from openpyxl.utils import get_column_letter
+
+        for index, width in enumerate(widths, start=1):
+            sheet.column_dimensions[get_column_letter(index)].width = width
+
+    @staticmethod
+    def _apply_wrap_text(sheet, start_row: int) -> None:
+        """对指定起始行之后的所有数据行设置自动换行。"""
+
+        from openpyxl.styles import Alignment
+
+        for row in sheet.iter_rows(min_row=start_row, max_row=sheet.max_row):
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     @staticmethod
     def _workbook_to_bytes(workbook) -> io.BytesIO:
