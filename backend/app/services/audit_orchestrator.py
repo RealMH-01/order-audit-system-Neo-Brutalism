@@ -96,6 +96,11 @@ _REPORT_STORAGE_FILENAMES = {
 class AuditOrchestratorService:
     """协调审核执行流水线。"""
 
+    # RuntimeStore 会持有文件内容、上下文和报告对象，必须限制并发审核数，避免极端情况下撑爆内存。
+    MAX_CONCURRENT_AUDITS = 5
+    # 单次 LLM 调用超时由 orchestrator 统一传入，便于后续按任务类型调整。
+    _LLM_SINGLE_CALL_TIMEOUT_SECONDS = 120.0
+
     def __init__(
         self,
         settings: Settings,
@@ -115,6 +120,8 @@ class AuditOrchestratorService:
         self.repo = repo
         self.cipher = ApiKeyCipher(settings)
         self.audit_engine = AuditEngineService()
+        # 允许 Settings 覆盖默认并发上限，同时至少保留 1 个审核槽位，避免配置错误导致服务不可用。
+        self.max_concurrent_audits = max(1, int(settings.max_concurrent_audits or self.MAX_CONCURRENT_AUDITS))
 
     def get_capability(self) -> AuditCapability:
         """返回执行层能力说明。"""
@@ -177,6 +184,15 @@ class AuditOrchestratorService:
         """创建审核任务并启动后台协程。"""
 
         self._cleanup_stale_tasks()
+        running_task_count = sum(
+            1
+            for task in self.store.audit_tasks.values()
+            if task.get("status") in {"queued", "running"}
+        )
+        # 在创建新任务前做并发闸门，避免 RuntimeStore 同时堆积过多文件内容、上下文和报告对象。
+        if running_task_count >= self.max_concurrent_audits:
+            raise AppError("当前系统审核任务已满，请稍后再试。", status_code=429)
+
         self.file_parser.get_user_file(current_user.id, payload.po_file_id)
         for item in payload.target_files:
             self.file_parser.get_user_file(current_user.id, item.file_id)
@@ -476,22 +492,31 @@ class AuditOrchestratorService:
             deep_think=deep_think,
         )
 
+        # 每次 LLM 调用前后都检查取消状态，并传入单次超时，避免取消审核后继续长时间等待同步 SDK。
         if needs_ocr:
-            raw_response = await self.llm_client.call_llm_with_image(
-                messages,
-                image_payloads=list(target_record.get("page_images", [])),
-                provider=provider_for_call,
-                requested_model=model_for_call,
-                api_key=user_api_key,
-                deep_think=deep_think,
+            raw_response = await self._await_llm_call(
+                lambda: self.llm_client.call_llm_with_image(
+                    messages,
+                    image_payloads=list(target_record.get("page_images", [])),
+                    provider=provider_for_call,
+                    requested_model=model_for_call,
+                    api_key=user_api_key,
+                    deep_think=deep_think,
+                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+                ),
+                should_cancel=should_cancel,
             )
         else:
-            raw_response = await self.llm_client.call_llm(
-                messages,
-                provider=provider_for_call,
-                requested_model=model_for_call,
-                api_key=user_api_key,
-                deep_think=deep_think,
+            raw_response = await self._await_llm_call(
+                lambda: self.llm_client.call_llm(
+                    messages,
+                    provider=provider_for_call,
+                    requested_model=model_for_call,
+                    api_key=user_api_key,
+                    deep_think=deep_think,
+                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+                ),
+                should_cancel=should_cancel,
             )
 
         parsed_result = self.audit_engine.parse_audit_result(raw_response)
@@ -506,12 +531,16 @@ class AuditOrchestratorService:
                 target_text=target_text_context,
                 target_type=doc_type,
             )
-            custom_response = await self.llm_client.call_llm(
-                custom_messages,
-                provider=provider_for_call,
-                requested_model=model_for_call,
-                api_key=user_api_key,
-                deep_think=deep_think,
+            custom_response = await self._await_llm_call(
+                lambda: self.llm_client.call_llm(
+                    custom_messages,
+                    provider=provider_for_call,
+                    requested_model=model_for_call,
+                    api_key=user_api_key,
+                    deep_think=deep_think,
+                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+                ),
+                should_cancel=should_cancel,
             )
             parsed_result = self._post_process_force_downgrade(
                 self.audit_engine.parse_audit_result(custom_response),
@@ -529,12 +558,16 @@ class AuditOrchestratorService:
                 reference_texts=reference_text_contexts,
                 target_type=doc_type,
             )
-            cross_response = await self.llm_client.call_llm(
-                cross_check_messages,
-                provider=provider_for_call,
-                requested_model=model_for_call,
-                api_key=user_api_key,
-                deep_think=False,
+            cross_response = await self._await_llm_call(
+                lambda: self.llm_client.call_llm(
+                    cross_check_messages,
+                    provider=provider_for_call,
+                    requested_model=model_for_call,
+                    api_key=user_api_key,
+                    deep_think=False,
+                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+                ),
+                should_cancel=should_cancel,
             )
             parsed_result = self._post_process_force_downgrade(
                 self.audit_engine.parse_audit_result(cross_response),
@@ -900,6 +933,22 @@ class AuditOrchestratorService:
         result = callback(progress, message)
         if asyncio.iscoroutine(result):
             await result
+
+    async def _await_llm_call(
+        self,
+        call_factory: Callable[[], Awaitable[str]],
+        *,
+        should_cancel: Callable[[], bool] | None,
+    ) -> str:
+        """执行一次 LLM 调用，并在调用前后检查取消，同时兜底转换 asyncio 超时错误。"""
+
+        self._ensure_not_cancelled(should_cancel)
+        try:
+            response = await call_factory()
+        except asyncio.TimeoutError as exc:
+            raise AppError("模型调用超时，请稍后重试或缩小待审核文件内容。", status_code=504) from exc
+        self._ensure_not_cancelled(should_cancel)
+        return response
 
     @staticmethod
     def _ensure_not_cancelled(should_cancel: Callable[[], bool] | None) -> None:

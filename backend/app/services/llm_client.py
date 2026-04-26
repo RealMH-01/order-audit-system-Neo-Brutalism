@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Awaitable
 
 from app.config import Settings
 from app.errors import AppError
@@ -25,6 +25,8 @@ class LLMClientService:
 
     # 连接测试默认超时（秒），不影响正式审核链路的超时策略。
     _CONNECTION_TEST_TIMEOUT_SECONDS = 20.0
+    # 同步 SDK 调用会被放进线程池，外层必须限制单次等待时长，避免取消后长期占住审核链路。
+    _DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
 
     # DeepSeek 旧模型名 -> V4 新模型名的兼容映射。
     # 放在 _resolve_model 里使用，避免影响 _resolve_provider 的模型名前缀判断。
@@ -134,6 +136,7 @@ class LLMClientService:
         base_url: str | None = None,
         deep_think: bool = False,
         temperature: float = 0.0,
+        timeout: float | None = None,
     ) -> str:
         """统一文本调用入口。"""
 
@@ -144,22 +147,34 @@ class LLMClientService:
             deep_think=deep_think,
             vision=False,
         )
+        effective_timeout = self._resolve_call_timeout(timeout)
 
         if normalized_provider in {"openai", "deepseek"}:
-            return await self._call_openai_compatible(
-                messages,
+            # 同步 SDK 不会响应 asyncio 取消；这里统一加 wait_for，保证单次 LLM 调用最多等待指定时长。
+            return await self._run_with_call_timeout(
+                self._call_openai_compatible(
+                    messages,
+                    provider=normalized_provider,
+                    model=model,
+                    api_key=api_key,
+                    base_url=base_url,
+                    temperature=temperature,
+                    request_timeout=effective_timeout,
+                ),
                 provider=normalized_provider,
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                temperature=temperature,
+                timeout=effective_timeout,
             )
         if normalized_provider == "zhipuai":
-            return await self._call_zhipu_text(
-                messages,
-                model=model,
-                api_key=api_key,
-                deep_think=deep_think,
+            # 同步 SDK 不会响应 asyncio 取消；这里统一加 wait_for，保证单次 LLM 调用最多等待指定时长。
+            return await self._run_with_call_timeout(
+                self._call_zhipu_text(
+                    messages,
+                    model=model,
+                    api_key=api_key,
+                    deep_think=deep_think,
+                ),
+                provider=normalized_provider,
+                timeout=effective_timeout,
             )
         raise AppError("不支持的模型提供方。", status_code=400)
 
@@ -174,6 +189,7 @@ class LLMClientService:
         base_url: str | None = None,
         deep_think: bool = False,
         temperature: float = 0.0,
+        timeout: float | None = None,
     ) -> str:
         """统一视觉调用入口。"""
 
@@ -188,25 +204,59 @@ class LLMClientService:
             vision=True,
         )
         multimodal_messages = self._build_multimodal_messages(messages, image_payloads)
+        effective_timeout = self._resolve_call_timeout(timeout)
 
         if normalized_provider == "openai":
-            return await self._call_openai_compatible(
-                multimodal_messages,
-                provider="openai",
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                temperature=temperature,
+            # 视觉/OCR 单次请求通常更慢，但仍需统一超时，避免取消审核后继续等待长调用。
+            return await self._run_with_call_timeout(
+                self._call_openai_compatible(
+                    multimodal_messages,
+                    provider="openai",
+                    model=model,
+                    api_key=api_key,
+                    base_url=base_url,
+                    temperature=temperature,
+                    request_timeout=effective_timeout,
+                ),
+                provider=normalized_provider,
+                timeout=effective_timeout,
             )
         if normalized_provider == "zhipuai":
-            return await self._call_zhipu_text(
-                multimodal_messages,
-                model=model,
-                api_key=api_key,
-                deep_think=deep_think,
+            # 视觉/OCR 单次请求通常更慢，但仍需统一超时，避免取消审核后继续等待长调用。
+            return await self._run_with_call_timeout(
+                self._call_zhipu_text(
+                    multimodal_messages,
+                    model=model,
+                    api_key=api_key,
+                    deep_think=deep_think,
+                ),
+                provider=normalized_provider,
+                timeout=effective_timeout,
             )
 
         raise AppError("当前视觉调用 provider 无法识别。", status_code=400)
+
+    async def _run_with_call_timeout(
+        self,
+        operation: Awaitable[str],
+        *,
+        provider: str,
+        timeout: float,
+    ) -> str:
+        """给真实 SDK 调用套单次超时，并把 asyncio 超时转换成统一业务错误。"""
+
+        try:
+            return await asyncio.wait_for(operation, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise AppError(
+                f"{provider} 单次模型调用超过 {timeout:g} 秒，已停止等待，请稍后重试或缩小文件内容。",
+                status_code=504,
+            ) from exc
+
+    def _resolve_call_timeout(self, timeout: float | None) -> float:
+        """解析单次调用超时；默认值集中在客户端侧，调用方也可以按场景覆盖。"""
+
+        return self._DEFAULT_CALL_TIMEOUT_SECONDS if timeout is None else timeout
 
     async def test_connection(
         self,
@@ -219,19 +269,19 @@ class LLMClientService:
         """做一次最小远程连接测试，控制在短时超时范围内。"""
 
         try:
-            response = await asyncio.wait_for(
-                self.call_llm(
-                    [{"role": "user", "content": "Reply with OK."}],
-                    provider=provider,
-                    requested_model=requested_model,
-                    api_key=api_key,
-                    base_url=base_url,
-                    deep_think=False,
-                    temperature=0.0,
-                ),
+            response = await self.call_llm(
+                [{"role": "user", "content": "Reply with OK."}],
+                provider=provider,
+                requested_model=requested_model,
+                api_key=api_key,
+                base_url=base_url,
+                deep_think=False,
+                temperature=0.0,
                 timeout=self._CONNECTION_TEST_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError as exc:
+        except AppError as exc:
+            if exc.status_code != 504:
+                raise
             normalized_provider = self._resolve_provider(provider, requested_model)
             raise AppError(
                 f"{normalized_provider} 连接测试超时，请稍后重试或检查网络。",
@@ -254,6 +304,7 @@ class LLMClientService:
         api_key: str | None,
         base_url: str | None,
         temperature: float,
+        request_timeout: float,
     ) -> str:
         """调用 OpenAI 兼容接口，包括 OpenAI 和 DeepSeek。"""
 
@@ -268,7 +319,12 @@ class LLMClientService:
 
         def _run() -> str:
             try:
-                client = OpenAI(api_key=resolved_api_key, base_url=resolved_base_url or None)
+                # OpenAI 兼容 SDK 支持 HTTP 层 timeout；与 wait_for 同步，尽量让底层请求也尽快结束。
+                client = OpenAI(
+                    api_key=resolved_api_key,
+                    base_url=resolved_base_url or None,
+                    timeout=request_timeout,
+                )
                 response = client.chat.completions.create(
                     model=model,
                     messages=messages,
