@@ -26,6 +26,11 @@ API_KEY_FIELDS = (
     "openai_api_key",
 )
 
+ZHIPU_LEGACY_MODEL_MAP = {
+    "glm-4v": "glm-4.6v",
+    "glm-4-flash": "glm-4.6v-flash",
+}
+
 
 class SettingsService:
     """Manage profile reads and writes while keeping RuntimeStore fallback."""
@@ -62,6 +67,8 @@ class SettingsService:
         }
 
         for field_name, field_value in updates.items():
+            if field_name == "selected_model" and isinstance(field_value, str):
+                field_value = self._normalize_profile_model(field_value)
             profile[field_name] = field_value
 
         if api_key_fields:
@@ -231,11 +238,20 @@ class SettingsService:
         return profile
 
     @staticmethod
+    def _normalize_profile_model(model: str) -> str:
+        """兼容历史智谱模型名，保存和展示时归一到 GLM-4.6V 系列。"""
+
+        normalized = model.strip().lower()
+        return ZHIPU_LEGACY_MODEL_MAP.get(normalized, model)
+
+    @staticmethod
     def _to_profile_response(profile: dict[str, object]) -> ProfileResponse:
         return ProfileResponse(
             id=str(profile["id"]),
             display_name=profile.get("display_name"),
-            selected_model=str(profile.get("selected_model", "gpt-4o")),
+            selected_model=SettingsService._normalize_profile_model(
+                str(profile.get("selected_model", "gpt-4o"))
+            ),
             deep_think_enabled=bool(profile.get("deep_think_enabled", False)),
             company_affiliates=list(profile.get("company_affiliates", [])),
             company_affiliates_roles=list(profile.get("company_affiliates_roles", [])),

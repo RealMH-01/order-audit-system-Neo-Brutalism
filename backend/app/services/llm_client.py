@@ -32,6 +32,10 @@ class LLMClientService:
         "deepseek-chat": "deepseek-v4-flash",
         "deepseek-reasoner": "deepseek-v4-pro",
     }
+    _ZHIPU_LEGACY_MODEL_MAP = {
+        "glm-4v": "glm-4.6v",
+        "glm-4-flash": "glm-4.6v-flash",
+    }
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -105,13 +109,15 @@ class LLMClientService:
             # 仅对 DeepSeek provider 做归一化，避免把 OpenAI / Zhipu 模型误伤。
             if provider == "deepseek" and normalized_request in self._DEEPSEEK_LEGACY_MODEL_MAP:
                 return self._DEEPSEEK_LEGACY_MODEL_MAP[normalized_request]
+            if provider == "zhipuai" and normalized_request in self._ZHIPU_LEGACY_MODEL_MAP:
+                return self._ZHIPU_LEGACY_MODEL_MAP[normalized_request]
             return requested_model
 
         if provider == "deepseek":
             # 非深度思考 -> V4 Flash；深度思考 / reasoner 场景 -> V4 Pro。
             return "deepseek-v4-pro" if deep_think else "deepseek-v4-flash"
         if provider == "zhipuai":
-            return "glm-4v" if vision else "glm-4-flash"
+            return "glm-4.6v"
         if vision:
             return self.settings.default_vision_model
         if deep_think:
@@ -149,7 +155,12 @@ class LLMClientService:
                 temperature=temperature,
             )
         if normalized_provider == "zhipuai":
-            return await self._call_zhipu_text(messages, model=model, api_key=api_key)
+            return await self._call_zhipu_text(
+                messages,
+                model=model,
+                api_key=api_key,
+                deep_think=deep_think,
+            )
         raise AppError("不支持的模型提供方。", status_code=400)
 
     async def call_llm_with_image(
@@ -188,7 +199,12 @@ class LLMClientService:
                 temperature=temperature,
             )
         if normalized_provider == "zhipuai":
-            return await self._call_zhipu_text(multimodal_messages, model=model, api_key=api_key)
+            return await self._call_zhipu_text(
+                multimodal_messages,
+                model=model,
+                api_key=api_key,
+                deep_think=deep_think,
+            )
 
         raise AppError("当前视觉调用 provider 无法识别。", status_code=400)
 
@@ -270,6 +286,7 @@ class LLMClientService:
         *,
         model: str,
         api_key: str | None,
+        deep_think: bool = False,
     ) -> str:
         """调用智谱模型。"""
 
@@ -283,12 +300,27 @@ class LLMClientService:
         def _run() -> str:
             try:
                 client = ZhipuAI(api_key=resolved_api_key)
-                response = client.chat.completions.create(model=model, messages=messages)
+                payload = self._build_zhipu_payload(model=model, messages=messages, deep_think=deep_think)
+                response = client.chat.completions.create(**payload)
                 return response.choices[0].message.content or ""
             except Exception as exc:  # pragma: no cover
                 raise self._map_exception("zhipuai", exc) from exc
 
         return await asyncio.to_thread(_run)
+
+    @staticmethod
+    def _build_zhipu_payload(
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        deep_think: bool = False,
+    ) -> dict[str, Any]:
+        """构造智谱请求参数，按需启用 thinking。"""
+
+        payload: dict[str, Any] = {"model": model, "messages": messages}
+        if deep_think:
+            payload["thinking"] = {"type": "enabled"}
+        return payload
 
     def _build_multimodal_messages(
         self,
