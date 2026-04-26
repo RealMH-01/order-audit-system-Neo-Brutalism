@@ -149,6 +149,26 @@ export function SettingsShell() {
     return state.hasZhipuKey;
   }, [state.hasDeepseekKey, state.hasOpenaiKey, state.hasZhipuKey, state.provider]);
 
+  const currentProviderName =
+    state.provider === "openai"
+      ? "OpenAI"
+      : state.provider === "deepseek"
+        ? "DeepSeek"
+        : "智谱 GLM";
+  const currentKeyField =
+    state.provider === "openai"
+      ? "openaiApiKey"
+      : state.provider === "deepseek"
+        ? "deepseekApiKey"
+        : "zhipuApiKey";
+  const currentKeyValue = state[currentKeyField];
+  const currentCapabilityText =
+    state.provider === "openai"
+      ? "OpenAI 模型适合通用审核、规则理解与稳定输出，可作为默认审核主模型。"
+      : state.provider === "deepseek"
+        ? "DeepSeek 模型适合复杂文本推理与性价比场景，可配合 OCR 补充密钥处理扫描件。"
+        : "智谱 GLM 模型适合多模态与视觉理解场景，GLM-4.6V 支持深度思考模式。";
+
   const loadProfile = useCallback(async (accessToken: string) => {
     setLoading(true);
     setError(null);
@@ -384,16 +404,16 @@ export function SettingsShell() {
 
   return (
     <section className="space-y-6">
-      <Card className="bg-acid">
-        <CardHeader className="md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
+      <Card className="bg-acid p-4 md:p-5">
+        <CardHeader className="mb-0 gap-4 md:flex md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
             <Badge variant="inverse" className="rotate-[-2deg]">
               配置中心
             </Badge>
             <div className="space-y-2">
               <CardTitle>统一维护模型、密钥与审核规则</CardTitle>
               <CardDescription>
-                这里可以维护审核时使用的模型、密钥、规则与公司信息。
+                在这里配置审核使用的模型、密钥、公司信息与自定义规则。
               </CardDescription>
             </div>
           </div>
@@ -410,13 +430,181 @@ export function SettingsShell() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <Card className="bg-secondary">
+        <CardHeader className="md:flex md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="space-y-2">
+            <Badge variant="inverse">核心配置</Badge>
+            <CardTitle>模型与密钥配置</CardTitle>
+            <CardDescription>
+              选择审核主模型，填写该模型密钥，并在同一处完成连接测试与保存。
+            </CardDescription>
+          </div>
+          <Badge variant={currentHasKey ? "secondary" : "neutral"}>
+            {currentProviderName} {currentHasKey ? "已保存密钥" : "未保存密钥"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="grid items-stretch gap-5 xl:grid-cols-2">
+          <div className="flex min-h-[28rem] flex-col justify-between border-4 border-ink bg-paper p-4 shadow-neo-sm">
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                    Provider
+                  </span>
+                  <Select
+                    value={state.provider}
+                    onChange={(event) =>
+                      updateField(
+                        "provider",
+                        event.target.value as SettingsState["provider"]
+                      )
+                    }
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="zhipuai">智谱 GLM</option>
+                  </Select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                    模型
+                  </span>
+                  <Select
+                    value={state.selectedModel}
+                    onChange={(event) =>
+                      updateField("selectedModel", event.target.value)
+                    }
+                  >
+                    {providerModels[state.provider].map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </div>
+
+              <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-black uppercase tracking-[0.14em]">
+                      深度思考
+                    </p>
+                    <p className="text-sm font-bold leading-6">
+                      {state.provider === "zhipuai"
+                        ? "GLM-4.6V 支持深度思考。开启后，系统会在智谱请求中启用更强的推理模式。"
+                        : "开启后，系统会在支持的模型上使用更强的推理能力进行审核。"}
+                    </p>
+                  </div>
+                  <Button
+                    variant={state.deepThinkEnabled ? "primary" : "outline"}
+                    onClick={() =>
+                      updateField("deepThinkEnabled", !state.deepThinkEnabled)
+                    }
+                  >
+                    {state.deepThinkEnabled ? "已开启" : "已关闭"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 border-4 border-ink bg-acid p-4 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">
+                当前模型能力说明
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {currentCapabilityText}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex min-h-[28rem] flex-col justify-between border-4 border-ink bg-acid p-4 shadow-neo-sm">
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <Badge variant={currentHasKey ? "secondary" : "neutral"}>
+                  {currentProviderName} {currentHasKey ? "已保存" : "未保存"}
+                </Badge>
+                <Badge variant={state.hasZhipuOcrKey ? "secondary" : "neutral"}>
+                  智谱 OCR {state.hasZhipuOcrKey ? "已保存" : "未保存"}
+                </Badge>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                  {currentProviderName} 密钥
+                </span>
+                <Input
+                  type="password"
+                  value={currentKeyValue}
+                  onChange={(event) =>
+                    updateField(currentKeyField, event.target.value)
+                  }
+                  placeholder={
+                    currentHasKey
+                      ? "已有保存密钥，如需更新可直接输入新的值"
+                      : `请输入 ${currentProviderName} 密钥`
+                  }
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-bold uppercase tracking-[0.14em]">
+                  智谱 OCR 补充密钥
+                </span>
+                <Input
+                  type="password"
+                  value={state.zhipuOcrApiKey}
+                  onChange={(event) =>
+                    updateField("zhipuOcrApiKey", event.target.value)
+                  }
+                  placeholder={
+                    state.hasZhipuOcrKey
+                      ? "已有保存密钥，如需更新可直接输入新的值"
+                      : "如需给扫描件 OCR 补充模型，可在这里填写"
+                  }
+                />
+                <span className="block text-xs font-black leading-5">
+                  仅在扫描件 OCR 需要补充模型时使用，不等同于当前审核主模型密钥。
+                </span>
+              </label>
+
+              <Button
+                variant="secondary"
+                onClick={handleTestConnection}
+                disabled={testingProvider !== null}
+              >
+                <Cable size={18} strokeWidth={3} />
+                {testingProvider ? "测试中..." : "测试当前模型连接"}
+              </Button>
+
+              {testStatus ? (
+                <div
+                  className={`${testStatus.success ? "issue-blue" : "issue-red"} p-4`}
+                >
+                  <p className="text-sm font-bold leading-6">
+                    {testStatus.message}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button onClick={handleSave} disabled={saving}>
+                <Save size={18} strokeWidth={3} />
+                {saving ? "保存中..." : "保存模型与密钥配置"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid items-stretch gap-6 xl:grid-cols-2">
         <Card className="bg-paper">
           <CardHeader>
             <Badge variant="secondary">账号资料</Badge>
             <CardTitle>当前登录账号</CardTitle>
             <CardDescription>
-              注册时填写的账号昵称，可在这里修改；它只用于区分当前账号，不影响模型调用、审核规则或密钥。
+              账号昵称仅用于区分当前账号，不影响模型调用、审核规则或密钥。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -441,297 +629,136 @@ export function SettingsShell() {
           </CardContent>
         </Card>
 
-        <Card className="bg-paper">
-          <CardHeader>
-            <Badge variant="secondary">模型配置</Badge>
-            <CardTitle>审核模型与推理能力</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                  Provider
-                </span>
-                <Select
-                  value={state.provider}
-                  onChange={(event) =>
-                    updateField(
-                      "provider",
-                      event.target.value as SettingsState["provider"]
-                    )
-                  }
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="zhipuai">智谱 GLM</option>
-                </Select>
-              </label>
-              <label className="space-y-2">
-                <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                  模型
-                </span>
-                <Select
-                  value={state.selectedModel}
-                  onChange={(event) =>
-                    updateField("selectedModel", event.target.value)
-                  }
-                >
-                  {providerModels[state.provider].map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-
-            <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-black uppercase tracking-[0.14em]">
-                    深度思考
-                  </p>
-                  <p className="text-sm font-bold leading-6">
-                    {state.provider === "zhipuai"
-                      ? "GLM-4.6V 支持深度思考。开启后，系统会在智谱请求中启用更强的推理模式。"
-                      : "开启后，系统会在支持的模型上使用更强的推理能力进行审核。"}
-                  </p>
-                </div>
-                <Button
-                  variant={state.deepThinkEnabled ? "primary" : "outline"}
-                  onClick={() =>
-                    updateField("deepThinkEnabled", !state.deepThinkEnabled)
-                  }
-                >
-                  {state.deepThinkEnabled ? "已开启" : "已关闭"}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card className="bg-muted">
           <CardHeader>
             <Badge variant="inverse">引导状态</Badge>
             <CardTitle>当前引导完成情况</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-              <p className="text-sm font-bold leading-6">
-                引导状态：{state.wizardCompleted ? "已完成" : "未完成"}
-              </p>
-            </div>
-            <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-              <p className="text-sm font-bold leading-6">
-                使用须知：{state.disclaimerAccepted ? "已确认" : "尚未确认"}
-              </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em]">
+                  引导状态
+                </p>
+                <p className="mt-2 text-sm font-bold leading-6">
+                  {state.wizardCompleted ? "已完成" : "未完成"}
+                </p>
+              </div>
+              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em]">
+                  使用须知状态
+                </p>
+                <p className="mt-2 text-sm font-bold leading-6">
+                  {state.disclaimerAccepted ? "已确认" : "尚未确认"}
+                </p>
+              </div>
             </div>
             <div className="issue-blue p-4">
               <p className="text-sm font-bold leading-6">
-                引导完成后可直接进入审核工作台。使用审核功能前，需要先确认使用须知。
+                引导完成后可直接进入审核工作台；使用审核功能前，需要先确认使用须知。
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="bg-secondary">
-          <CardHeader>
-            <Badge variant="inverse">密钥状态</Badge>
-            <CardTitle>密钥与连接测试</CardTitle>
-            <CardDescription>
-              这里展示各模型服务的密钥保存状态。输入新密钥并保存即可更新；留空则保留原有密钥。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-3">
-              <Badge variant={state.hasOpenaiKey ? "secondary" : "neutral"}>
-                OpenAI {state.hasOpenaiKey ? "已保存" : "未保存"}
-              </Badge>
-              <Badge variant={state.hasDeepseekKey ? "secondary" : "neutral"}>
-                DeepSeek {state.hasDeepseekKey ? "已保存" : "未保存"}
-              </Badge>
-              <Badge variant={state.hasZhipuKey ? "secondary" : "neutral"}>
-                智谱 {state.hasZhipuKey ? "已保存" : "未保存"}
-              </Badge>
-              <Badge variant={state.hasZhipuOcrKey ? "secondary" : "neutral"}>
-                智谱 OCR {state.hasZhipuOcrKey ? "已保存" : "未保存"}
-              </Badge>
-            </div>
-
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                {state.provider === "openai"
-                  ? "OpenAI 密钥"
-                  : state.provider === "deepseek"
-                    ? "DeepSeek 密钥"
-                    : "智谱密钥"}
-              </span>
-              <Input
-                type="password"
-                value={
-                  state.provider === "openai"
-                    ? state.openaiApiKey
-                    : state.provider === "deepseek"
-                      ? state.deepseekApiKey
-                      : state.zhipuApiKey
-                }
-                onChange={(event) =>
-                  updateField(
-                    state.provider === "openai"
-                      ? "openaiApiKey"
-                      : state.provider === "deepseek"
-                        ? "deepseekApiKey"
-                        : "zhipuApiKey",
-                    event.target.value
-                  )
-                }
-                placeholder={
-                  currentHasKey
-                    ? "已有保存密钥，如需更新可直接输入新的值"
-                    : "请输入当前模型服务的密钥"
-                }
-              />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                智谱 OCR 补充密钥
-              </span>
-              <Input
-                type="password"
-                value={state.zhipuOcrApiKey}
-                onChange={(event) =>
-                  updateField("zhipuOcrApiKey", event.target.value)
-                }
-                placeholder={
-                  state.hasZhipuOcrKey
-                    ? "已有保存密钥，如需更新可直接输入新的值"
-                    : "如需给 DeepSeek 场景补 OCR，可在这里填写"
-                }
-              />
-            </label>
-
+      <Card className="bg-paper">
+        <CardHeader>
+          <Badge variant="muted">公司信息</Badge>
+          <CardTitle>维护审核使用的公司信息</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-3">
             <Button
-              variant="secondary"
-              onClick={handleTestConnection}
-              disabled={testingProvider !== null}
+              variant={state.companyMode === "single" ? "primary" : "outline"}
+              onClick={() => updateField("companyMode", "single")}
             >
-              <Cable size={18} strokeWidth={3} />
-              {testingProvider ? "测试中..." : "测试当前连接"}
+              独立公司
             </Button>
+            <Button
+              variant={state.companyMode === "group" ? "primary" : "outline"}
+              onClick={() => updateField("companyMode", "group")}
+            >
+              集团公司
+            </Button>
+          </div>
 
-            {testStatus ? (
-              <div
-                className={`${testStatus.success ? "issue-blue" : "issue-red"} p-4`}
-              >
-                <p className="text-sm font-bold leading-6">
-                  {testStatus.message}
-                </p>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-paper">
-          <CardHeader>
-            <Badge variant="muted">公司架构</Badge>
-            <CardTitle>维护审核使用的公司信息</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-3">
+          {state.companyMode === "group" ? (
+            <div className="space-y-4">
+              {state.affiliateRoles.map((item, index) => (
+                <div
+                  key={`${item.company}-${index}`}
+                  className="grid gap-4 border-4 border-ink bg-secondary p-4 shadow-neo-sm md:grid-cols-[1fr_1fr_auto]"
+                >
+                  <Input
+                    value={item.company}
+                    onChange={(event) =>
+                      setState((previous) => ({
+                        ...previous,
+                        affiliateRoles: previous.affiliateRoles.map(
+                          (role, currentIndex) =>
+                            currentIndex === index
+                              ? { ...role, company: event.target.value }
+                              : role
+                        )
+                      }))
+                    }
+                    placeholder="关联公司名称"
+                  />
+                  <Input
+                    value={item.role}
+                    onChange={(event) =>
+                      setState((previous) => ({
+                        ...previous,
+                        affiliateRoles: previous.affiliateRoles.map(
+                          (role, currentIndex) =>
+                            currentIndex === index
+                              ? { ...role, role: event.target.value }
+                              : role
+                        )
+                      }))
+                    }
+                    placeholder="分工说明"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setState((previous) => ({
+                        ...previous,
+                        affiliateRoles: previous.affiliateRoles.filter(
+                          (_, currentIndex) => currentIndex !== index
+                        )
+                      }))
+                    }
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
               <Button
-                variant={state.companyMode === "single" ? "primary" : "outline"}
-                onClick={() => updateField("companyMode", "single")}
+                variant="secondary"
+                onClick={() =>
+                  setState((previous) => ({
+                    ...previous,
+                    affiliateRoles: [
+                      ...previous.affiliateRoles,
+                      { company: "", role: "" }
+                    ]
+                  }))
+                }
               >
-                独立公司
-              </Button>
-              <Button
-                variant={state.companyMode === "group" ? "primary" : "outline"}
-                onClick={() => updateField("companyMode", "group")}
-              >
-                集团公司
+                新增关联公司
               </Button>
             </div>
-
-            {state.companyMode === "group" ? (
-              <div className="space-y-4">
-                {state.affiliateRoles.map((item, index) => (
-                  <div
-                    key={`${item.company}-${index}`}
-                    className="grid gap-4 border-4 border-ink bg-secondary p-4 shadow-neo-sm md:grid-cols-[1fr_1fr_auto]"
-                  >
-                    <Input
-                      value={item.company}
-                      onChange={(event) =>
-                        setState((previous) => ({
-                          ...previous,
-                          affiliateRoles: previous.affiliateRoles.map(
-                            (role, currentIndex) =>
-                              currentIndex === index
-                                ? { ...role, company: event.target.value }
-                                : role
-                          )
-                        }))
-                      }
-                      placeholder="关联公司名称"
-                    />
-                    <Input
-                      value={item.role}
-                      onChange={(event) =>
-                        setState((previous) => ({
-                          ...previous,
-                          affiliateRoles: previous.affiliateRoles.map(
-                            (role, currentIndex) =>
-                              currentIndex === index
-                                ? { ...role, role: event.target.value }
-                                : role
-                          )
-                        }))
-                      }
-                      placeholder="分工说明"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        setState((previous) => ({
-                          ...previous,
-                          affiliateRoles: previous.affiliateRoles.filter(
-                            (_, currentIndex) => currentIndex !== index
-                          )
-                        }))
-                      }
-                    >
-                      删除
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      affiliateRoles: [
-                        ...previous.affiliateRoles,
-                        { company: "", role: "" }
-                      ]
-                    }))
-                  }
-                >
-                  新增关联公司
-                </Button>
-              </div>
-            ) : (
-              <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-                <p className="text-sm font-bold leading-6">
-                  当前按独立公司处理，不会写入额外的关联公司列表。
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          ) : (
+            <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+              <p className="text-sm font-bold leading-6">
+                当前按独立公司处理，不会写入额外的关联公司列表。
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="bg-paper">
         <CardHeader>
