@@ -26,14 +26,6 @@ import { apiGet, getStoredAccessToken } from "@/lib/api";
 
 const HISTORY_PAGE_SIZE = 20;
 
-function normalizeError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "detail" in error) {
-    return String(error.detail);
-  }
-
-  return fallback;
-}
-
 export function HistoryShell() {
   const router = useRouter();
 
@@ -60,8 +52,8 @@ export function HistoryShell() {
         token: accessToken
       });
       setDetail(data.item);
-    } catch (error) {
-      setDetailError(normalizeError(error, "读取审核历史详情失败，请稍后重试。"));
+    } catch {
+      setDetailError("历史详情读取失败，请稍后重试。");
     } finally {
       setDetailLoading(false);
     }
@@ -107,8 +99,8 @@ export function HistoryShell() {
             : nextItems[0].id;
 
         void fetchDetail(nextActiveId, accessToken);
-      } catch (error) {
-        setListError(normalizeError(error, "读取审核历史列表失败，请稍后重试。"));
+      } catch {
+        setListError("历史记录读取失败，请稍后重试。");
       } finally {
         setListLoading(false);
       }
@@ -146,7 +138,7 @@ export function HistoryShell() {
       <section className="space-y-6">
         <SectionHeading
           title="审核历史"
-          description="历史页会复用当前登录态和审核结果流水线。请先完成登录或向导配置，再回来查看历史记录。"
+          description="请先完成登录或向导配置，再回来查看已经完成的审核记录。"
           icon={History}
         />
         <Card className="bg-paper">
@@ -169,7 +161,7 @@ export function HistoryShell() {
     <section className="space-y-6">
       <SectionHeading
         title="审核历史"
-        description="这里用于回看已完成的审核记录、查看真实详情结构，并与当前审核工作台保持产品链路一致。"
+        description="这里展示你已经完成的审核记录。点击左侧记录后，可以在右侧查看详情并重新下载报告。"
         icon={History}
       />
 
@@ -197,11 +189,11 @@ export function HistoryShell() {
               <div className="flex items-center gap-2">
                 <Clock3 size={18} strokeWidth={3} />
                 <p className="text-sm font-black uppercase tracking-[0.14em]">
-                  History 与 Audit 已接成一条链路
+                  审核记录随时回看
                 </p>
               </div>
               <p className="text-sm font-bold leading-6">
-                当前历史页已接上真实后端历史接口；如果你要重新上传单据、重新发起审核，直接回到审核工作台即可。
+                你可以在这里筛选记录、查看问题汇总，也可以回到审核工作台继续上传单据并发起新审核。
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => router.push("/audit")}>返回审核工作台</Button>

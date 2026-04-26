@@ -48,7 +48,7 @@ export function HistoryList({
         <Badge variant="accent">历史列表</Badge>
         <CardTitle>最近审核记录</CardTitle>
         <CardDescription>
-          历史列表已接上 `/api/audit/history`。当前后端真实结构只沉淀已完成的记录，因此失败和取消任务暂时不会出现在这里。
+          最近完成的审核会显示在这里。点击记录可查看问题汇总、审核详情和报告入口。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -69,7 +69,7 @@ export function HistoryList({
 
         <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
           <p className="text-sm font-bold leading-6">
-            列表默认按最近创建时间优先展示。点击任一记录后，右侧会加载该次审核的真实详情结构。
+            列表默认按最近创建时间优先展示。点击任一记录后，右侧会加载该次审核的详情。
           </p>
         </div>
 
@@ -80,11 +80,11 @@ export function HistoryList({
                 <p className="text-sm font-bold leading-6">正在加载审核历史列表...</p>
               </div>
             ) : error ? (
-              <div className="space-y-4">
-                <div className="issue-red p-4">
+              <div className="max-w-lg space-y-4 border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <div className="issue-red p-3">
                   <p className="flex items-center gap-2 text-sm font-bold leading-6">
                     <AlertCircle size={18} strokeWidth={3} />
-                    {error}
+                    历史记录读取失败，请稍后重试。
                   </p>
                 </div>
                 <Button variant="outline" onClick={onRetry}>

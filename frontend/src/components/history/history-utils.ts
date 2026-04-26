@@ -18,7 +18,7 @@ type HistoryCounters = Pick<
 
 export function formatHistoryDate(value: string | null) {
   if (!value) {
-    return "后端未返回时间";
+    return "时间不可用";
   }
 
   const date = new Date(value);

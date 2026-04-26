@@ -119,7 +119,7 @@ function HistoryReportSection({
       {hasTask ? (
         <>
           <p className="mt-3 text-sm font-bold leading-6">
-            本条历史记录已关联报告任务，可下载标记版 Excel、详情版 Excel 或完整 ZIP 打包。下载请求会通过后端代理完成鉴权。
+            本条历史记录已关联报告任务，可下载标记版 Excel、详情版 Excel 或完整 ZIP 打包。下载前会校验当前登录状态。
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             {REPORT_BUTTONS.map(({ type, label }) => {
@@ -172,16 +172,16 @@ function resolveIssueClass(level: HistoryIssue["level"]) {
 }
 
 function resolveIssueMessage(issue: HistoryIssue) {
-  return issue.finding || issue.message || "当前后端未返回更详细的问题说明。";
+  return issue.finding || issue.message || "当前记录没有更详细的问题说明。";
 }
 
 function resolveIssueSuggestion(issue: HistoryIssue) {
-  return issue.suggestion || "当前后端未返回修正建议。";
+  return issue.suggestion || "当前记录没有修正建议。";
 }
 
 function resolveConfidence(confidence?: number) {
   if (typeof confidence !== "number") {
-    return "后端未返回置信度";
+    return "暂未提供置信度";
   }
 
   return `置信度 ${Math.round(confidence * 100)}%`;
@@ -257,7 +257,7 @@ export function HistoryDetail({
         <Badge variant="inverse">详情查看</Badge>
         <CardTitle>审核详情回看</CardTitle>
         <CardDescription>
-          这里已接上历史详情接口，会按后端当前真实详情结构展示基本信息、审核摘要、问题明细和报告说明。
+          这里展示所选审核记录的基本信息、审核摘要、问题明细和报告入口。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -344,16 +344,16 @@ export function HistoryDetail({
                 <p className="mt-3 text-sm font-bold leading-6">
                   {item.audit_result?.message ||
                     (hasMinimalDetail
-                      ? "当前后端仅返回最小详情结构，尚未补充额外审核摘要。"
-                      : "后端当前未返回额外审核摘要。")}
+                      ? "当前记录仅包含基础信息，暂未补充额外审核摘要。"
+                      : "当前记录没有额外审核摘要。")}
                 </p>
               </div>
 
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <p className="text-xs font-black uppercase tracking-[0.14em]">汇总对齐</p>
                 <p className="mt-2 text-sm font-bold leading-6">
-                  详情里的 `audit_result.summary` 如已返回，会显示为 RED {summary.red} /
-                  YELLOW {summary.yellow} / BLUE {summary.blue}。
+                  本次审核汇总为 RED {summary.red} / YELLOW {summary.yellow} /
+                  BLUE {summary.blue}。
                 </p>
               </div>
             </div>
@@ -403,7 +403,7 @@ export function HistoryDetail({
               ) : (
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                   <p className="text-sm font-bold leading-6">
-                    当前后端没有返回额外摘要备注，这里先诚实展示为空。
+                    当前记录没有额外摘要备注。
                   </p>
                 </div>
               )}
@@ -434,7 +434,7 @@ export function HistoryDetail({
                       </div>
                       <p className="mt-3 text-sm font-bold leading-6">
                         {document.result?.message ||
-                          "当前后端逐单据结果未返回额外说明，这里先展示基础结构。"}
+                          "当前单据结果没有额外说明。"}
                       </p>
                     </div>
                   ))}
@@ -442,7 +442,7 @@ export function HistoryDetail({
               ) : (
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                   <p className="text-sm font-bold leading-6">
-                    当前详情接口还没有返回逐单据回看结构，后续可以继续补强这部分联调。
+                    当前记录还没有逐单据回看内容。
                   </p>
                 </div>
               )}
