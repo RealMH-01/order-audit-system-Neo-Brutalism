@@ -31,6 +31,8 @@ from app.services.runtime_store import RuntimeStore
 
 logger = logging.getLogger(__name__)
 
+AUTH_CACHE_TTL_SECONDS = 300
+
 
 class AuthService:
     """提供注册、登录和当前用户读取的最小闭环。"""
@@ -303,6 +305,10 @@ class AuthService:
         if auth_client is None:
             return self._get_current_user_fallback(token)
 
+        cached_user = self._get_cached_supabase_user(token)
+        if cached_user is not None:
+            return cached_user
+
         try:
             response = auth_client.auth.get_user(token)
         except AppError:
@@ -332,12 +338,37 @@ class AuthService:
             "created_at": profile.get("created_at"),
         }
         self.store.tokens[token] = user_id
+        self.store.token_verified_at[token] = datetime.now(timezone.utc)
 
         return CurrentUser(
             id=user_id,
             email=user_email or self.store.users_by_id[user_id]["email"],
             display_name=profile.get("display_name"),
             role=profile.get("role", "user"),
+        )
+
+    def _get_cached_supabase_user(self, token: str) -> CurrentUser | None:
+        """读取 5 分钟内刚通过远程验证的 Supabase token 缓存。"""
+
+        user_id = self.store.tokens.get(token)
+        verified_at = self.store.token_verified_at.get(token)
+        if not user_id or verified_at is None:
+            return None
+
+        now = datetime.now(timezone.utc)
+        if (now - verified_at).total_seconds() > AUTH_CACHE_TTL_SECONDS:
+            return None
+
+        user_record = self.store.users_by_id.get(user_id)
+        profile_record = self.store.profiles.get(user_id)
+        if not user_record or not profile_record:
+            return None
+
+        return CurrentUser(
+            id=user_id,
+            email=str(user_record.get("email", "")),
+            display_name=profile_record.get("display_name"),
+            role=profile_record.get("role", "user"),
         )
 
     # ------------------------------------------------------------------

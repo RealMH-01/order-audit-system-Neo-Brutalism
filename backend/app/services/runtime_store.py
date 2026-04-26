@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
@@ -14,6 +15,7 @@ class RuntimeStore:
     users_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     user_ids_by_email: dict[str, str] = field(default_factory=dict)
     tokens: dict[str, str] = field(default_factory=dict)
+    token_verified_at: dict[str, datetime] = field(default_factory=dict)
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     system_rule: dict[str, Any] | None = None
     templates: dict[str, dict[str, Any]] = field(default_factory=dict)
