@@ -72,6 +72,40 @@ function resolveProviderFromModel(model: string) {
   return "openai" as const;
 }
 
+function resolveEffectiveModelLabel(
+  provider: "openai" | "deepseek" | "zhipuai",
+  selectedModel: string | undefined,
+  runDeepThink: boolean
+) {
+  if (!selectedModel) {
+    return "未配置";
+  }
+
+  const normalized = selectedModel.toLowerCase();
+  if (provider === "deepseek") {
+    if (runDeepThink) {
+      return "DeepSeek V4 Pro（深度思考）";
+    }
+    if (normalized === "deepseek-v4-flash" || normalized === "deepseek-chat") {
+      return "DeepSeek V4 Flash";
+    }
+    if (normalized === "deepseek-v4-pro" || normalized === "deepseek-reasoner") {
+      return "DeepSeek V4 Pro";
+    }
+  }
+
+  if (normalized === "gpt-4o") {
+    return "GPT-4o";
+  }
+  if (normalized === "glm-4v") {
+    return "GLM-4V";
+  }
+  if (normalized === "glm-4-flash") {
+    return "GLM-4 Flash";
+  }
+  return selectedModel;
+}
+
 function normalizeError(error: unknown, fallback: string) {
   if (typeof error === "object" && error && "detail" in error) {
     return String(error.detail);
@@ -1109,10 +1143,10 @@ export function AuditWorkspace() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                   <p className="text-xs font-black uppercase tracking-[0.14em]">
-                    当前模型
+                    本轮实际模型
                   </p>
                   <p className="mt-2 text-sm font-bold leading-6">
-                    {profile?.selected_model ?? "未配置"}
+                    {resolveEffectiveModelLabel(provider, profile?.selected_model, runDeepThink)}
                   </p>
                 </div>
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -1133,14 +1167,14 @@ export function AuditWorkspace() {
                     </p>
                     <p className="text-sm font-bold leading-6">
                       {provider === "zhipuai"
-                        ? "智谱当前不支持深度思考，本轮会自动关闭。"
-                        : "这里默认继承 settings 中的状态，但只影响本轮审核请求。"}
+                        ? "当前模型暂不支持深度思考，本轮会自动关闭。"
+                        : "开启后，系统会使用更强的推理能力处理本轮审核。"}
                     </p>
                   </div>
                   <Tooltip
                     content={
                       provider === "zhipuai"
-                        ? "智谱当前不支持深度思考"
+                        ? "当前模型暂不支持深度思考"
                         : "切换本轮审核的深度思考开关"
                     }
                   >
@@ -1149,7 +1183,7 @@ export function AuditWorkspace() {
                       disabled={provider === "zhipuai" || workspaceDisabled}
                       onClick={() => {
                         setRunDeepThink((previous) => !previous);
-                        invalidateFinishedRun("本轮 deep think 配置已变更，请重新启动审核。");
+                        invalidateFinishedRun("本轮深度思考配置已变更，请重新启动审核。");
                       }}
                     >
                       <Sparkles size={18} strokeWidth={3} />
