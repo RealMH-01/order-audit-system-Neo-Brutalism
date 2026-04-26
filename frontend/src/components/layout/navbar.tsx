@@ -24,6 +24,10 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const isAuthenticated = state.status === "authenticated" && state.user !== null;
   const visibleNavItems = navItems.filter((item) => !item.requireRole || state.user?.role === item.requireRole);
+  const accountDisplayName =
+    state.user?.display_name?.trim() ||
+    state.user?.email?.split("@")[0]?.trim() ||
+    "当前账号";
 
   const handleLogout = () => {
     signOut();
@@ -58,10 +62,13 @@ export function Navbar() {
             </Link>
           ))}
           {isAuthenticated ? (
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut size={18} strokeWidth={3} />
-              退出登录
-            </Button>
+            <>
+              <Badge variant="muted">当前账号：{accountDisplayName}</Badge>
+              <Button variant="outline" onClick={handleLogout}>
+                <LogOut size={18} strokeWidth={3} />
+                退出登录
+              </Button>
+            </>
           ) : (
             <Link href="/login" className={buttonVariants({ variant: "outline" })}>
               登录
@@ -100,10 +107,15 @@ export function Navbar() {
             </Link>
           ))}
           {isAuthenticated ? (
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut size={18} strokeWidth={3} />
-              退出登录
-            </Button>
+            <>
+              <Badge variant="muted" className="justify-center">
+                当前账号：{accountDisplayName}
+              </Badge>
+              <Button variant="outline" onClick={handleLogout}>
+                <LogOut size={18} strokeWidth={3} />
+                退出登录
+              </Button>
+            </>
           ) : (
             <Link
               href="/login"
