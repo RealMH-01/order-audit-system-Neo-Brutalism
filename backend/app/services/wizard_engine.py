@@ -30,6 +30,8 @@ from app.services.llm_client import LLMClientService
 from app.services.runtime_store import RuntimeStore
 
 WIZARD_SESSION_TIMEOUT = timedelta(minutes=30)
+WIZARD_MAX_MESSAGE_LENGTH = 5000  # 单条消息最大字符数
+WIZARD_MAX_MESSAGES = 30  # 单个 session 最大消息轮数
 
 WIZARD_SYSTEM_PROMPT = """
 你是一个经验丰富、耐心细致的外贸跟单同事，正在帮助新手梳理审核规则。
@@ -147,7 +149,9 @@ class WizardEngineService:
             ],
         )
         if payload.first_message and payload.first_message.strip():
-            session.messages.append({"role": "user", "content": payload.first_message.strip()})
+            first_message = payload.first_message.strip()
+            self._validate_user_message(first_message, len(session.messages))
+            session.messages.append({"role": "user", "content": first_message})
         _wizard_sessions[session_id] = session
 
         return WizardStartResponse(
@@ -170,7 +174,9 @@ class WizardEngineService:
         """将用户消息写入会话，调用模型并返回最新 AI 回复。"""
 
         session = self._get_session(current_user.id, payload.session_id)
-        session.messages.append({"role": "user", "content": payload.message.strip()})
+        user_message = payload.message.strip()
+        self._validate_user_message(user_message, len(session.messages))
+        session.messages.append({"role": "user", "content": user_message})
         session.last_active_at = datetime.now(timezone.utc)
 
         ai_message = await self._call_wizard_llm(session)
@@ -341,6 +347,15 @@ class WizardEngineService:
             _wizard_sessions.pop(session_id, None)
             raise AppError("引导会话已过期，请重新开始。", status_code=404)
         return session
+
+    @staticmethod
+    def _validate_user_message(message: str, current_message_count: int) -> None:
+        """校验用户单条消息长度和会话消息数量。"""
+
+        if len(message) > WIZARD_MAX_MESSAGE_LENGTH:
+            raise AppError("单条消息不能超过 5000 字，请精简后重新发送。", status_code=400)
+        if current_message_count >= WIZARD_MAX_MESSAGES:
+            raise AppError("当前对话已达到轮数上限，请确认当前规则或重新开始新会话。", status_code=400)
 
     def _get_profile(self, user_id: str) -> dict[str, object]:
         """读取当前用户 profile。"""
