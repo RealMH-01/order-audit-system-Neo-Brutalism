@@ -183,7 +183,7 @@ class AuditOrchestratorService:
             "full_result": None,
             "report_bundle": None,
         }
-        asyncio.create_task(self._run_task(task_id))
+        self.store.audit_tasks[task_id]["_async_task"] = asyncio.create_task(self._run_task(task_id))
         return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
 
     async def run_full_audit(
@@ -285,6 +285,9 @@ class AuditOrchestratorService:
         task["status"] = "cancelling"
         task["message"] = "已收到取消请求，正在停止任务。"
         task["updated_at"] = datetime.now(timezone.utc)
+        async_task = task.get("_async_task")
+        if isinstance(async_task, asyncio.Task) and not async_task.done():
+            async_task.cancel()
         return AuditCancelResponse(task_id=task_id, status="cancelling", message="已收到取消请求，正在停止任务。")
 
     def get_result(self, current_user: CurrentUser, task_id: str) -> AuditResultResponse:
