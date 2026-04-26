@@ -900,7 +900,7 @@ export function AuditWorkspace() {
             <Badge variant="accent">未登录</Badge>
             <CardTitle>请先完成引导或登录</CardTitle>
             <CardDescription>
-              `/audit` 页面会直接复用当前登录态、模型配置和已保存 profile。
+              审核工作台会自动使用你在引导向导和设置页中保存的配置。
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
@@ -919,7 +919,7 @@ export function AuditWorkspace() {
       <section className="space-y-6">
         <SectionHeading
           title="审核工作台"
-          description="在这里完成文件上传、审核启动、进度追踪、结果阅读和报告状态查看。当前页面会继续复用 wizard 与 settings 已经统一好的配置。"
+          description="在这里完成文件上传、审核启动、进度追踪、结果查看和报告下载。页面会自动使用你已保存的模型与规则配置。"
           icon={ScanSearch}
         />
 
@@ -938,7 +938,7 @@ export function AuditWorkspace() {
           <div className="issue-yellow p-4">
             <p className="text-sm font-bold leading-6">
               当前账号还没有完成向导配置。你仍然可以先搭建审核任务，但更建议先去
-              `/wizard` 或 `/settings` 完成模型、规则和公司架构设置。
+              「引导向导」页或「设置」页完成模型、规则和公司架构设置。
             </p>
           </div>
         ) : null}
@@ -1102,8 +1102,7 @@ export function AuditWorkspace() {
               <Badge variant="inverse">4. 审核控制区</Badge>
               <CardTitle>启动或重跑审核</CardTitle>
               <CardDescription>
-                当前会严格按照稳定的 `/api/audit/start` 协议构造请求，并复用 settings /
-                wizard 已保存的模型配置。
+                启动审核时会自动使用你在设置页和引导向导中保存的模型与规则配置。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1227,7 +1226,7 @@ export function AuditWorkspace() {
               <Badge variant="inverse">7. 报告区</Badge>
               <CardTitle>报告下载入口</CardTitle>
               <CardDescription>
-                这一轮把报告区从纯占位收口为“可判断状态的入口”。如果后端仍是占位返回，页面会明确告诉用户当前进展。
+                审核完成后，可以在这里查看报告状态并下载审核报告。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1299,27 +1298,26 @@ export function AuditWorkspace() {
 
       <Dialog
         open={disclaimerOpen}
-        title="开始审核前请先确认"
-        description="你已经完成了引导向导。免责声明会在进入审核页之后再弹出，而不是在 wizard 之前打断流程。"
+        title="使用须知与免责声明"
+        description="在使用审核功能之前，请仔细阅读以下内容。"
         footer={
           <Button
             onClick={() => void handleAcceptDisclaimer()}
             disabled={acceptingDisclaimer}
           >
-            {acceptingDisclaimer ? "确认中..." : "我已阅读并接受"}
+            {acceptingDisclaimer ? "确认中..." : "我已阅读并同意"}
           </Button>
         }
       >
         <DialogSection>
           <p className="text-sm font-bold leading-6">
-            当前系统提供的是 AI 辅助审核建议，请在正式对外发送单据前进行人工复核。
+            本系统的审核结果由 AI 模型生成，仅供参考，不构成任何专业意见或最终判定。请务必结合人工复核，确认审核结论后再用于实际业务决策。
           </p>
           <p className="text-sm font-bold leading-6">
-            这次确认会写入
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              disclaimer_accepted
-            </code>
-            ，后续同一账号默认不再重复打断。
+            使用本系统即表示您理解并接受：AI 审核可能存在遗漏或误判，系统开发方不对因审核结果导致的任何直接或间接损失承担责任。
+          </p>
+          <p className="text-sm font-bold leading-6">
+            您上传的文件仅用于本次审核处理，系统会按当前配额与清理策略处理暂存文件。如有疑问，请联系管理员。
           </p>
         </DialogSection>
       </Dialog>
