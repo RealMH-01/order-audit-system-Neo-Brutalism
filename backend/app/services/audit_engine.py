@@ -652,8 +652,12 @@ Cross-check instructions:
         """修正常见的轻微 JSON 格式问题。"""
 
         repaired = text.strip()
-        repaired = repaired.replace("“", '"').replace("”", '"')
-        repaired = repaired.replace("‘", "'").replace("’", "'")
+        repaired = re.sub(r"([\[{,:\s])\u201c", r'\1"', repaired)
+        repaired = re.sub(r"\u201d([\]},:\s])", r'"\1', repaired)
+        repaired = re.sub(r"^(\s*)\u201c", r'\1"', repaired, flags=re.MULTILINE)
+        repaired = re.sub(r"\u201d(\s*)$", r'"\1', repaired, flags=re.MULTILINE)
+        repaired = re.sub(r"([\[{,:\s])\u2018", r"\1'", repaired)
+        repaired = re.sub(r"\u2019([\]},:\s])", r"'\1", repaired)
         repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
         repaired = re.sub(r"^\s*json\s*", "", repaired, flags=re.IGNORECASE)
         repaired = re.sub(r"//.*?$", "", repaired, flags=re.MULTILINE)
