@@ -578,6 +578,10 @@ class AuditIssue(BaseModel):
     matched_po_value: str | None = None
     observed_value: str | None = None
     source_excerpt: str | None = None
+    your_value: str | None = None
+    source_value: str | None = None
+    source: str | None = None
+    field_location: str | None = None
 
 
 class AuditResultResponse(BaseModel):

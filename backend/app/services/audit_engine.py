@@ -153,32 +153,41 @@ _PO_UNIT_PRICE_ABSENCE_PATTERNS = (
 )
 
 _SYSTEM_PROMPT = """
-You are a professional export-document audit engine.
+You are a professional intelligent document audit engine.
 
-Your job is to compare the target document against the PO supplied by the user.
-Unless the user explicitly says otherwise, the PO is always the primary source of truth.
+Your task is to compare a target document against the PO, contract, order, or other baseline document uploaded by the user. By default, user-uploaded PO / contract / order / baseline documents are the audit baseline. When an explicit baseline document exists, the target document must be checked against it field by field.
 
 You must follow these non-negotiable rules:
-1. Use the PO as the baseline for all key checks.
-2. Output only JSON. Do not add prose outside the JSON object.
-3. Every issue must include confidence between 0.0 and 1.0.
-4. RED means a hard mismatch, a missing critical field, or a risk that must not be downgraded.
+1. Output only JSON. Do not add prose outside the JSON object.
+2. Every issue must include confidence between 0.0 and 1.0.
+3. All user-facing text in your output (field_name, finding, suggestion, source, field_location) MUST be in Simplified Chinese (简体中文). Keep original document field names, numeric values, currency codes, and Incoterms in their original language/format.
+4. RED means a clear core-field mismatch, a missing critical identifier, or a material risk that must not be downgraded.
 5. YELLOW means suspicious, explainable, or review-required inconsistency.
 6. BLUE means low-risk reminder, formatting notice, or non-blocking observation.
-7. Contract number, invoice number, and order number are high-priority identifiers.
-8. PO number and contract number are not the same concept and must never be treated as interchangeable.
-9. Numeric ambiguity caused by formatting, separators, or conflicting number expressions must be marked RED.
-10. Do not invent values. If evidence is insufficient, keep the issue factual and lower confidence rather than guessing.
-11. When company affiliates are provided, you may downgrade only party-name discrepancies that clearly match the affiliate list and business role context.
-12. Never use affiliate logic to downgrade core identifier, quantity, amount, currency, or critical date mismatches.
-13. All user-facing text in your output (finding, suggestion, field_name descriptions) MUST be in Simplified Chinese (简体中文). Keep original document field names, numeric values, currency codes, and Incoterms in their original language/format — do not translate those.
-14. Be deterministic: given the same inputs, produce the same output. Do not introduce variation, hedging language, or speculative findings.
-15. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
-16. Only report issues supported by explicit evidence in the provided documents. Do not guess, infer, or speculate about problems that are not directly observable in the text.
-17. Never state that a field is absent unless you have verified that it does not appear in the relevant document text. If uncertain, write “未能确认” instead of “未列出/未显示/没有”.
-18. For price and amount issues, compare PO unit price, target-document unit price, quantity, calculated amount, target-document total amount, and PO total amount before writing the finding.
-19. If both PO and target document contain unit prices, compare the unit prices directly and title the issue as 单价不一致 or 单价错误 when they differ.
-20. Core identifier problems such as contract number, order number, PO number, invoice number, or bill of lading number must remain separate issues and must not be merged into price or amount findings.
+7. Audit conclusions must be based on explicit evidence in the uploaded documents. Do not guess, fabricate, or reverse-infer a value when an explicit field is available.
+8. Never state that a field is absent unless you have verified that it does not appear in the relevant document text. If uncertain, write “未能确认” instead of “未列出/未显示/没有”.
+9. Be deterministic: given the same inputs, produce the same output. Do not introduce variation or speculative findings.
+10. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
+
+Unit-price and amount audit order:
+1. First extract Unit Price / 单价 from the baseline document / PO. If the baseline document table explicitly contains a Unit Price field, you MUST use that explicit field value first. Do not skip it and do not first calculate an implied price from Amount ÷ Quantity.
+2. Then extract Unit Price / 单价 from the target document / Invoice.
+3. If both unit prices exist and their numeric values differ, output an independent RED issue. The title / field_name should be “单价不一致”. The finding MUST explicitly state the baseline document / PO unit price and the target document / Invoice unit price.
+4. Then compare quantity.
+5. Then compare Amount / Total Value / 总金额.
+6. Finally check the internal calculation relationship: unit price × quantity = total amount.
+7. If the same line item has both “baseline unit price differs from target unit price” and “target document internal amount calculation contradiction”, the main attribution MUST be “单价不一致”. Put the internal calculation contradiction in the same issue's finding or suggestion as supplemental explanation. Do not create a separate main issue that steals the attribution.
+8. Do not describe a PO/baseline document with an explicit Unit Price field as “PO 未列出单价” or “PO 隐含单价”. Only write “未能确认 PO 单价” when the PO text truly does not allow the unit price to be confirmed.
+9. If a unit price was obtained by Amount ÷ Quantity, label it as “推算单价”; do not present it as an explicit PO/baseline Unit Price.
+
+Core identifier and severity rules:
+1. Contract No., Order No., PO No., Invoice No., B/L No. and similar core identifiers that are clearly missing or inconsistent must be output as independent RED issues.
+2. Core identifier issues must not be merged into or overwritten by amount, unit-price, quantity, or currency issues.
+3. PO No., Invoice No., and Contract No. are different fields and must not be treated as interchangeable.
+4. Clear mismatches in amount, quantity, unit price, currency, and other core business fields are RED by default.
+5. Do not mark every difference RED automatically. Ordinary formatting differences, reasonably explainable unit conversions, and seller/shipper affiliate name or address differences can be YELLOW when the evidence supports that treatment.
+6. Pure formatting or layout suggestions are BLUE.
+7. When company affiliates are provided, you may downgrade only party-name discrepancies that clearly match the affiliate list and business role context. Never use affiliate logic to downgrade core identifier, quantity, amount, unit-price, currency, or critical date mismatches.
 """.strip()
 
 SYSTEM_PROMPT_TEXT = _SYSTEM_PROMPT
@@ -187,7 +196,7 @@ _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = """
 You are reviewing and revising an existing audit result according to user-defined custom rules.
 
 Apply the custom rules with high priority, but do not break these protected rules:
-1. The PO remains the primary baseline.
+1. The explicit baseline document remains the primary baseline; it may be a PO, contract, order, or another uploaded reference document.
 2. Contract number, invoice number, and order number mismatches stay high-priority.
 3. PO number and contract number cannot be merged into one concept.
 4. Numeric ambiguity must remain RED.
@@ -204,7 +213,7 @@ You must return a full JSON object with recalculated summary, issue ids, and con
 CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT
 
 _DEFAULT_DISPLAY_RULE_TEXT = """
-1. 审核时一切以 PO 为准，除非用户明确声明某项字段应按其他基准处理。
+1. 默认以用户上传的 PO、合同、订单或其他基准单据为审核基准；当存在明确基准单据时，目标单据应与基准单据逐字段比对。
 2. RED 表示刚性错误、关键字段缺失、数字表达歧义或不能降级的高风险问题。
 3. YELLOW 表示可解释但需要人工确认的差异，例如单位换算、集团关联公司主体差异、参考单据不一致等。
 4. BLUE 表示提醒类或低风险说明，不应掩盖真实错误。
@@ -217,21 +226,33 @@ DEFAULT_DISPLAY_RULE_TEXT = _DEFAULT_DISPLAY_RULE_TEXT
 DEFAULT_PROMPT_RULE_TEXT = SYSTEM_PROMPT_TEXT
 
 _OUTPUT_FORMAT_RULES = """
-Return a JSON object with this shape:
+Return a JSON object with this exact shape:
 {
   "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
   "issues": [
     {
-      "id": "issue-001",
+      "id": "R-01",
       "level": "RED|YELLOW|BLUE",
-      "field_name": "field_or_area",
-      "finding": "what is wrong",
-      "suggestion": "what to verify or correct",
+      "field_name": "字段中文名称",
+      "finding": "具体发现的问题描述",
+      "your_value": "目标单据上的值，无法确认则写未能确认",
+      "source_value": "基准单据/PO/数据源中的值，无法确认则写未能确认",
+      "source": "数据来源说明，例如 PO、合同、订单、Invoice、装箱单等",
+      "field_location": "字段位置或行项目说明，无法确认可省略",
+      "suggestion": "中文修正建议",
       "confidence": 0.0
     }
   ],
   "confidence": 0.0
 }
+
+Output requirements:
+- your_value and source_value should preserve the raw values from the documents as much as possible.
+- If a value cannot be confirmed, write “未能确认”.
+- All user-facing text must be Simplified Chinese.
+- Preserve original field names, numbers, currency codes, and Incoterms.
+- Number issues by severity: R-01, Y-01, B-01.
+- Do not output any text outside the JSON object.
 """.strip()
 
 _LEVEL_DEFINITIONS = """
@@ -249,19 +270,17 @@ Use these Chinese labels in your finding and suggestion text when referring to s
 
 _NON_NEGOTIABLE_RULES = """
 Non-negotiable audit rules:
-- Treat the PO as the source of truth.
-- Contract number, Invoice No., and order number are rigid checks.
-- PO number and contract number are different fields.
+- Use the explicit baseline document first. The baseline may be a PO, contract, order, or another user-uploaded reference document.
+- Contract number, Invoice No., order number, PO number, B/L No. and other core identifiers are rigid checks.
+- PO number, invoice number, and contract number are different fields.
 - Core identifier issues must be reported as independent issues. Do not merge contract/order/PO/invoice/B/L number problems into amount, price, quantity, or currency findings.
-- If a number is ambiguous because of separators, decimal notation, or conflicting representations, mark it RED.
-- Never state that a PO field is missing unless the PO text has been checked and the field truly does not appear. If uncertain, say “未能确认”.
-- For unit-price and amount findings, first compare PO unit price, target unit price, quantity, calculated amount, target total amount, and PO total amount. If unit prices differ, use 单价不一致/单价错误 as the issue field or title.
+- If the baseline/PO explicitly contains Unit Price / 单价, use that field before any Amount ÷ Quantity calculation.
 - Check quantity * unit price = amount when the document provides those values.
-- Check totals, carton counts, gross/net weight, and volume for internal consistency when available.
-- Distinguish substantive Incoterm change from harmless writing differences such as spacing or capitalization.
-- Unit conversion may be YELLOW only when the underlying quantity appears plausibly reconcilable and the document gives enough context.
-- Do not report the same discrepancy more than once even if it appears in multiple contexts. Merge duplicate findings.
+- Clear mismatches in amount, quantity, unit price, currency, and other core business fields should remain high risk.
+- Never fabricate a field absence. Do not state that a PO/baseline field is missing unless the text has been checked and the field truly does not appear. If uncertain, say “未能确认”.
+- Do not report the same discrepancy more than once even if it appears in multiple contexts. Merge duplicate findings only within the same protected category.
 - Do not merge issues across protected categories: price/amount/quantity/currency is one category, core identifiers are another category, and parties are another category.
+- Core identifier issues must remain independent even when an amount, unit-price, or quantity issue also exists.
 - If evidence is ambiguous or insufficient, lower the confidence score rather than fabricating a finding.
 """.strip()
 
@@ -422,7 +441,7 @@ class AuditEngineService:
 Previous-ticket comparison:
 - Use the previous ticket only as secondary evidence.
 - If the target document differs from both the PO and the previous ticket on recurring fields, raise attention.
-- The previous ticket must not override the PO.
+- The previous ticket must not override the explicit baseline document.
 """.strip()
             )
 
@@ -431,7 +450,7 @@ Previous-ticket comparison:
                 """
 Template comparison:
 - Use the template as a completeness and formatting reference.
-- If the template conflicts with the PO on a core business fact, the PO still wins.
+- If the template conflicts with the explicit baseline document on a core business fact, the baseline document still wins.
 - Missing fields expected by the template may become YELLOW or BLUE depending on business impact.
 """.strip()
             )
@@ -691,6 +710,12 @@ Cross-check instructions:
             ).strip()
             finding = self._sanitize_evidence_wording(finding)
             suggestion = self._sanitize_evidence_wording(suggestion)
+            field_name, finding, suggestion = self._retitle_unit_price_issue(
+                raw_issue,
+                field_name,
+                finding,
+                suggestion,
+            )
             field_name = self._normalize_issue_field_name(field_name, finding, suggestion)
             issue_id = str(raw_issue.get("id") or f"issue-{index:03d}").strip()
             if self._is_core_conflict_issue(raw_issue, field_name, finding, suggestion):
@@ -705,7 +730,16 @@ Cross-check instructions:
                 "confidence": confidence,
             }
 
-            for optional_key in ("source_excerpt", "matched_po_value", "observed_value", "reason"):
+            for optional_key in (
+                "source_excerpt",
+                "matched_po_value",
+                "observed_value",
+                "reason",
+                "your_value",
+                "source_value",
+                "source",
+                "field_location",
+            ):
                 value = raw_issue.get(optional_key)
                 if value not in (None, ""):
                     normalized_issue[optional_key] = value
@@ -864,6 +898,103 @@ Cross-check instructions:
             return "总金额不一致"
         return field_name
 
+    @classmethod
+    def _retitle_unit_price_issue(
+        cls,
+        raw_issue: dict[str, Any],
+        field_name: str,
+        finding: str,
+        suggestion: str,
+    ) -> tuple[str, str, str]:
+        """Prefer explicit unit-price mismatch when both sides provide unit-price evidence."""
+
+        text_parts = [
+            field_name,
+            finding,
+            suggestion,
+            str(raw_issue.get("your_value", "")),
+            str(raw_issue.get("source_value", "")),
+            str(raw_issue.get("matched_po_value", "")),
+            str(raw_issue.get("observed_value", "")),
+            str(raw_issue.get("source_excerpt", "")),
+            str(raw_issue.get("reason", "")),
+        ]
+        text = " ".join(part for part in text_parts if part).lower()
+        if "单价" not in text and "unit price" not in text:
+            return field_name, finding, suggestion
+        if any(
+            marker in text
+            for marker in ("推算单价", "隐含单价", "反推单价", "implied unit price", "calculated unit price")
+        ):
+            return field_name, finding, suggestion
+        if not cls._has_explicit_unit_price_pair(raw_issue, text):
+            return field_name, finding, suggestion
+
+        source_value = cls._clean_comparison_value(
+            raw_issue.get("source_value") or raw_issue.get("matched_po_value")
+        ) or cls._extract_unit_price_value_from_text(text, baseline=True)
+        your_value = cls._clean_comparison_value(
+            raw_issue.get("your_value") or raw_issue.get("observed_value")
+        ) or cls._extract_unit_price_value_from_text(text, baseline=False)
+        if source_value and your_value and source_value != your_value:
+            prefix = f"PO/基准单据单价 {source_value} 与目标单据单价 {your_value} 不一致。"
+            if not finding.startswith(prefix):
+                finding = f"{prefix}{finding}"
+            return "单价不一致", finding, suggestion
+
+        if cls._contains_baseline_and_target_unit_price_evidence(text) and cls._contains_amount_math_evidence(text):
+            return "单价不一致", finding, suggestion
+
+        return field_name, finding, suggestion
+
+    @staticmethod
+    def _clean_comparison_value(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text or text == "未能确认":
+            return ""
+        return text
+
+    @classmethod
+    def _has_explicit_unit_price_pair(cls, raw_issue: dict[str, Any], text: str) -> bool:
+        source_value = cls._clean_comparison_value(
+            raw_issue.get("source_value") or raw_issue.get("matched_po_value")
+        )
+        your_value = cls._clean_comparison_value(
+            raw_issue.get("your_value") or raw_issue.get("observed_value")
+        )
+        if source_value and your_value and cls._looks_numeric(source_value) and cls._looks_numeric(your_value):
+            return True
+        return cls._contains_baseline_and_target_unit_price_evidence(text)
+
+    @staticmethod
+    def _contains_baseline_and_target_unit_price_evidence(text: str) -> bool:
+        baseline_pattern = r"(?:po|基准单据|基准|合同|订单)[^。；;\n]{0,40}(?:unit price|单价)[^。；;\n]{0,40}\d"
+        target_pattern = r"(?:invoice|发票|目标单据|目标)[^。；;\n]{0,40}(?:unit price|单价)[^。；;\n]{0,40}\d"
+        return bool(re.search(baseline_pattern, text, flags=re.IGNORECASE)) and bool(
+            re.search(target_pattern, text, flags=re.IGNORECASE)
+        )
+
+    @staticmethod
+    def _contains_amount_math_evidence(text: str) -> bool:
+        return any(keyword in text for keyword in ("计算金额", "计算为", "应为", "quantity", "数量")) and any(
+            keyword in text for keyword in ("总金额", "total value", "amount", "金额")
+        )
+
+    @staticmethod
+    def _extract_unit_price_value_from_text(text: str, *, baseline: bool) -> str:
+        anchors = (
+            r"(?:po|基准单据|基准|合同|订单)"
+            if baseline
+            else r"(?:invoice|发票|目标单据|目标)"
+        )
+        pattern = rf"{anchors}[^。；;\n]{{0,60}}(?:unit price|单价)[^\d。；;\n]{{0,20}}(\d[\d,]*(?:\.\d+)?)"
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _looks_numeric(value: str) -> bool:
+        return bool(re.search(r"\d", value))
+
     @staticmethod
     def _is_core_conflict_issue(
         raw_issue: dict[str, Any],
@@ -881,6 +1012,10 @@ Cross-check instructions:
                 raw_issue.get("description", ""),
                 raw_issue.get("evidence", ""),
                 raw_issue.get("source_excerpt", ""),
+                raw_issue.get("your_value", ""),
+                raw_issue.get("source_value", ""),
+                raw_issue.get("source", ""),
+                raw_issue.get("field_location", ""),
             )
             if value not in (None, "")
         ).lower()
