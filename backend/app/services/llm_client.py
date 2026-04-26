@@ -361,6 +361,8 @@ class LLMClientService:
             or "quota" in lowered
             or "insufficient" in lowered
             or "balance" in lowered
+            or "overloaded" in lowered
+            or "capacity" in lowered
         ):
             return AppError(
                 f"{provider} 调用被限流或余额不足，请稍后重试或检查账户额度。",
@@ -405,7 +407,6 @@ class LLMClientService:
             or "bad request" in lowered
             or "invalid" in lowered
             or "unsupported" in lowered
-            or "model" in lowered
         ):
             return AppError(
                 f"{provider} 请求被拒：请求参数或模型名可能不受支持。详情：{message}",
