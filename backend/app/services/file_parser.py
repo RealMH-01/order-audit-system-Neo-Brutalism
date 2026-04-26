@@ -160,6 +160,7 @@ class FileParserService:
         parsed_payload = parser(file_bytes, filename)
 
         preview_text = self._build_preview_text(parsed_payload.get("text", ""), detected_type)
+        keep_raw = bool(parsed_payload.get("needs_ocr")) and not parsed_payload.get("page_images")
         return {
             "id": file_id or str(uuid4()),
             "filename": filename,
@@ -177,7 +178,7 @@ class FileParserService:
             "is_scanned_pdf": bool(parsed_payload.get("is_scanned_pdf", False)),
             "page_images": parsed_payload.get("page_images", []),
             "image_base64": parsed_payload.get("image_base64"),
-            "raw_bytes": file_bytes,
+            "raw_bytes": file_bytes if keep_raw else None,
         }
 
     def _parse_text(self, file_bytes: bytes, _: str) -> dict[str, object]:
