@@ -23,6 +23,7 @@ import {
   getStoredAccessToken,
   streamJsonEvents
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { FileBucket } from "@/components/audit/file-bucket";
 import { ProgressPanel } from "@/components/audit/progress-panel";
 import { ResultsPanel } from "@/components/audit/results-panel";
@@ -300,6 +301,7 @@ function resolveReportState(
 
 export function AuditWorkspace() {
   const router = useRouter();
+  const { state: authState } = useAuth();
   const progressAbortRef = useRef<AbortController | null>(null);
 
   const [token, setToken] = useState<string | null>(null);
@@ -345,6 +347,10 @@ export function AuditWorkspace() {
     () => resolveProviderFromModel(profile?.selected_model ?? "gpt-4o"),
     [profile?.selected_model]
   );
+  const accountDisplayName =
+    authState.user?.display_name?.trim() ||
+    authState.user?.email?.split("@")[0]?.trim() ||
+    "当前账号";
 
   const auditLocked = ACTIVE_TASK_STATUSES.has(taskStatus);
   const workspaceDisabled = profileLoading || disclaimerOpen || auditLocked;
@@ -956,6 +962,11 @@ export function AuditWorkspace() {
           description="在这里完成文件上传、审核启动、进度追踪、结果查看和报告下载。页面会自动使用你已保存的模型与规则配置。"
           icon={ScanSearch}
         />
+        <div className="neo-panel bg-paper p-4">
+          <p className="text-sm font-bold leading-6">
+            你好，{accountDisplayName}。请上传单据并启动审核。
+          </p>
+        </div>
 
         {profileLoading ? (
           <Card className="bg-paper">
