@@ -140,6 +140,10 @@ class RestSupabaseTable:
         self.params["limit"] = str(value)
         return self
 
+    def offset(self, value: int) -> "RestSupabaseTable":
+        self.params["offset"] = str(value)
+        return self
+
     def order(self, column: str, desc: bool = False) -> "RestSupabaseTable":
         direction = "desc" if desc else "asc"
         self.order_parts.append(f"{column}.{direction}")

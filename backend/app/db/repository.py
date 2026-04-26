@@ -380,7 +380,8 @@ class SupabaseRepository:
             return None
 
     def list_audit_history(self, user_id: str, page: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
-        offset = (max(page, 1) - 1) * max(page_size, 1)
+        page_size = max(page_size, 1)
+        offset = (max(page, 1) - 1) * page_size
         base_columns = (
             "id,model_used,document_count,red_count,yellow_count,blue_count,created_at"
         )
@@ -413,7 +414,8 @@ class SupabaseRepository:
             lambda table: table.select(columns)
             .eq("user_id", user_id)
             .order("created_at", desc=True)
-            .range(offset, offset + page_size - 1),
+            .limit(page_size)
+            .offset(offset),
         )
 
     def count_audit_history(self, user_id: str) -> int:
