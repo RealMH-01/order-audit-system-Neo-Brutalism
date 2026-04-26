@@ -603,6 +603,9 @@ class AuditReportResponse(BaseModel):
 
     task_id: str
     message: str
+    status: Literal["pending", "ready", "failed"] = "pending"
+    available: bool = False
+    downloads: list[Literal["marked", "detailed", "zip"]] = Field(default_factory=list)
 
 
 class WizardStartRequest(BaseModel):

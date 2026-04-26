@@ -114,6 +114,9 @@ export type AuditCancelResponse = {
 export type AuditReportResponse = {
   task_id: string;
   message: string;
+  status?: "pending" | "ready" | "failed";
+  available?: boolean;
+  downloads?: AuditReportType[];
 };
 
 export type AuditReportType = "marked" | "detailed" | "zip";

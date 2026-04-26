@@ -381,12 +381,36 @@ class SupabaseRepository:
 
     def list_audit_history(self, user_id: str, page: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
         offset = (max(page, 1) - 1) * max(page_size, 1)
+        base_columns = (
+            "id,model_used,document_count,red_count,yellow_count,blue_count,created_at"
+        )
+        columns_with_optional = (
+            "id,model_used,document_count,red_count,yellow_count,blue_count,deep_think_used,created_at"
+        )
+
+        try:
+            return self._select_audit_history_page(user_id, columns_with_optional, offset, page_size)
+        except AppError as exc:
+            missing_columns = self._missing_optional_history_columns(exc, {"deep_think_used"})
+            if "deep_think_used" not in missing_columns:
+                raise
+            logger.warning(
+                "Audit history list optional column is unavailable; retrying without deep_think_used.",
+                exc_info=True,
+            )
+            return self._select_audit_history_page(user_id, base_columns, offset, page_size)
+
+    def _select_audit_history_page(
+        self,
+        user_id: str,
+        columns: str,
+        offset: int,
+        page_size: int,
+    ) -> list[dict[str, Any]]:
         return self._select_many(
             "audit_history",
             "list audit history",
-            lambda table: table.select(
-                "id,model_used,document_count,red_count,yellow_count,blue_count,deep_think_used,created_at"
-            )
+            lambda table: table.select(columns)
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .range(offset, offset + page_size - 1),

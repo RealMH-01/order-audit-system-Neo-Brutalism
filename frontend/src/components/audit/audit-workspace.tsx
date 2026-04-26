@@ -268,15 +268,33 @@ const REPORT_DOWNLOAD_BUTTONS: Array<{
 ];
 
 function resolveReportState(
-  message: string | null,
+  report: AuditReportResponse | null,
   taskId: string | null,
   taskStatus: string
 ) {
+  const message = report?.message ?? null;
   if (!taskId) {
     return {
       kind: "unavailable" as const,
       title: "报告暂不可下载",
       description: "当前还没有可用任务，请先运行一次审核。"
+    };
+  }
+
+  if (report?.available || report?.status === "ready") {
+    return {
+      kind: "download" as const,
+      title: "报告已可下载",
+      description:
+        message ?? "报告已生成，可直接下载标记版 Excel、详情版 Excel 和 ZIP。"
+    };
+  }
+
+  if (report?.status === "failed") {
+    return {
+      kind: "failed" as const,
+      title: "报告未生成",
+      description: message ?? "报告生成失败，请重新运行审核。"
     };
   }
 
@@ -361,6 +379,7 @@ export function AuditWorkspace() {
   const [resultFilter, setResultFilter] = useState<ResultFilter>("ALL");
   const [reportLoading, setReportLoading] = useState(false);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [reportInfo, setReportInfo] = useState<AuditReportResponse | null>(null);
   const [reportDownloadError, setReportDownloadError] = useState<string | null>(null);
   const [downloadingReports, setDownloadingReports] = useState<Record<AuditReportType, boolean>>({
     marked: false,
@@ -385,8 +404,8 @@ export function AuditWorkspace() {
       ? "审核进行中时会锁定文件区，避免本轮任务和当前文件状态互相污染。"
       : null;
   const reportState = useMemo(
-    () => resolveReportState(reportMessage, taskId, taskStatus),
-    [reportMessage, taskId, taskStatus]
+    () => resolveReportState(reportInfo, taskId, taskStatus),
+    [reportInfo, taskId, taskStatus]
   );
   const hasAnyKey =
     profile?.has_deepseek_key || profile?.has_openai_key || profile?.has_zhipu_key || false;
@@ -424,6 +443,7 @@ export function AuditWorkspace() {
     setResult(null);
     setResultFilter("ALL");
     setReportMessage(null);
+    setReportInfo(null);
     setReportLoading(false);
     setReportDownloadError(null);
     setDownloadingReports({
@@ -565,6 +585,7 @@ export function AuditWorkspace() {
           })
             .then(({ data }) => {
               setReportMessage(data.message);
+              setReportInfo(data);
             })
             .catch((error) => {
               setWorkspaceError(
@@ -928,6 +949,7 @@ export function AuditWorkspace() {
         token
       });
       setReportMessage(data.message);
+      setReportInfo(data);
     } catch (error) {
       setWorkspaceError(normalizeError(error, "读取报告状态失败，请稍后重试。"));
     } finally {
@@ -963,6 +985,12 @@ export function AuditWorkspace() {
         setReportDownloadError(detail);
         if (typeof error === "object" && error && "status" in error && error.status === 404) {
           setReportMessage("报告已失效，请重新运行审核。");
+          setReportInfo({
+            task_id: taskId,
+            message: "报告已失效，请重新运行审核。",
+            status: "failed",
+            available: false
+          });
         }
       } finally {
         setDownloadingReports((previous) => ({ ...previous, [reportType]: false }));

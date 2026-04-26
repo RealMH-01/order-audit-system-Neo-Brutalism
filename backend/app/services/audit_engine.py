@@ -13,6 +13,49 @@ from app.models.schemas import FeatureStatus
 
 logger = logging.getLogger(__name__)
 
+_LEVEL_ALIASES = {
+    "RED": "RED",
+    "红色·高风险": "RED",
+    "红色高风险": "RED",
+    "高风险": "RED",
+    "YELLOW": "YELLOW",
+    "黄色·疑点": "YELLOW",
+    "黄色疑点": "YELLOW",
+    "疑点": "YELLOW",
+    "BLUE": "BLUE",
+    "蓝色·提示": "BLUE",
+    "蓝色提示": "BLUE",
+    "提示": "BLUE",
+}
+
+_CORE_CONFLICT_KEYWORDS = (
+    "单价不一致",
+    "金额不一致",
+    "总金额不一致",
+    "数量不一致",
+    "币种不一致",
+    "税额不一致",
+    "合同号不一致",
+    "订单号不一致",
+    "po号不一致",
+    "发票号不一致",
+    "发票号码与合同号码不一致",
+    "编号不一致",
+    "主体不一致",
+    "买方不一致",
+    "卖方不一致",
+)
+
+_UNCERTAIN_CONFLICT_HINTS = (
+    "无法确认",
+    "可能",
+    "疑似",
+    "建议复核",
+    "待确认",
+    "需复核",
+    "需要复核",
+)
+
 _SYSTEM_PROMPT = """
 You are a professional export-document audit engine.
 
@@ -513,25 +556,18 @@ Cross-check instructions:
             if not isinstance(raw_issue, dict):
                 raw_issue = {"finding": str(raw_issue)}
 
-            raw_level = str(raw_issue.get("level") or "YELLOW").upper().strip()
-            if raw_level not in level_counts:
-                logger.warning(
-                    "Issue #%d has non-standard level '%s', remapped to YELLOW. field_name=%s",
-                    index,
-                    raw_level,
-                    raw_issue.get("field_name", "unknown"),
-                )
-                level = "YELLOW"
-            else:
-                level = raw_level
-
-            confidence = self._clamp_confidence(raw_issue.get("confidence", 0.5))
             field_name = str(
                 raw_issue.get("field_name")
                 or raw_issue.get("field")
                 or raw_issue.get("fieldName")
                 or "unspecified_field"
             ).strip() or "unspecified_field"
+            level = self._normalize_issue_level(
+                raw_issue.get("level") or "YELLOW",
+                index=index,
+                field_name=field_name,
+            )
+            confidence = self._clamp_confidence(raw_issue.get("confidence", 0.5))
             finding = str(
                 raw_issue.get("finding")
                 or raw_issue.get("message")
@@ -544,6 +580,8 @@ Cross-check instructions:
                 or self._default_suggestion_for_level(level)
             ).strip()
             issue_id = str(raw_issue.get("id") or f"issue-{index:03d}").strip()
+            if self._is_core_conflict_issue(raw_issue, field_name, finding, suggestion):
+                level = "RED"
 
             normalized_issue = {
                 "id": issue_id,
@@ -677,6 +715,46 @@ Cross-check instructions:
         repaired = re.sub(r"^\s*json\s*", "", repaired, flags=re.IGNORECASE)
         repaired = re.sub(r"//.*?$", "", repaired, flags=re.MULTILINE)
         return repaired.strip()
+
+    @staticmethod
+    def _normalize_issue_level(value: Any, *, index: int, field_name: str) -> str:
+        raw_level = str(value or "YELLOW").strip()
+        compact_level = re.sub(r"[\s_\-:：/|]+", "", raw_level).upper()
+        normalized = _LEVEL_ALIASES.get(raw_level.upper()) or _LEVEL_ALIASES.get(compact_level)
+        if normalized is not None:
+            return normalized
+
+        logger.warning(
+            "Issue #%d has non-standard level '%s', remapped to YELLOW. field_name=%s",
+            index,
+            raw_level,
+            field_name,
+        )
+        return "YELLOW"
+
+    @staticmethod
+    def _is_core_conflict_issue(
+        raw_issue: dict[str, Any],
+        field_name: str,
+        finding: str,
+        suggestion: str,
+    ) -> bool:
+        text = " ".join(
+            str(value)
+            for value in (
+                field_name,
+                raw_issue.get("title", ""),
+                finding,
+                suggestion,
+                raw_issue.get("description", ""),
+                raw_issue.get("evidence", ""),
+                raw_issue.get("source_excerpt", ""),
+            )
+            if value not in (None, "")
+        ).lower()
+        if any(hint in text for hint in _UNCERTAIN_CONFLICT_HINTS):
+            return False
+        return any(keyword in text for keyword in _CORE_CONFLICT_KEYWORDS)
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:

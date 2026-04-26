@@ -240,6 +240,7 @@ class AuditOrchestratorService:
             "result": None,
             "full_result": None,
             "report_bundle": None,
+            "report_paths": None,
         }
         self.store.audit_tasks[task_id]["_async_task"] = asyncio.create_task(self._run_task(task_id))
         return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
@@ -367,10 +368,50 @@ class AuditOrchestratorService:
     def get_report_placeholder(self, current_user: CurrentUser, task_id: str) -> AuditReportResponse:
         """返回报告状态说明。"""
 
-        task = self._get_task(current_user.id, task_id)
-        if task.get("report_bundle"):
-            return AuditReportResponse(task_id=task_id, message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。")
-        return AuditReportResponse(task_id=task_id, message="报告尚未生成，请先等待审核任务完成。")
+        try:
+            task = self._get_task(current_user.id, task_id)
+        except AppError as exc:
+            if exc.status_code != 404 or not self._has_persisted_report_bundle(current_user.id, task_id):
+                raise
+            return AuditReportResponse(
+                task_id=task_id,
+                message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。",
+                status="ready",
+                available=True,
+                downloads=["marked", "detailed", "zip"],
+            )
+
+        if task.get("report_bundle") or self._has_persisted_report_bundle(current_user.id, task_id):
+            return AuditReportResponse(
+                task_id=task_id,
+                message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。",
+                status="ready",
+                available=True,
+                downloads=["marked", "detailed", "zip"],
+            )
+
+        task_status = str(task.get("status") or "")
+        if task_status == "failed":
+            return AuditReportResponse(
+                task_id=task_id,
+                message="报告生成失败，请检查审核任务错误后重新运行。",
+                status="failed",
+                available=False,
+            )
+        if task_status == "completed":
+            return AuditReportResponse(
+                task_id=task_id,
+                message="审核已完成，但报告未生成或已失效，请重新运行审核。",
+                status="failed",
+                available=False,
+            )
+
+        return AuditReportResponse(
+            task_id=task_id,
+            message="报告尚未生成，请先等待审核任务完成。",
+            status="pending",
+            available=False,
+        )
 
     def get_history(
         self,
@@ -383,7 +424,11 @@ class AuditOrchestratorService:
         page = max(page, 1)
         page_size = max(page_size, 1)
         if self.repo is not None:
-            history_records = self.repo.list_audit_history(current_user.id, page=page, page_size=page_size)
+            try:
+                history_records = self.repo.list_audit_history(current_user.id, page=page, page_size=page_size)
+            except Exception:
+                logger.exception("Audit history list failed for user %s.", current_user.id)
+                raise
             try:
                 total_count = self.repo.count_audit_history(current_user.id)
             except Exception:
@@ -831,6 +876,7 @@ class AuditOrchestratorService:
             task["message"] = "审核任务已完成。"
             task["updated_at"] = datetime.now(timezone.utc)
             report_paths = self._upload_report_bundle(user_id, task_id, report_bundle)
+            task["report_paths"] = report_paths
             if report_paths is not None:
                 task["report_bundle"] = None
 
@@ -1127,14 +1173,25 @@ class AuditOrchestratorService:
 
         return self._report_bytes_from_object(report_bundle.get(report_meta["bundle_key"]))
 
-    def _get_storage_report_bytes(self, user_id: str, task_id: str, report_type: str) -> bytes | None:
+    def _get_task_report_paths(self, user_id: str, task_id: str) -> dict[str, str] | None:
+        try:
+            task = self._get_task(user_id, task_id)
+        except AppError:
+            return None
+
+        report_paths = task.get("report_paths")
+        if not isinstance(report_paths, dict):
+            return None
+        return {str(key): str(value) for key, value in report_paths.items() if value}
+
+    def _get_persisted_report_paths(self, user_id: str, task_id: str) -> dict[str, str] | None:
         if self.repo is None:
             return None
 
         try:
             history_item = self.repo.get_audit_history_by_task_id(user_id, task_id)
         except Exception:
-            logger.warning("Audit history lookup by task_id failed during report download fallback.", exc_info=True)
+            logger.warning("Audit history lookup by task_id failed during report lookup.", exc_info=True)
             return None
 
         if not history_item:
@@ -1143,7 +1200,19 @@ class AuditOrchestratorService:
         report_paths = history_item.get("report_paths")
         if not isinstance(report_paths, dict):
             return None
+        return {str(key): str(value) for key, value in report_paths.items() if value}
 
+    def _has_persisted_report_bundle(self, user_id: str, task_id: str) -> bool:
+        report_paths = self._get_task_report_paths(user_id, task_id) or self._get_persisted_report_paths(user_id, task_id)
+        return bool(report_paths) and all(report_type in report_paths for report_type in _REPORT_DOWNLOADS)
+
+    def _get_storage_report_bytes(self, user_id: str, task_id: str, report_type: str) -> bytes | None:
+        if self.repo is None:
+            return None
+
+        report_paths = self._get_task_report_paths(user_id, task_id) or self._get_persisted_report_paths(user_id, task_id)
+        if report_paths is None:
+            return None
         path = report_paths.get(report_type)
         if not path:
             return None
