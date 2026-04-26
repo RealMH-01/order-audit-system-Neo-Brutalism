@@ -253,7 +253,7 @@ export function WizardContainer() {
         token,
         provider,
         selectedModel: normalizeModelForDisplay(data.selected_model),
-        deepThinkEnabled: data.deep_think_enabled && provider !== "zhipuai",
+        deepThinkEnabled: data.deep_think_enabled,
         manualRulesText: data.active_custom_rules.join("\n"),
         generatedRules: data.active_custom_rules,
         generatedAffiliates: data.company_affiliates,
@@ -310,9 +310,6 @@ export function WizardContainer() {
               : provider === "deepseek"
                 ? "deepseek-chat"
                 : "glm-4.6v";
-          if (provider === "zhipuai") {
-            next.deepThinkEnabled = false;
-          }
         }
 
         if (field === "ruleMode") {
@@ -696,8 +693,7 @@ export function WizardContainer() {
           "/settings/profile",
           {
             selected_model: form.selectedModel,
-            deep_think_enabled:
-              form.provider === "zhipuai" ? false : form.deepThinkEnabled,
+            deep_think_enabled: form.deepThinkEnabled,
             openai_api_key: form.openaiApiKey.trim() || undefined,
             deepseek_api_key: form.deepseekApiKey.trim() || undefined,
             zhipu_api_key: form.zhipuApiKey.trim() || undefined,

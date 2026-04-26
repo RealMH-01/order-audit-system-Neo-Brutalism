@@ -171,36 +171,23 @@ export function StepModelConfig({
                   <p className="text-sm font-bold">增强推理模式</p>
                   <p className="text-xs font-bold leading-5">
                     {provider === "zhipuai"
-                      ? "智谱当前不支持深度思考，本开关已禁用。"
+                      ? "GLM-4.6V 支持深度思考。开启后，系统会在智谱请求中启用更强的推理模式。"
                       : "OpenAI / DeepSeek 会按后端能力映射到对应模型。"}
                   </p>
                 </div>
-                <Tooltip
-                  content={
-                    provider === "zhipuai"
-                      ? "智谱不支持深度思考"
-                      : "切换深度思考"
-                  }
-                >
+                <Tooltip content="切换深度思考">
                   <button
                     type="button"
-                    disabled={provider === "zhipuai"}
                     onClick={() =>
                       onFieldChange("deepThinkEnabled", !deepThinkEnabled)
                     }
                     className={`inline-flex h-10 min-w-[5.5rem] items-center justify-center border-4 border-ink font-black uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear ${
-                      provider === "zhipuai"
-                        ? "cursor-not-allowed bg-paper"
-                        : deepThinkEnabled
-                          ? "bg-acid"
-                          : "bg-muted"
+                      deepThinkEnabled
+                        ? "bg-acid"
+                        : "bg-muted"
                     }`}
                   >
-                    {provider === "zhipuai"
-                      ? "禁用"
-                      : deepThinkEnabled
-                        ? "已开启"
-                        : "已关闭"}
+                    {deepThinkEnabled ? "已开启" : "已关闭"}
                   </button>
                 </Tooltip>
               </div>

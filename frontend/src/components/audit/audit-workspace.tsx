@@ -94,15 +94,18 @@ function resolveEffectiveModelLabel(
       return "DeepSeek V4 Pro";
     }
   }
+  if (provider === "zhipuai") {
+    let label = selectedModel;
+    if (normalized === "glm-4.6v" || normalized === "glm-4v") {
+      label = "智谱 GLM-4.6V";
+    } else if (normalized === "glm-4.6v-flash" || normalized === "glm-4-flash") {
+      label = "智谱 GLM-4.6V-Flash";
+    }
+    return runDeepThink ? `${label}（深度思考）` : label;
+  }
 
   if (normalized === "gpt-4o") {
     return "GPT-4o";
-  }
-  if (normalized === "glm-4v") {
-    return "GLM-4V";
-  }
-  if (normalized === "glm-4-flash") {
-    return "GLM-4 Flash";
   }
   return selectedModel;
 }
@@ -428,9 +431,7 @@ export function AuditWorkspace() {
       });
       const nextProvider = resolveProviderFromModel(data.selected_model);
       setProfile(data);
-      setRunDeepThink(
-        nextProvider === "zhipuai" ? false : Boolean(data.deep_think_enabled)
-      );
+      setRunDeepThink(Boolean(data.deep_think_enabled));
       if (data.wizard_completed && !data.disclaimer_accepted) {
         setDisclaimerOpen(true);
       }
@@ -791,7 +792,7 @@ export function AuditWorkspace() {
       })),
       template_file_id: templateFile?.id ?? null,
       reference_file_ids: referenceFiles.map((file) => file.id),
-      deep_think: provider === "zhipuai" ? false : runDeepThink
+      deep_think: runDeepThink
     };
 
     try {
@@ -815,7 +816,6 @@ export function AuditWorkspace() {
     hasAnyKey,
     poFile,
     prevTicketFiles,
-    provider,
     referenceFiles,
     runDeepThink,
     targetFiles,
@@ -1178,31 +1178,23 @@ export function AuditWorkspace() {
                     </p>
                     <p className="text-sm font-bold leading-6">
                       {provider === "zhipuai"
-                        ? "当前模型暂不支持深度思考，本轮会自动关闭。"
+                        ? "GLM-4.6V 支持深度思考。开启后，系统会在智谱请求中启用更强的推理模式。"
                         : "开启后，系统会使用更强的推理能力处理本轮审核。"}
                     </p>
                   </div>
                   <Tooltip
-                    content={
-                      provider === "zhipuai"
-                        ? "当前模型暂不支持深度思考"
-                        : "切换本轮审核的深度思考开关"
-                    }
+                    content="切换本轮审核的深度思考开关"
                   >
                     <Button
                       variant={runDeepThink ? "primary" : "outline"}
-                      disabled={provider === "zhipuai" || workspaceDisabled}
+                      disabled={workspaceDisabled}
                       onClick={() => {
                         setRunDeepThink((previous) => !previous);
                         invalidateFinishedRun("本轮深度思考配置已变更，请重新启动审核。");
                       }}
                     >
                       <Sparkles size={18} strokeWidth={3} />
-                      {provider === "zhipuai"
-                        ? "已禁用"
-                        : runDeepThink
-                          ? "已开启"
-                          : "已关闭"}
+                      {runDeepThink ? "已开启" : "已关闭"}
                     </Button>
                   </Tooltip>
                 </div>

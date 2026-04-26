@@ -168,7 +168,7 @@ export function SettingsShell() {
         displayName: data.display_name ?? "",
         provider,
         selectedModel: displayModel,
-        deepThinkEnabled: data.deep_think_enabled && provider !== "zhipuai",
+        deepThinkEnabled: data.deep_think_enabled,
         openaiApiKey: "",
         deepseekApiKey: "",
         zhipuApiKey: "",
@@ -218,9 +218,6 @@ export function SettingsShell() {
               : provider === "deepseek"
                 ? "deepseek-v4-flash"
                 : "glm-4.6v";
-          if (provider === "zhipuai") {
-            next.deepThinkEnabled = false;
-          }
         }
         return next;
       });
@@ -305,8 +302,7 @@ export function SettingsShell() {
         {
           display_name: state.displayName.trim() || null,
           selected_model: state.selectedModel,
-          deep_think_enabled:
-            state.provider === "zhipuai" ? false : state.deepThinkEnabled,
+          deep_think_enabled: state.deepThinkEnabled,
           company_affiliates: affiliateRoles.map((item) => item.company),
           company_affiliates_roles: affiliateRoles,
           ...(state.openaiApiKey.trim()
@@ -497,7 +493,7 @@ export function SettingsShell() {
                   </p>
                   <p className="text-sm font-bold leading-6">
                     {state.provider === "zhipuai"
-                      ? "智谱当前不支持深度思考，这个开关会自动禁用。"
+                      ? "GLM-4.6V 支持深度思考。开启后，系统会在智谱请求中启用更强的推理模式。"
                       : "开启后，系统会在支持的模型上使用更强的推理能力进行审核。"}
                   </p>
                 </div>
@@ -506,13 +502,8 @@ export function SettingsShell() {
                   onClick={() =>
                     updateField("deepThinkEnabled", !state.deepThinkEnabled)
                   }
-                  disabled={state.provider === "zhipuai"}
                 >
-                  {state.provider === "zhipuai"
-                    ? "已禁用"
-                    : state.deepThinkEnabled
-                      ? "已开启"
-                      : "已关闭"}
+                  {state.deepThinkEnabled ? "已开启" : "已关闭"}
                 </Button>
               </div>
             </div>
