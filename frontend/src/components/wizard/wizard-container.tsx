@@ -195,6 +195,8 @@ export function WizardContainer() {
   const [pendingTemplateId, setPendingTemplateId] =
     useState<WizardTemplateOptionId | null>(null);
   const [skipDialogOpen, setSkipDialogOpen] = useState(false);
+  const [wizardCompleted, setWizardCompleted] = useState(false);
+  const [forceRestart, setForceRestart] = useState(false);
 
   const selectedTemplate = useMemo(
     () =>
@@ -251,6 +253,8 @@ export function WizardContainer() {
         companyMode: data.company_affiliates.length > 0 ? "group" : "single",
         affiliateRoles
       }));
+      setWizardCompleted(data.wizard_completed);
+      setForceRestart(false);
     } finally {
       setProfileLoading(false);
     }
@@ -871,6 +875,61 @@ export function WizardContainer() {
               <p className="text-sm font-bold uppercase tracking-[0.14em]">
                 正在恢复向导会话
               </p>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
+  if (wizardCompleted && !forceRestart) {
+    return (
+      <main className="min-h-screen px-4 py-6 md:px-8 md:py-8">
+        <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl items-center justify-center">
+          <Card className="w-full max-w-3xl bg-paper">
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant="secondary">已完成</Badge>
+                <CardTitle>引导配置已完成</CardTitle>
+              </div>
+              <CardDescription>
+                你之前已经完成了引导向导，当前配置摘要如下：
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">当前模型</p>
+                  <p className="mt-2 break-words text-lg font-black">{form.selectedModel}</p>
+                </div>
+                <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">规则数量</p>
+                  <p className="mt-2 text-lg font-black">
+                    {form.generatedRules.length > 0 ? `${form.generatedRules.length} 条` : "未配置"}
+                  </p>
+                </div>
+                <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">公司架构模式</p>
+                  <p className="mt-2 text-lg font-black">
+                    {form.companyMode === "group" ? "集团多主体" : "单一主体"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setWizardCompleted(false);
+                    setForceRestart(true);
+                  }}
+                >
+                  重新配置引导
+                </Button>
+                <Button variant="secondary" onClick={() => router.push("/settings")}>
+                  前往设置页
+                </Button>
+                <Button onClick={() => router.push("/audit")}>前往审核工作台</Button>
+              </div>
             </CardContent>
           </Card>
         </div>
