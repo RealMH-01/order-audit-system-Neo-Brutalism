@@ -384,26 +384,23 @@ class AuditOrchestratorService:
         page_size = max(page_size, 1)
         if self.repo is not None:
             history_records = self.repo.list_audit_history(current_user.id, page=page, page_size=page_size)
-            total_count = self.repo.count_audit_history(current_user.id)
+            try:
+                total_count = self.repo.count_audit_history(current_user.id)
+            except Exception:
+                logger.warning("Audit history count failed; returning list with unknown total.", exc_info=True)
+                total_count = None
         else:
             all_records = self.store.audit_history.get(current_user.id, [])
             total_count = len(all_records)
             offset = (page - 1) * page_size
             history_records = all_records[offset : offset + page_size]
 
-        items = [
-            AuditHistoryItem(
-                id=str(item["id"]),
-                model_used=str(item["model_used"]),
-                document_count=int(item["document_count"]),
-                red_count=int(item["red_count"]),
-                yellow_count=int(item["yellow_count"]),
-                blue_count=int(item["blue_count"]),
-                deep_think_used=bool(item["deep_think_used"]),
-                created_at=item.get("created_at"),
-            )
-            for item in history_records
-        ]
+        items: list[AuditHistoryItem] = []
+        for record in history_records:
+            item = self._to_history_list_item(record)
+            if item is not None:
+                items.append(item)
+
         return AuditHistoryListResponse(
             items=items,
             total_count=total_count,
@@ -423,6 +420,37 @@ class AuditOrchestratorService:
                 if str(item["id"]) == history_id:
                     return AuditHistoryDetailResponse(item=item)
         raise AppError("未找到指定审核历史记录。", status_code=404)
+
+    @classmethod
+    def _to_history_list_item(cls, item: dict[str, Any]) -> AuditHistoryItem | None:
+        history_id = item.get("id")
+        if not history_id:
+            logger.warning("Skipping audit history row without id in list response.")
+            return None
+
+        try:
+            return AuditHistoryItem(
+                id=str(history_id),
+                model_used=str(item.get("model_used") or "unknown"),
+                document_count=cls._safe_int(item.get("document_count")),
+                red_count=cls._safe_int(item.get("red_count")),
+                yellow_count=cls._safe_int(item.get("yellow_count")),
+                blue_count=cls._safe_int(item.get("blue_count")),
+                deep_think_used=bool(item.get("deep_think_used", False)),
+                created_at=item.get("created_at"),
+            )
+        except Exception:
+            logger.warning("Skipping malformed audit history row in list response.", exc_info=True)
+            return None
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        if value in (None, ""):
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     async def _run_single_target_audit(
         self,

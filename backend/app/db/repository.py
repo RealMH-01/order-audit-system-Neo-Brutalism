@@ -384,7 +384,9 @@ class SupabaseRepository:
         return self._select_many(
             "audit_history",
             "list audit history",
-            lambda table: table.select("*")
+            lambda table: table.select(
+                "id,model_used,document_count,red_count,yellow_count,blue_count,deep_think_used,created_at"
+            )
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .range(offset, offset + page_size - 1),
