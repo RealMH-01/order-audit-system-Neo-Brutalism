@@ -390,6 +390,7 @@ class AuditHistoryRecord(BaseModel):
     audit_result: dict[str, Any] = Field(default_factory=dict)
     model_used: str
     custom_rules_snapshot: list[str] = Field(default_factory=list)
+    audit_rule_snapshot: dict[str, Any] | None = None
     deep_think_used: bool = False
     task_id: str | None = None
     report_paths: dict[str, str] | None = None

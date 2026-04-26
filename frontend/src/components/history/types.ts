@@ -64,6 +64,47 @@ export type HistoryAuditResult = {
   documents?: HistoryDocumentResult[];
 };
 
+export type HistoryRuleSnapshotSection = {
+  title?: string;
+  rules?: string[];
+};
+
+export type HistoryRulePackageSnapshot = {
+  code?: string;
+  name?: string;
+  business_type?: "domestic" | "foreign" | null;
+  version?: number;
+  rules?: string[];
+};
+
+export type HistoryTemplateSnapshot = {
+  id?: string;
+  name?: string;
+  description?: string;
+  business_type?: "domestic" | "foreign";
+  supplemental_rules?: string;
+  is_default_at_run?: boolean;
+};
+
+export type HistoryRuleSnapshot = {
+  schema_version?: number;
+  resolved_at?: string;
+  system_rules?: {
+    title?: string;
+    version?: number;
+    rules?: Array<{
+      code?: string;
+      title?: string;
+      content?: string;
+    }>;
+  };
+  base_rule_package?: HistoryRulePackageSnapshot | null;
+  business_rule_package?: HistoryRulePackageSnapshot | null;
+  template?: HistoryTemplateSnapshot | null;
+  run_supplemental_rules?: string[] | string | null;
+  resolved_sections?: HistoryRuleSnapshotSection[];
+};
+
 export type HistoryDetailRecord = {
   id: string | null;
   user_id: string;
@@ -74,6 +115,7 @@ export type HistoryDetailRecord = {
   audit_result: HistoryAuditResult;
   model_used: string;
   custom_rules_snapshot: string[];
+  audit_rule_snapshot?: HistoryRuleSnapshot | null;
   deep_think_used: boolean;
   created_at: string | null;
   updated_at: string | null;

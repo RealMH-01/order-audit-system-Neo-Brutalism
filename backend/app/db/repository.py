@@ -307,19 +307,24 @@ class SupabaseRepository:
 
     def create_audit_history(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
         payload = self._encode({"user_id": user_id, **data})
-        try:
-            return self._create_audit_history_payload(user_id, payload)
-        except AppError as exc:
-            if self._is_report_metadata_column_error(exc):
-                legacy_payload = dict(payload)
-                legacy_payload.pop("task_id", None)
-                legacy_payload.pop("report_paths", None)
+        optional_columns = {"audit_rule_snapshot", "task_id", "report_paths"}
+        retry_payload = dict(payload)
+
+        while True:
+            try:
+                return self._create_audit_history_payload(user_id, retry_payload)
+            except AppError as exc:
+                missing_columns = self._missing_optional_history_columns(exc, optional_columns)
+                if not missing_columns:
+                    raise
+
+                for column in missing_columns:
+                    retry_payload.pop(column, None)
                 logger.warning(
-                    "Audit history report metadata columns are unavailable; retrying legacy history insert.",
+                    "Audit history optional columns are unavailable; retrying without %s.",
+                    ", ".join(sorted(missing_columns)),
                     exc_info=True,
                 )
-                return self._create_audit_history_payload(user_id, legacy_payload)
-            raise
 
     def _create_audit_history_payload(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._execute(
@@ -475,15 +480,8 @@ class SupabaseRepository:
         return self._normalize_rows(response)
 
     @staticmethod
-    def _is_report_metadata_column_error(error: Exception) -> bool:
-        messages: list[str] = []
-        current: BaseException | None = error
-        while current is not None:
-            messages.append(str(current))
-            current = current.__cause__
-
-        normalized = " ".join(messages).lower()
-        mentions_report_metadata = "task_id" in normalized or "report_paths" in normalized
+    def _missing_optional_history_columns(error: Exception, optional_columns: set[str]) -> set[str]:
+        normalized = SupabaseRepository._normalized_error_message(error)
         mentions_schema_issue = any(
             token in normalized
             for token in (
@@ -495,7 +493,27 @@ class SupabaseRepository:
                 "pgrst204",
             )
         )
-        return mentions_report_metadata and mentions_schema_issue
+        if not mentions_schema_issue:
+            return set()
+        return {column for column in optional_columns if column in normalized}
+
+    @staticmethod
+    def _normalized_error_message(error: Exception) -> str:
+        messages: list[str] = []
+        current: BaseException | None = error
+        while current is not None:
+            messages.append(str(current))
+            current = current.__cause__
+        return " ".join(messages).lower()
+
+    @staticmethod
+    def _is_report_metadata_column_error(error: Exception) -> bool:
+        return bool(
+            SupabaseRepository._missing_optional_history_columns(
+                error,
+                {"task_id", "report_paths"},
+            )
+        )
 
     @staticmethod
     def _normalize_rows(response: Any) -> list[dict[str, Any]]:

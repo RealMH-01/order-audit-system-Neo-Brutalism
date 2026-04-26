@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from app.db.repository import SupabaseRepository
@@ -129,7 +130,7 @@ FALLBACK_RULE_PACKAGES = [
             "目的港、装运港、交货期",
             "币种、金额、数量、单价",
             "箱数、毛重、净重、体积",
-            "英文品名、规格、型号、HS Code",
+            "核对英文品名、规格、型号等货品信息是否一致；如涉及 HS Code / 海关编码，应检查其是否缺失、冲突或前后不一致。",
             "外贸付款方式、信用证、唛头、运输方式",
         ],
         "is_active": True,
@@ -145,6 +146,7 @@ class ResolvedAuditTemplateRules:
 
     template: AuditTemplateResponse | None
     rules_text: str
+    rule_snapshot: dict[str, Any]
 
 
 class TemplateLibraryService:
@@ -313,6 +315,12 @@ class TemplateLibraryService:
         return ResolvedAuditTemplateRules(
             template=selected_template,
             rules_text="\n\n".join(section for section in sections if section.strip()),
+            rule_snapshot=self._build_rule_snapshot(
+                selected_template=selected_template,
+                base_package=base_package,
+                business_package=business_package,
+                temporary_rules=clean_temporary_rules,
+            ),
         )
 
     def _get_owned_template(self, user_id: str, template_id: str) -> dict[str, object]:
@@ -375,6 +383,87 @@ class TemplateLibraryService:
     def _format_rule_package(title: str, package: AuditRulePackageRecord) -> str:
         lines = [f"- {rule}" for rule in package.rules if rule.strip()]
         return f"【{title}】\n" + "\n".join(lines)
+
+    def _build_rule_snapshot(
+        self,
+        *,
+        selected_template: AuditTemplateResponse | None,
+        base_package: AuditRulePackageRecord,
+        business_package: AuditRulePackageRecord | None,
+        temporary_rules: list[str],
+    ) -> dict[str, Any]:
+        resolved_sections = [
+            {
+                "title": "系统硬规则",
+                "rules": [f"{rule.title}：{rule.content}" for rule in SYSTEM_HARD_RULES.rules],
+            },
+            {
+                "title": "基础通用规则包",
+                "rules": [rule for rule in base_package.rules if rule.strip()],
+            },
+        ]
+
+        if business_package is not None:
+            resolved_sections.append(
+                {
+                    "title": str(business_package.name),
+                    "rules": [rule for rule in business_package.rules if rule.strip()],
+                }
+            )
+        if selected_template is not None and selected_template.supplemental_rules.strip():
+            resolved_sections.append(
+                {
+                    "title": "模板补充规则",
+                    "rules": [selected_template.supplemental_rules.strip()],
+                }
+            )
+        if temporary_rules:
+            resolved_sections.append(
+                {
+                    "title": "本轮临时补充规则",
+                    "rules": list(temporary_rules),
+                }
+            )
+
+        return {
+            "schema_version": 1,
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
+            "system_rules": {
+                "title": SYSTEM_HARD_RULES.title,
+                "version": SYSTEM_HARD_RULES.version,
+                "rules": [rule.model_dump(mode="json") for rule in SYSTEM_HARD_RULES.rules],
+            },
+            "base_rule_package": self._rule_package_snapshot(base_package),
+            "business_rule_package": self._rule_package_snapshot(business_package),
+            "template": self._template_snapshot(selected_template),
+            "run_supplemental_rules": list(temporary_rules),
+            "resolved_sections": resolved_sections,
+        }
+
+    @staticmethod
+    def _rule_package_snapshot(package: AuditRulePackageRecord | None) -> dict[str, Any] | None:
+        if package is None:
+            return None
+        return {
+            "code": package.code,
+            "name": package.name,
+            "business_type": package.business_type,
+            "version": package.version,
+            "rules": [rule for rule in package.rules if rule.strip()],
+        }
+
+    @staticmethod
+    def _template_snapshot(template: AuditTemplateResponse | None) -> dict[str, Any] | None:
+        if template is None:
+            return None
+        return {
+            "id": template.id,
+            "name": template.name,
+            "description": template.description,
+            "business_type": template.business_type,
+            "supplemental_rules": template.supplemental_rules,
+            "is_default_at_run": template.is_default,
+        }
 
     def _clear_default_templates(self, user_id: str) -> None:
         if self.repo is not None:

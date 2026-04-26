@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { AlertCircle, ArrowRight, ChevronDown, Download, FileText, RefreshCcw } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  ChevronDown,
+  ClipboardList,
+  Download,
+  FileText,
+  RefreshCcw
+} from "lucide-react";
 
 import {
   formatHistoryDate,
@@ -11,7 +19,9 @@ import {
 import type {
   HistoryDetailRecord,
   HistoryDocumentResult,
-  HistoryIssue
+  HistoryIssue,
+  HistoryRuleSnapshot,
+  HistoryRuleSnapshotSection
 } from "@/components/history/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,6 +201,212 @@ function resolveDocumentCount(document: HistoryDocumentResult) {
   return document.result?.issues?.length ?? 0;
 }
 
+function resolveBusinessTypeLabel(type?: string | null) {
+  if (type === "domestic") {
+    return "内贸";
+  }
+  if (type === "foreign") {
+    return "外贸";
+  }
+  return "未保存";
+}
+
+function resolvePackageLabel(
+  packageItem: HistoryRuleSnapshot["base_rule_package"] | HistoryRuleSnapshot["business_rule_package"]
+) {
+  if (!packageItem) {
+    return "未保存";
+  }
+  return `${packageItem.name || "未命名规则包"} v${packageItem.version ?? 1}`;
+}
+
+function normalizeRuleLines(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-•]\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function RuleList({
+  rules,
+  emptyText
+}: {
+  rules: string[];
+  emptyText: string;
+}) {
+  if (rules.length === 0) {
+    return <p className="text-sm font-bold leading-6">{emptyText}</p>;
+  }
+
+  return (
+    <ul className="space-y-2">
+      {rules.map((rule, index) => (
+        <li
+          key={`${rule.slice(0, 32)}-${index}`}
+          className="border-4 border-ink bg-canvas p-3 text-sm font-bold leading-6 shadow-neo-sm"
+        >
+          {rule}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SnapshotResolvedSection({
+  section,
+  index
+}: {
+  section: HistoryRuleSnapshotSection;
+  index: number;
+}) {
+  const rules = normalizeRuleLines(section.rules);
+
+  return (
+    <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm" open={index < 3}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="inverse">{section.title || "未命名规则组"}</Badge>
+          <Badge variant="muted">{rules.length} 条</Badge>
+        </div>
+        <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
+          展开
+          <ChevronDown
+            size={16}
+            strokeWidth={3}
+            className="transition-transform duration-100 ease-linear group-open:rotate-180"
+          />
+        </span>
+      </summary>
+      <div className="mt-4">
+        <RuleList rules={rules} emptyText="该规则组未保存具体规则。" />
+      </div>
+    </details>
+  );
+}
+
+function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot | null | undefined }) {
+  const template = snapshot?.template ?? null;
+  const templateSupplementalRules = normalizeRuleLines(template?.supplemental_rules);
+  const runSupplementalRules = normalizeRuleLines(snapshot?.run_supplemental_rules);
+  const resolvedSections = snapshot?.resolved_sections ?? [];
+  const businessType = template?.business_type ?? snapshot?.business_rule_package?.business_type ?? null;
+
+  return (
+    <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <ClipboardList size={18} strokeWidth={3} />
+            <p className="text-sm font-black uppercase tracking-[0.14em]">本次使用规则</p>
+          </div>
+          <p className="mt-3 text-sm font-bold leading-6">
+            以下为本次审核开始时保存的规则快照，后续修改模板不会影响这条历史记录。
+          </p>
+        </div>
+        {snapshot?.resolved_at ? (
+          <Badge variant="muted">保存于 {formatHistoryDate(snapshot.resolved_at)}</Badge>
+        ) : null}
+      </div>
+
+      {!snapshot ? (
+        <div className="mt-4 border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+          <p className="text-sm font-bold leading-6">该历史记录未保存规则快照。</p>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">系统硬规则</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                v{snapshot.system_rules?.version ?? 1}
+              </p>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">基础通用规则包</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {resolvePackageLabel(snapshot.base_rule_package)}
+              </p>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">业务规则包</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {resolvePackageLabel(snapshot.business_rule_package)}
+              </p>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">使用模板</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {template?.name || "未使用模板"}
+              </p>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">业务类型</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {resolveBusinessTypeLabel(businessType)}
+              </p>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">模板状态</p>
+              <p className="mt-2 text-sm font-bold leading-6">
+                {template
+                  ? template.is_default_at_run
+                    ? "运行时为默认模板"
+                    : "运行时非默认模板"
+                  : "未保存模板"}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">我的补充规则</p>
+              <div className="mt-3">
+                <RuleList
+                  rules={templateSupplementalRules}
+                  emptyText="本次使用的模板没有补充规则。"
+                />
+              </div>
+            </div>
+            <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">本轮临时补充规则</p>
+              <div className="mt-3">
+                <RuleList rules={runSupplementalRules} emptyText="本轮未填写临时补充规则。" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {resolvedSections.length > 0 ? (
+              resolvedSections.map((section, index) => (
+                <SnapshotResolvedSection
+                  key={`${section.title || "rule-section"}-${index}`}
+                  section={section}
+                  index={index}
+                />
+              ))
+            ) : (
+              <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+                <p className="text-sm font-bold leading-6">该快照未保存展开后的规则分组。</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IssueCard({ issue, index }: { issue: HistoryIssue; index: number }) {
   return (
     <details className={`${resolveIssueClass(issue.level)} group p-4`} open={index < 2}>
@@ -357,6 +573,8 @@ export function HistoryDetail({
                 </p>
               </div>
             </div>
+
+            <HistoryRuleSnapshotCard snapshot={item.audit_rule_snapshot} />
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
