@@ -976,14 +976,74 @@ class AuditOrchestratorService:
             if isinstance(issue, dict)
         ]
         overall_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.5
+        notes = [self._build_user_facing_audit_note(summary, all_issues)]
 
         return {
             "summary": summary,
             "issues": all_issues,
             "confidence": overall_confidence,
             "documents": document_results,
-            "notes": ["当前结果已走通执行主链路，后续轮次可继续补强真实模型与 OCR 细节。"],
+            "notes": notes,
         }
+
+    @staticmethod
+    def _build_user_facing_audit_note(
+        summary: dict[str, int],
+        issues: list[dict[str, Any]],
+    ) -> str:
+        total = len(issues)
+        if total == 0:
+            return "本次审核未发现明确问题，可结合原始单据进行最终确认。"
+
+        parts: list[str] = []
+        red = int(summary.get("red", 0))
+        yellow = int(summary.get("yellow", 0))
+        blue = int(summary.get("blue", 0))
+        if red:
+            parts.append(f"高风险 {red} 个")
+        if yellow:
+            parts.append(f"疑点 {yellow} 个")
+        if blue:
+            parts.append(f"提示 {blue} 个")
+
+        focus_fields = AuditOrchestratorService._summarize_focus_fields(issues)
+        focus_text = f"建议优先核对{focus_fields}。" if focus_fields else "建议按风险等级逐项核对并修正。"
+        severity_text = f"，其中{'、'.join(parts)}" if parts else ""
+        return f"本次审核共发现 {total} 个问题{severity_text}。{focus_text}"
+
+    @staticmethod
+    def _summarize_focus_fields(issues: list[dict[str, Any]]) -> str:
+        labels: list[str] = []
+        keyword_labels = (
+            ("金额", ("金额", "总价", "总金额", "total", "amount")),
+            ("单价", ("单价", "unit price")),
+            ("数量", ("数量", "quantity", "qty")),
+            ("币种", ("币种", "currency")),
+            ("合同号", ("合同号", "合同编号", "contract no", "contract number")),
+            ("订单号/PO号", ("订单号", "订单编号", "po号", "po no", "po number", "order no")),
+            ("发票号", ("发票号", "发票号码", "invoice no", "invoice number")),
+            ("提单号", ("提单号", "bill of lading", "b/l")),
+            ("交易主体", ("主体", "买方", "卖方", "buyer", "seller")),
+        )
+
+        high_priority = [
+            issue
+            for issue in issues
+            if isinstance(issue, dict) and str(issue.get("level", "")).upper() == "RED"
+        ] or issues
+
+        for issue in high_priority:
+            text = " ".join(
+                str(issue.get(key, ""))
+                for key in ("field_name", "finding", "message", "suggestion")
+            ).lower()
+            for label, keywords in keyword_labels:
+                if label not in labels and any(keyword in text for keyword in keywords):
+                    labels.append(label)
+            if len(labels) >= 3:
+                break
+
+        return "、".join(labels[:3])
 
     def _ensure_runtime_file(self, file_id: str) -> dict[str, Any]:
         """确保运行态文件记录具备解析后的统一结构。"""

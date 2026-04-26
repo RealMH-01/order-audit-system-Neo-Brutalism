@@ -201,6 +201,52 @@ function resolveDocumentCount(document: HistoryDocumentResult) {
   return document.result?.issues?.length ?? 0;
 }
 
+function isUserFacingSummary(value: string | null | undefined) {
+  const text = (value || "").trim();
+  if (!text) {
+    return false;
+  }
+
+  const internalHints = ["主链路", "模型补强", "OCR 细节", "调试", "开发"];
+  return !internalHints.some((hint) => text.includes(hint));
+}
+
+function formatIssueSummary(summary: ReturnType<typeof summarizeSeverity>, issueCount: number) {
+  if (issueCount === 0) {
+    return "本次审核未发现明确问题，可结合原始单据进行最终确认。";
+  }
+
+  const parts = [
+    summary.red > 0 ? `高风险 ${summary.red} 个` : "",
+    summary.yellow > 0 ? `疑点 ${summary.yellow} 个` : "",
+    summary.blue > 0 ? `提示 ${summary.blue} 个` : ""
+  ].filter(Boolean);
+
+  return `本次审核共发现 ${issueCount} 个问题${parts.length ? `，其中${parts.join("、")}` : ""}。建议优先查看问题明细中的高风险项。`;
+}
+
+function resolveAuditSummaryText({
+  item,
+  issueCount,
+  summary,
+  hasMinimalDetail
+}: {
+  item: HistoryDetailRecord;
+  issueCount: number;
+  summary: ReturnType<typeof summarizeSeverity>;
+  hasMinimalDetail: boolean;
+}) {
+  if (isUserFacingSummary(item.audit_result?.message)) {
+    return item.audit_result.message;
+  }
+
+  if (hasMinimalDetail) {
+    return "本次审核未生成额外摘要，请直接查看基础信息和报告文件。";
+  }
+
+  return formatIssueSummary(summary, issueCount);
+}
+
 function resolveBusinessTypeLabel(type?: string | null) {
   if (type === "domestic") {
     return "内贸";
@@ -218,6 +264,19 @@ function resolvePackageLabel(
     return "未保存";
   }
   return `${packageItem.name || "未命名规则包"} v${packageItem.version ?? 1}`;
+}
+
+function resolveBusinessPackageSummary(
+  packageItem: HistoryRuleSnapshot["business_rule_package"]
+) {
+  if (!packageItem) {
+    return "未启用";
+  }
+  return resolvePackageLabel(packageItem);
+}
+
+function countSystemRules(snapshot: HistoryRuleSnapshot) {
+  return snapshot.system_rules?.rules?.length ?? 0;
 }
 
 function normalizeRuleLines(value: unknown): string[] {
@@ -264,16 +323,14 @@ function RuleList({
 }
 
 function SnapshotResolvedSection({
-  section,
-  index
+  section
 }: {
   section: HistoryRuleSnapshotSection;
-  index: number;
 }) {
   const rules = normalizeRuleLines(section.rules);
 
   return (
-    <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm" open={index < 3}>
+    <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="inverse">{section.title || "未命名规则组"}</Badge>
@@ -329,19 +386,19 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
               <p className="text-xs font-black uppercase tracking-[0.14em]">系统硬规则</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                v{snapshot.system_rules?.version ?? 1}
+                固定启用，v{snapshot.system_rules?.version ?? 1}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
               <p className="text-xs font-black uppercase tracking-[0.14em]">基础通用规则包</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                {resolvePackageLabel(snapshot.base_rule_package)}
+                固定启用，{resolvePackageLabel(snapshot.base_rule_package)}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
               <p className="text-xs font-black uppercase tracking-[0.14em]">业务规则包</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                {resolvePackageLabel(snapshot.business_rule_package)}
+                {resolveBusinessPackageSummary(snapshot.business_rule_package)}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
@@ -357,34 +414,48 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">模板状态</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em]">规则数量</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                {template
-                  ? template.is_default_at_run
-                    ? "运行时为默认模板"
-                    : "运行时非默认模板"
-                  : "未保存模板"}
+                系统 {countSystemRules(snapshot)} 条 / 模板补充 {templateSupplementalRules.length} 条 / 本轮补充 {runSupplementalRules.length} 条
               </p>
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">我的补充规则</p>
-              <div className="mt-3">
-                <RuleList
-                  rules={templateSupplementalRules}
-                  emptyText="本次使用的模板没有补充规则。"
+          <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="inverse">补充规则原文</Badge>
+                <Badge variant="muted">
+                  {templateSupplementalRules.length + runSupplementalRules.length} 条
+                </Badge>
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
+                展开查看
+                <ChevronDown
+                  size={16}
+                  strokeWidth={3}
+                  className="transition-transform duration-100 ease-linear group-open:rotate-180"
                 />
+              </span>
+            </summary>
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em]">模板补充规则</p>
+                <div className="mt-3">
+                  <RuleList
+                    rules={templateSupplementalRules}
+                    emptyText="本次使用的模板没有补充规则。"
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em]">本轮额外补充规则</p>
+                <div className="mt-3">
+                  <RuleList rules={runSupplementalRules} emptyText="本轮未填写临时补充规则。" />
+                </div>
               </div>
             </div>
-            <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">本轮临时补充规则</p>
-              <div className="mt-3">
-                <RuleList rules={runSupplementalRules} emptyText="本轮未填写临时补充规则。" />
-              </div>
-            </div>
-          </div>
+          </details>
 
           <div className="space-y-3">
             {resolvedSections.length > 0 ? (
@@ -392,7 +463,6 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
                 <SnapshotResolvedSection
                   key={`${section.title || "rule-section"}-${index}`}
                   section={section}
-                  index={index}
                 />
               ))
             ) : (
@@ -409,7 +479,7 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
 
 function IssueCard({ issue, index }: { issue: HistoryIssue; index: number }) {
   return (
-    <details className={`${resolveIssueClass(issue.level)} group p-4`} open={index < 2}>
+    <details className={`${resolveIssueClass(issue.level)} group p-4`} open={index === 0}>
       <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
@@ -458,6 +528,7 @@ export function HistoryDetail({
   const issues = item?.audit_result?.issues ?? [];
   const documentResults = item?.audit_result?.documents ?? [];
   const notes = item?.audit_result?.notes ?? [];
+  const userFacingNotes = notes.filter(isUserFacingSummary);
   const summary = summarizeSeverity(item?.audit_result?.summary);
   const resolvedStatus = resolveHistoryStatus();
   const hasMinimalDetail =
@@ -466,6 +537,14 @@ export function HistoryDetail({
     issues.length === 0 &&
     documentResults.length === 0 &&
     notes.length === 0;
+  const auditSummaryText = item
+    ? resolveAuditSummaryText({
+        item,
+        issueCount: issues.length,
+        summary,
+        hasMinimalDetail
+      })
+    : "";
 
   return (
     <Card className="bg-muted">
@@ -501,6 +580,9 @@ export function HistoryDetail({
                 <div className="space-y-2">
                   <p className="text-2xl font-black tracking-tight">
                     {formatHistoryTitle(item)}
+                  </p>
+                  <p className="break-all text-xs font-black uppercase tracking-[0.14em]">
+                    记录 ID：{item.id || "未返回"}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="inverse">
@@ -547,35 +629,6 @@ export function HistoryDetail({
               </div>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">
-                    深度思考 {item.deep_think_used ? "已开启" : "未开启"}
-                  </Badge>
-                  <Badge variant="muted">
-                    审核{resolveConfidence(item.audit_result?.confidence)}
-                  </Badge>
-                </div>
-                <p className="mt-3 text-sm font-bold leading-6">
-                  {item.audit_result?.message ||
-                    (hasMinimalDetail
-                      ? "当前记录仅包含基础信息，暂未补充额外审核摘要。"
-                      : "当前记录没有额外审核摘要。")}
-                </p>
-              </div>
-
-              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-                <p className="text-xs font-black uppercase tracking-[0.14em]">汇总对齐</p>
-                <p className="mt-2 text-sm font-bold leading-6">
-                  本次审核汇总为 RED {summary.red} / YELLOW {summary.yellow} /
-                  BLUE {summary.blue}。
-                </p>
-              </div>
-            </div>
-
-            <HistoryRuleSnapshotCard snapshot={item.audit_rule_snapshot} />
-
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-black uppercase tracking-tight">问题明细</h3>
@@ -602,14 +655,29 @@ export function HistoryDetail({
               </ScrollArea>
             </div>
 
+            <HistoryReportSection taskId={item.task_id} token={token} />
+
+            <HistoryRuleSnapshotCard snapshot={item.audit_rule_snapshot} />
+
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-black uppercase tracking-tight">审核摘要</h3>
-                <Badge variant="muted">{notes.length} 条备注</Badge>
+                <Badge variant="muted">{userFacingNotes.length} 条备注</Badge>
               </div>
-              {notes.length > 0 ? (
+              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary">
+                    深度思考 {item.deep_think_used ? "已开启" : "未开启"}
+                  </Badge>
+                  <Badge variant="muted">
+                    审核{resolveConfidence(item.audit_result?.confidence)}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-sm font-bold leading-6">{auditSummaryText}</p>
+              </div>
+              {userFacingNotes.length > 0 ? (
                 <div className="space-y-3">
-                  {notes.map((note, index) => (
+                  {userFacingNotes.map((note, index) => (
                     <div
                       key={`${note.slice(0, 24)}-${index}`}
                       className="border-4 border-ink bg-paper p-4 shadow-neo-sm"
@@ -618,26 +686,30 @@ export function HistoryDetail({
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-                  <p className="text-sm font-bold leading-6">
-                    当前记录没有额外摘要备注。
-                  </p>
-                </div>
-              )}
+              ) : null}
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-black uppercase tracking-tight">逐单据回看</h3>
-                <Badge variant="secondary">{documentResults.length} 条</Badge>
-              </div>
+            <details className="group border-4 border-ink bg-paper p-4 shadow-neo-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="inverse">逐单据回看</Badge>
+                  <Badge variant="secondary">{documentResults.length} 条</Badge>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
+                  展开查看
+                  <ChevronDown
+                    size={16}
+                    strokeWidth={3}
+                    className="transition-transform duration-100 ease-linear group-open:rotate-180"
+                  />
+                </span>
+              </summary>
               {documentResults.length > 0 ? (
-                <div className="grid gap-3">
+                <div className="mt-4 grid gap-3">
                   {documentResults.map((document, index) => (
                     <div
                       key={`${document.file_id || document.doc_type || "document"}-${index}`}
-                      className="border-4 border-ink bg-paper p-4 shadow-neo-sm"
+                      className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
                     >
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="inverse">
@@ -658,15 +730,13 @@ export function HistoryDetail({
                   ))}
                 </div>
               ) : (
-                <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <div className="mt-4 border-4 border-ink bg-canvas p-4 shadow-neo-sm">
                   <p className="text-sm font-bold leading-6">
                     当前记录还没有逐单据回看内容。
                   </p>
                 </div>
               )}
-            </div>
-
-            <HistoryReportSection taskId={item.task_id} token={token} />
+            </details>
           </>
         ) : (
           <div className="issue-yellow p-4">

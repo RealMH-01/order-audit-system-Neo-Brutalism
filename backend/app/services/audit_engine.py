@@ -30,20 +30,85 @@ _LEVEL_ALIASES = {
 
 _CORE_CONFLICT_KEYWORDS = (
     "单价不一致",
+    "单价错误",
     "金额不一致",
+    "金额错误",
     "总金额不一致",
     "数量不一致",
+    "数量错误",
     "币种不一致",
+    "币种冲突",
     "税额不一致",
     "合同号不一致",
     "订单号不一致",
     "po号不一致",
     "发票号不一致",
     "发票号码与合同号码不一致",
-    "编号不一致",
     "主体不一致",
+    "主体明确冲突",
     "买方不一致",
     "卖方不一致",
+)
+
+_CORE_IDENTIFIER_FIELD_KEYWORDS = (
+    "合同号",
+    "合同编号",
+    "contract no",
+    "contract number",
+    "发票号",
+    "发票号码",
+    "invoice no",
+    "invoice number",
+    "订单号",
+    "订单编号",
+    "order no",
+    "order number",
+    "po号",
+    "po no",
+    "po number",
+    "采购订单号",
+    "提单号",
+    "提单编号",
+    "bill of lading",
+    "b/l",
+    "bl no",
+)
+
+_CORE_IDENTIFIER_CONTEXT_KEYWORDS = (
+    "核心编号",
+    "核心业务编号",
+    "关键编号",
+    "刚性检查字段",
+)
+
+_CORE_IDENTIFIER_PROBLEM_KEYWORDS = (
+    "缺失",
+    "未显示",
+    "未出现",
+    "未填写",
+    "未提供",
+    "未列示",
+    "不存在",
+    "为空",
+    "漏填",
+    "没有",
+    "不一致",
+    "不匹配",
+    "不相符",
+    "不符",
+    "冲突",
+    "错误",
+    "写错",
+    "不同",
+    "missing",
+    "omitted",
+    "absent",
+    "not shown",
+    "not present",
+    "mismatch",
+    "inconsistent",
+    "conflict",
+    "wrong",
 )
 
 _UNCERTAIN_CONFLICT_HINTS = (
@@ -600,14 +665,10 @@ Cross-check instructions:
             normalized_issues.append(normalized_issue)
             level_counts[level] += 1
 
-        summary = raw_result.get("summary")
-        if not isinstance(summary, dict):
-            summary = {}
-
         normalized_summary = {
-            "red": self._safe_int(summary.get("red"), default=level_counts["RED"]),
-            "yellow": self._safe_int(summary.get("yellow"), default=level_counts["YELLOW"]),
-            "blue": self._safe_int(summary.get("blue"), default=level_counts["BLUE"]),
+            "red": level_counts["RED"],
+            "yellow": level_counts["YELLOW"],
+            "blue": level_counts["BLUE"],
         }
         normalized_summary["total"] = len(normalized_issues)
 
@@ -754,7 +815,13 @@ Cross-check instructions:
         ).lower()
         if any(hint in text for hint in _UNCERTAIN_CONFLICT_HINTS):
             return False
-        return any(keyword in text for keyword in _CORE_CONFLICT_KEYWORDS)
+        if any(keyword in text for keyword in _CORE_CONFLICT_KEYWORDS):
+            return True
+
+        has_core_identifier = any(keyword in text for keyword in _CORE_IDENTIFIER_FIELD_KEYWORDS)
+        has_contextual_identifier = any(keyword in text for keyword in _CORE_IDENTIFIER_CONTEXT_KEYWORDS) and "编号" in text
+        has_identifier_problem = any(keyword in text for keyword in _CORE_IDENTIFIER_PROBLEM_KEYWORDS)
+        return (has_core_identifier or has_contextual_identifier) and has_identifier_problem
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
