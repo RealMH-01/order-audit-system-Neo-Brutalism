@@ -15,7 +15,7 @@ const navItems = [
   { href: "/wizard", label: "引导" },
   { href: "/history", label: "历史" },
   { href: "/settings", label: "设置" },
-  { href: "/admin/rules", label: "规则" }
+  { href: "/admin/rules", label: "规则", requireRole: "admin" }
 ];
 
 export function Navbar() {
@@ -23,6 +23,7 @@ export function Navbar() {
   const { state, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const isAuthenticated = state.status === "authenticated" && state.user !== null;
+  const visibleNavItems = navItems.filter((item) => !item.requireRole || state.user?.role === item.requireRole);
 
   const handleLogout = () => {
     signOut();
@@ -47,7 +48,7 @@ export function Navbar() {
         </div>
 
         <nav className="hidden items-center gap-2 lg:flex">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -88,7 +89,7 @@ export function Navbar() {
         )}
       >
         <nav className="mx-auto flex max-w-7xl flex-col gap-3">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
