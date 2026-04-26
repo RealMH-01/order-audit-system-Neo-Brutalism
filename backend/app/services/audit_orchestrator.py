@@ -589,6 +589,29 @@ class AuditOrchestratorService:
         matched = self._normalize_affiliate_text(matched_po_value)
         return any(affiliate in observed or affiliate in matched for affiliate in normalized_affiliates if affiliate)
 
+    @staticmethod
+    def _collect_task_file_ids(task: dict[str, Any]) -> list[str]:
+        """收集当前审核任务实际引用过的 file_id。"""
+
+        file_ids: list[str] = []
+
+        def _append(file_id: Any) -> None:
+            if file_id:
+                file_ids.append(str(file_id))
+
+        _append(task.get("po_file_id"))
+        for item in task.get("target_files", []):
+            if isinstance(item, dict):
+                _append(item.get("file_id"))
+        for item in task.get("prev_ticket_files", []):
+            if isinstance(item, dict):
+                _append(item.get("file_id"))
+        _append(task.get("template_file_id"))
+        for file_id in task.get("reference_file_ids", []):
+            _append(file_id)
+
+        return list(dict.fromkeys(file_ids))
+
     async def _run_task(self, task_id: str) -> None:
         """后台任务入口。"""
 
@@ -637,6 +660,7 @@ class AuditOrchestratorService:
                     self.store.audit_history[user_id][0] = persisted_history
                 except Exception:
                     logger.warning("Audit history persistence failed; keeping RuntimeStore history only.", exc_info=True)
+            self.file_parser.delete_files_by_ids(user_id, self._collect_task_file_ids(task))
         except asyncio.CancelledError:
             await self._finalize_cancel(task)
         except AppError as exc:

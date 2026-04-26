@@ -9,7 +9,8 @@ import {
   Play,
   ScanSearch,
   Settings2,
-  Sparkles
+  Sparkles,
+  Trash2
 } from "lucide-react";
 
 import {
@@ -27,9 +28,11 @@ import { ProgressPanel } from "@/components/audit/progress-panel";
 import { ResultsPanel } from "@/components/audit/results-panel";
 import type {
   AuditBucketFile,
+  AuditBulkDeleteResponse,
   AuditCancelResponse,
   AuditDeleteResponse,
   AuditDocumentType,
+  AuditFileListResponse,
   AuditFileUploadResponse,
   AuditProgressPayload,
   AuditReportResponse,
@@ -279,6 +282,9 @@ export function AuditWorkspace() {
 
   const [uploadingKey, setUploadingKey] = useState<BucketKey | null>(null);
   const [removingFileIds, setRemovingFileIds] = useState<string[]>([]);
+  const [residualFiles, setResidualFiles] = useState<AuditBucketFile[]>([]);
+  const [residualLoading, setResidualLoading] = useState(false);
+  const [residualCleanupLoading, setResidualCleanupLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
 
@@ -319,6 +325,23 @@ export function AuditWorkspace() {
   );
   const hasAnyKey =
     profile?.has_deepseek_key || profile?.has_openai_key || profile?.has_zhipu_key || false;
+  const activeFileIds = useMemo(
+    () =>
+      new Set(
+        [
+          poFile?.id,
+          ...targetFiles.map((file) => file.id),
+          ...prevTicketFiles.map((file) => file.id),
+          templateFile?.id,
+          ...referenceFiles.map((file) => file.id)
+        ].filter((fileId): fileId is string => Boolean(fileId))
+      ),
+    [poFile?.id, prevTicketFiles, referenceFiles, targetFiles, templateFile?.id]
+  );
+  const residualVisibleFiles = useMemo(
+    () => residualFiles.filter((file) => !activeFileIds.has(file.id)),
+    [activeFileIds, residualFiles]
+  );
 
   const clearRunState = useCallback((nextMessage?: string) => {
     progressAbortRef.current?.abort();
@@ -380,6 +403,22 @@ export function AuditWorkspace() {
     }
   }, []);
 
+  const fetchResidualFiles = useCallback(async (accessToken: string) => {
+    setResidualLoading(true);
+    try {
+      const { data } = await apiGet<AuditFileListResponse>("/files/mine", {
+        token: accessToken
+      });
+      setResidualFiles(data.files.map(toBucketFile));
+    } catch (error) {
+      setWorkspaceError(
+        normalizeError(error, "读取残留文件列表失败，请稍后重试。")
+      );
+    } finally {
+      setResidualLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const accessToken = getStoredAccessToken();
     setToken(accessToken);
@@ -390,7 +429,8 @@ export function AuditWorkspace() {
     }
 
     void fetchProfile(accessToken);
-  }, [fetchProfile]);
+    void fetchResidualFiles(accessToken);
+  }, [fetchProfile, fetchResidualFiles]);
 
   useEffect(() => {
     if (!taskId || !token) {
@@ -463,9 +503,43 @@ export function AuditWorkspace() {
       await Promise.allSettled(
         fileIds.map((fileId) => apiDelete<AuditDeleteResponse>(`/files/${fileId}`, { token }))
       );
+      const deletedIds = new Set(fileIds);
+      setResidualFiles((previous) => previous.filter((file) => !deletedIds.has(file.id)));
     },
     [token]
   );
+
+  const handleCleanupResidualFiles = useCallback(async () => {
+    if (!token) {
+      setWorkspaceError("请先登录后再清理残留文件。");
+      return;
+    }
+
+    const cleanupFileIds = residualVisibleFiles.map((file) => file.id);
+    if (cleanupFileIds.length === 0) {
+      setResidualFiles([]);
+      return;
+    }
+
+    setResidualCleanupLoading(true);
+    setWorkspaceError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      const { data } = await apiDelete<AuditBulkDeleteResponse>("/files/mine", {
+        token,
+        body: { file_ids: cleanupFileIds }
+      });
+      await fetchResidualFiles(token);
+      setWorkspaceMessage(`已清理 ${data.deleted_count} 个残留文件。`);
+    } catch (error) {
+      setWorkspaceError(
+        normalizeError(error, "清理残留文件失败，请稍后重试。")
+      );
+    } finally {
+      setResidualCleanupLoading(false);
+    }
+  }, [fetchResidualFiles, residualVisibleFiles, token]);
 
   const uploadSingleFile = useCallback(
     async (
@@ -585,6 +659,7 @@ export function AuditWorkspace() {
           token
         });
         onSuccess();
+        setResidualFiles((previous) => previous.filter((file) => file.id !== fileId));
         invalidateFinishedRun(`${resolveBucketName(key)}已调整，请重新启动审核。`);
         setWorkspaceMessage(data.message || `${resolveBucketName(key)}已删除。`);
       } catch (error) {
@@ -877,6 +952,27 @@ export function AuditWorkspace() {
         {workspaceMessage ? (
           <div className="issue-blue p-4">
             <p className="text-sm font-bold leading-6">{workspaceMessage}</p>
+          </div>
+        ) : null}
+
+        {residualVisibleFiles.length > 0 ? (
+          <div className="issue-yellow flex flex-wrap items-center justify-between gap-3 p-4">
+            <p className="text-sm font-bold leading-6">
+              检测到上一轮残留文件（{residualVisibleFiles.length} 个），可能占用上传配额。
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCleanupResidualFiles()}
+              disabled={residualCleanupLoading || residualLoading}
+            >
+              {residualCleanupLoading ? (
+                <Loader2 size={16} strokeWidth={3} className="animate-spin" />
+              ) : (
+                <Trash2 size={16} strokeWidth={3} />
+              )}
+              {residualCleanupLoading ? "清理中..." : "清理残留文件"}
+            </Button>
           </div>
         ) : null}
 

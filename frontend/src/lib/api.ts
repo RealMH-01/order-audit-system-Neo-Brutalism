@@ -126,7 +126,7 @@ export async function apiPut<T>(
 
 export async function apiDelete<T>(
   path: string,
-  options: Omit<RequestOptions, "body"> = {}
+  options: RequestOptions = {}
 ): Promise<ApiSuccess<T>> {
   return request<T>(path, "DELETE", options);
 }
