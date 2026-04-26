@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
@@ -66,6 +67,39 @@ _PROVIDER_PROFILE_KEY_FIELDS = {
     "deepseek": "deepseek_api_key",
     "zhipuai": "zhipu_api_key",
 }
+
+_CORE_IDENTIFIER_SPECS = (
+    {
+        "field_name": "合同号",
+        "issue_key": "contract-number",
+        "patterns": (
+            r"(?:合同号|合同编号|合同号码)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+            r"(?:contract\s*(?:no\.?|number|#)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+        ),
+    },
+    {
+        "field_name": "订单号/PO号",
+        "issue_key": "order-number",
+        "patterns": (
+            r"(?:订单号|订单编号|采购订单号|PO\s*(?:NO\.?|NUMBER|#)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+            r"(?:order\s*(?:no\.?|number|#)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+        ),
+    },
+    {
+        "field_name": "发票号",
+        "issue_key": "invoice-number",
+        "patterns": (
+            r"(?:发票号|发票号码|invoice\s*(?:no\.?|number|#)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+        ),
+    },
+    {
+        "field_name": "提单号",
+        "issue_key": "bill-of-lading-number",
+        "patterns": (
+            r"(?:提单号|提单编号|B/L\s*(?:NO\.?|#)?|BL\s*(?:NO\.?|#)?|bill\s+of\s+lading\s*(?:no\.?|number|#)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9._/\-]{3,})",
+        ),
+    },
+)
 
 
 _REPORT_DOWNLOADS = {
@@ -662,6 +696,13 @@ class AuditOrchestratorService:
                 company_affiliates,
             )
 
+        parsed_result = self._post_process_evidence_and_identifiers(
+            parsed_result,
+            po_text=po_text_context,
+            target_text=target_text_context,
+            doc_type=doc_type,
+        )
+
         if po_truncated or target_truncated:
             self._append_truncation_notice(parsed_result, doc_type, index)
 
@@ -744,6 +785,137 @@ class AuditOrchestratorService:
         parsed_result["summary"] = self._recount_summary(
             [issue for issue in issues if isinstance(issue, dict)]
         )
+
+    def _post_process_evidence_and_identifiers(
+        self,
+        parsed_result: dict[str, Any],
+        *,
+        po_text: str,
+        target_text: str,
+        doc_type: str,
+    ) -> dict[str, Any]:
+        """Clean unsafe evidence wording and protect independent core identifier findings."""
+
+        issues = parsed_result.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+            parsed_result["issues"] = issues
+
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            for key in ("finding", "message", "suggestion", "reason"):
+                value = issue.get(key)
+                if isinstance(value, str):
+                    issue[key] = self.audit_engine._sanitize_evidence_wording(value)
+            self._retitle_unit_price_issue(issue)
+
+        self._ensure_core_identifier_issues(issues, po_text=po_text, target_text=target_text, doc_type=doc_type)
+        parsed_result["summary"] = self._recount_summary(
+            [issue for issue in issues if isinstance(issue, dict)]
+        )
+        return parsed_result
+
+    @staticmethod
+    def _retitle_unit_price_issue(issue: dict[str, Any]) -> None:
+        text = " ".join(
+            str(issue.get(key, ""))
+            for key in ("field_name", "finding", "message", "suggestion")
+        ).lower()
+        if "单价" in text and any(keyword in text for keyword in ("不一致", "错误", "不匹配", "不符")):
+            issue["field_name"] = "单价不一致"
+            if "finding" not in issue and issue.get("message"):
+                issue["finding"] = issue["message"]
+
+    def _ensure_core_identifier_issues(
+        self,
+        issues: list[Any],
+        *,
+        po_text: str,
+        target_text: str,
+        doc_type: str,
+    ) -> None:
+        target_normalized = self._normalize_identifier_text(target_text)
+        has_target_identifier_evidence = self._has_usable_target_identifier_evidence(target_text)
+        for spec in _CORE_IDENTIFIER_SPECS:
+            field_name = str(spec["field_name"])
+            issue_key = str(spec["issue_key"])
+            values = self._extract_identifier_values(po_text, spec["patterns"])
+            for value in values:
+                normalized_value = self._normalize_identifier_text(value)
+                if not normalized_value or normalized_value in target_normalized:
+                    continue
+                if self._has_identifier_issue(issues, field_name, value):
+                    continue
+                if has_target_identifier_evidence:
+                    level = "RED"
+                    finding = f"PO 中明确包含{field_name} {value}，但目标单据中未显示该编号，属于核心编号缺失。"
+                    suggestion = f"请核对目标单据并补充或修正{field_name}，避免核心编号无法对应。"
+                    confidence = 1.0
+                else:
+                    level = "YELLOW"
+                    finding = f"PO 中明确包含{field_name} {value}，但目标单据文本中未能确认是否包含该编号。"
+                    suggestion = f"请人工核对目标单据中的{field_name}，确认该核心编号是否已正确列示。"
+                    confidence = 0.55
+                issues.append(
+                    {
+                        "id": f"{doc_type}-{issue_key}-missing",
+                        "level": level,
+                        "field_name": field_name,
+                        "finding": finding,
+                        "message": finding,
+                        "suggestion": suggestion,
+                        "confidence": confidence,
+                    }
+                )
+
+    @staticmethod
+    def _extract_identifier_values(text: str, patterns: Any) -> list[str]:
+        values: list[str] = []
+        for pattern in patterns:
+            for match in re.finditer(str(pattern), text or "", flags=re.IGNORECASE):
+                value = match.group(1).strip().strip(".,;，。；)")
+                if AuditOrchestratorService._looks_like_identifier(value) and value not in values:
+                    values.append(value)
+        return values
+
+    @staticmethod
+    def _looks_like_identifier(value: str) -> bool:
+        normalized = AuditOrchestratorService._normalize_identifier_text(value)
+        if len(normalized) < 4:
+            return False
+        if not any(char.isdigit() for char in normalized):
+            return False
+        blocked_values = {"USD", "EUR", "CNY", "RMB", "KGS", "KG", "PCS", "CTNS"}
+        return normalized not in blocked_values
+
+    @staticmethod
+    def _has_usable_target_identifier_evidence(text: str) -> bool:
+        normalized = AuditOrchestratorService._normalize_identifier_text(text)
+        if len(normalized) < 20:
+            return False
+        return any(char.isdigit() for char in normalized)
+
+    @staticmethod
+    def _normalize_identifier_text(value: str) -> str:
+        return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+    @staticmethod
+    def _has_identifier_issue(issues: list[Any], field_name: str, value: str) -> bool:
+        normalized_value = AuditOrchestratorService._normalize_identifier_text(value)
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            text = " ".join(
+                str(issue.get(key, ""))
+                for key in ("field_name", "finding", "message", "suggestion", "matched_po_value", "observed_value")
+            )
+            normalized_text = AuditOrchestratorService._normalize_identifier_text(text)
+            if normalized_value and normalized_value in normalized_text:
+                return True
+            if field_name in text and any(keyword in text for keyword in ("缺失", "未显示", "不一致", "冲突", "无法确认")):
+                return True
+        return False
 
     def _attach_document_context(
         self,

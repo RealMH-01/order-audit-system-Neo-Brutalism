@@ -121,6 +121,37 @@ _UNCERTAIN_CONFLICT_HINTS = (
     "需要复核",
 )
 
+_STRONG_CORE_IDENTIFIER_PROBLEMS = (
+    "缺失",
+    "未显示",
+    "未出现",
+    "未填写",
+    "未提供",
+    "未列示",
+    "不一致",
+    "不匹配",
+    "不相符",
+    "不符",
+    "冲突",
+    "错误",
+    "写错",
+    "missing",
+    "omitted",
+    "absent",
+    "not shown",
+    "not present",
+    "mismatch",
+    "inconsistent",
+    "conflict",
+    "wrong",
+)
+
+_PO_UNIT_PRICE_ABSENCE_PATTERNS = (
+    r"PO\s*(?:中|里)?\s*(?:虽)?(?:未|没有|并未)(?:明确)?(?:列出|显示|标注|提供|写明)\s*(?:任何)?单价",
+    r"PO\s*(?:虽)?\s*(?:未|没有|并未)(?:明确)?(?:列出|显示|标注|提供|写明)\s*(?:任何)?单价",
+    r"PO\s*(?:中|里)?\s*(?:看不到|无)\s*(?:任何)?单价",
+)
+
 _SYSTEM_PROMPT = """
 You are a professional export-document audit engine.
 
@@ -144,6 +175,10 @@ You must follow these non-negotiable rules:
 14. Be deterministic: given the same inputs, produce the same output. Do not introduce variation, hedging language, or speculative findings.
 15. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
 16. Only report issues supported by explicit evidence in the provided documents. Do not guess, infer, or speculate about problems that are not directly observable in the text.
+17. Never state that a field is absent unless you have verified that it does not appear in the relevant document text. If uncertain, write “未能确认” instead of “未列出/未显示/没有”.
+18. For price and amount issues, compare PO unit price, target-document unit price, quantity, calculated amount, target-document total amount, and PO total amount before writing the finding.
+19. If both PO and target document contain unit prices, compare the unit prices directly and title the issue as 单价不一致 or 单价错误 when they differ.
+20. Core identifier problems such as contract number, order number, PO number, invoice number, or bill of lading number must remain separate issues and must not be merged into price or amount findings.
 """.strip()
 
 SYSTEM_PROMPT_TEXT = _SYSTEM_PROMPT
@@ -157,11 +192,13 @@ Apply the custom rules with high priority, but do not break these protected rule
 3. PO number and contract number cannot be merged into one concept.
 4. Numeric ambiguity must remain RED.
 5. The output must remain valid JSON and every issue must include confidence.
+6. Do not state that a PO field is missing unless the PO text proves it is absent; if uncertain, use “未能确认”.
+7. Unit-price, amount, quantity, currency, and core identifier issues are protected categories and must not swallow each other.
 
 If custom rules require reclassification, regenerate the full result object instead of patching fragments.
 You must return a full JSON object with recalculated summary, issue ids, and confidence values.
-6. All user-facing text (finding, suggestion) must be in Simplified Chinese. Keep original field names and values untranslated.
-7. Be deterministic and do not introduce speculative findings.
+8. All user-facing text (finding, suggestion) must be in Simplified Chinese. Keep original field names and values untranslated.
+9. Be deterministic and do not introduce speculative findings.
 """.strip()
 
 CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT
@@ -215,12 +252,16 @@ Non-negotiable audit rules:
 - Treat the PO as the source of truth.
 - Contract number, Invoice No., and order number are rigid checks.
 - PO number and contract number are different fields.
+- Core identifier issues must be reported as independent issues. Do not merge contract/order/PO/invoice/B/L number problems into amount, price, quantity, or currency findings.
 - If a number is ambiguous because of separators, decimal notation, or conflicting representations, mark it RED.
+- Never state that a PO field is missing unless the PO text has been checked and the field truly does not appear. If uncertain, say “未能确认”.
+- For unit-price and amount findings, first compare PO unit price, target unit price, quantity, calculated amount, target total amount, and PO total amount. If unit prices differ, use 单价不一致/单价错误 as the issue field or title.
 - Check quantity * unit price = amount when the document provides those values.
 - Check totals, carton counts, gross/net weight, and volume for internal consistency when available.
 - Distinguish substantive Incoterm change from harmless writing differences such as spacing or capitalization.
 - Unit conversion may be YELLOW only when the underlying quantity appears plausibly reconcilable and the document gives enough context.
 - Do not report the same discrepancy more than once even if it appears in multiple contexts. Merge duplicate findings.
+- Do not merge issues across protected categories: price/amount/quantity/currency is one category, core identifiers are another category, and parties are another category.
 - If evidence is ambiguous or insufficient, lower the confidence score rather than fabricating a finding.
 """.strip()
 
@@ -229,6 +270,8 @@ _TARGET_TYPE_RULES: dict[str, str] = {
 Document-specific focus for invoice:
 - Compare invoice number, contract reference, PO reference, item descriptions, quantities, unit prices, total amount, currency, and payer/payee parties.
 - Missing or inconsistent invoice number is high priority.
+- If PO contains a contract number and the invoice omits or changes it, report a separate RED contract-number issue.
+- If PO and invoice both contain unit prices, compare unit price directly before discussing total amount.
 - Write all finding and suggestion text in Simplified Chinese.
 """.strip(),
     "packing_list": """
@@ -546,6 +589,8 @@ Cross-check instructions:
 - Keep valid existing issues.
 - Add missing issues if the current result omitted a material problem.
 - Remove or downgrade issues only when the evidence clearly supports the revision.
+- Do not remove a core identifier issue just because an amount or unit-price issue already exists.
+- Do not state that PO unit price or another PO field is absent unless the provided PO text proves it is absent; use “未能确认” when uncertain.
 - Return a full JSON object, not a patch.
 """.strip(),
                 _OUTPUT_FORMAT_RULES,
@@ -644,6 +689,9 @@ Cross-check instructions:
                 or raw_issue.get("recommended_action")
                 or self._default_suggestion_for_level(level)
             ).strip()
+            finding = self._sanitize_evidence_wording(finding)
+            suggestion = self._sanitize_evidence_wording(suggestion)
+            field_name = self._normalize_issue_field_name(field_name, finding, suggestion)
             issue_id = str(raw_issue.get("id") or f"issue-{index:03d}").strip()
             if self._is_core_conflict_issue(raw_issue, field_name, finding, suggestion):
                 level = "RED"
@@ -794,6 +842,29 @@ Cross-check instructions:
         return "YELLOW"
 
     @staticmethod
+    def _sanitize_evidence_wording(text: str) -> str:
+        sanitized = text
+        for pattern in _PO_UNIT_PRICE_ABSENCE_PATTERNS:
+            sanitized = re.sub(
+                pattern,
+                "未能确认 PO 单价",
+                sanitized,
+                flags=re.IGNORECASE,
+            )
+        return sanitized
+
+    @staticmethod
+    def _normalize_issue_field_name(field_name: str, finding: str, suggestion: str) -> str:
+        text = f"{field_name} {finding} {suggestion}".lower()
+        if "单价" in text and any(keyword in text for keyword in ("不一致", "错误", "不匹配", "不符")):
+            return "单价不一致"
+        if "数量" in text and any(keyword in text for keyword in ("不一致", "错误", "不匹配", "不符")):
+            return "数量不一致"
+        if any(keyword in text for keyword in ("总金额不一致", "总金额错误", "金额不一致", "金额错误")):
+            return "总金额不一致"
+        return field_name
+
+    @staticmethod
     def _is_core_conflict_issue(
         raw_issue: dict[str, Any],
         field_name: str,
@@ -813,14 +884,17 @@ Cross-check instructions:
             )
             if value not in (None, "")
         ).lower()
-        if any(hint in text for hint in _UNCERTAIN_CONFLICT_HINTS):
-            return False
         if any(keyword in text for keyword in _CORE_CONFLICT_KEYWORDS):
             return True
 
         has_core_identifier = any(keyword in text for keyword in _CORE_IDENTIFIER_FIELD_KEYWORDS)
         has_contextual_identifier = any(keyword in text for keyword in _CORE_IDENTIFIER_CONTEXT_KEYWORDS) and "编号" in text
         has_identifier_problem = any(keyword in text for keyword in _CORE_IDENTIFIER_PROBLEM_KEYWORDS)
+        has_strong_identifier_problem = any(keyword in text for keyword in _STRONG_CORE_IDENTIFIER_PROBLEMS)
+        if (has_core_identifier or has_contextual_identifier) and has_strong_identifier_problem:
+            return True
+        if any(hint in text for hint in _UNCERTAIN_CONFLICT_HINTS):
+            return False
         return (has_core_identifier or has_contextual_identifier) and has_identifier_problem
 
     @staticmethod
