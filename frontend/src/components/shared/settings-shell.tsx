@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { apiGet, apiPost, apiPut, getStoredAccessToken } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,6 +118,7 @@ function normalizeModelForDisplay(model: string) {
 
 export function SettingsShell() {
   const router = useRouter();
+  const { state: authState } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -127,6 +129,7 @@ export function SettingsShell() {
   const [testingProvider, setTestingProvider] =
     useState<WizardProvider | null>(null);
   const [state, setState] = useState<SettingsState>(initialState);
+  const accountEmail = authState.user?.email ?? "当前登录邮箱";
 
   const currentHasKey = useMemo(() => {
     if (state.provider === "openai") {
@@ -406,21 +409,40 @@ export function SettingsShell() {
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="bg-paper">
           <CardHeader>
-            <Badge variant="secondary">基础信息</Badge>
-            <CardTitle>显示名与模型配置</CardTitle>
+            <Badge variant="secondary">账号资料</Badge>
+            <CardTitle>当前登录账号</CardTitle>
+            <CardDescription>
+              注册时填写的账号昵称，可在这里修改；它只用于区分当前账号，不影响模型调用、审核规则或密钥。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em]">
+                登录邮箱
+              </p>
+              <p className="mt-2 break-words text-sm font-bold leading-6">
+                {accountEmail}
+              </p>
+            </div>
             <label className="space-y-2">
               <span className="text-sm font-bold uppercase tracking-[0.14em]">
-                显示名称
+                账号昵称
               </span>
               <Input
                 value={state.displayName}
                 onChange={(event) => updateField("displayName", event.target.value)}
-                placeholder="例如：外贸审核专员"
+                placeholder="例如：外贸审核组 / 张三 / 单证审核团队"
               />
             </label>
+          </CardContent>
+        </Card>
 
+        <Card className="bg-paper">
+          <CardHeader>
+            <Badge variant="secondary">模型配置</Badge>
+            <CardTitle>审核模型与推理能力</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-sm font-bold uppercase tracking-[0.14em]">
