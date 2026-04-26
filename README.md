@@ -35,9 +35,24 @@
 
 ### 部署目标
 
-- 后端：Render（render.yaml 已配置）
+- 后端：阿里云 ECS（Nginx + systemd + uvicorn）
 - 前端：Vercel
 - 数据库与认证：Supabase
+
+实际请求链路：
+
+```text
+用户浏览器 → Vercel 前端 → Vercel rewrite 转发 → 阿里云 ECS (8.136.189.224) Nginx → FastAPI (uvicorn)
+```
+
+后端更新步骤：
+
+```bash
+ssh root@8.136.189.224
+cd /opt/order-audit-system-Neo-Brutalism
+git pull origin main
+sudo systemctl restart order-audit-backend.service
+```
 
 详细部署指南请参考 [部署文档](backend/docs/deployment.md) 和 [部署检查清单](docs/deploy-checklist.md)。
 
