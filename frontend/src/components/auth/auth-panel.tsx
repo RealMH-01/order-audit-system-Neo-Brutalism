@@ -206,13 +206,16 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
           <div className="grid gap-4 md:grid-cols-2">
             {isRegister ? (
               <label className="space-y-2 md:col-span-2">
-                <span className="text-sm uppercase tracking-[0.14em]">显示名称</span>
+                <span className="text-sm uppercase tracking-[0.14em]">账号昵称</span>
                 <Input
                   value={form.displayName}
                   onChange={(event) => updateField("displayName", event.target.value)}
-                  placeholder="例如：外贸跟单一组"
+                  placeholder="例如：外贸审核组 / 张三 / 单证审核团队"
                   disabled={submitting}
                 />
+                <p className="text-xs font-bold leading-5">
+                  注册后会显示在导航栏，也可在设置页修改。
+                </p>
               </label>
             ) : null}
 
