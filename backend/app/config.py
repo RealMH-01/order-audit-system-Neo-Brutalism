@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     app_version: str = "0.2.0"
     api_v1_prefix: str = "/api"
     debug: bool = True
-    allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "https://order-audit-system-neo-brutalism.vercel.app",
+        ]
+    )
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""
