@@ -1016,6 +1016,11 @@ class AuditOrchestratorService:
         text = f"{quantized:,.2f}"
         return text[:-3] if text.endswith(".00") else text
 
+    @classmethod
+    def _format_amount_with_currency(cls, value: Decimal, currency: str) -> str:
+        amount = cls._format_decimal(value)
+        return f"{currency} {amount}" if currency else amount
+
     def _append_truncation_notice(self, parsed_result: dict[str, Any], doc_type: str, index: int) -> None:
         """在结果末尾追加长文档截断提醒。"""
 
@@ -1073,12 +1078,14 @@ class AuditOrchestratorService:
     def _retitle_unit_price_issue(issue: dict[str, Any]) -> None:
         text = " ".join(
             str(issue.get(key, ""))
-            for key in ("field_name", "finding", "message", "suggestion")
+            for key in ("field_name", "title", "finding", "message", "suggestion", "your_value", "source_value")
         ).lower()
         if "单价" in text and any(keyword in text for keyword in ("不一致", "错误", "不匹配", "不符")):
             issue["field_name"] = "单价不一致"
-            if "finding" not in issue and issue.get("message"):
-                issue["finding"] = issue["message"]
+            if issue.get("title"):
+                issue["title"] = "单价不一致"
+            if str(issue.get("level", "")).upper() != "RED":
+                issue["level"] = "RED"
 
     def _ensure_unit_price_issue(
         self,
@@ -1104,11 +1111,12 @@ class AuditOrchestratorService:
         if qty_number is not None and total_number is not None:
             calculated_amount = target_unit_number * qty_number
             currency = self._extract_currency(target_unit_price, target_total, po_unit_price)
-            currency_suffix = f" {currency}" if currency else ""
+            calculated_amount_text = self._format_amount_with_currency(calculated_amount, currency)
             calculation_text = (
                 f"按目标单据单价 {target_unit_price} × {target_qty} 计算为 "
-                f"{self._format_decimal(calculated_amount)}{currency_suffix}，"
-                f"但目标单据总金额为 {target_total}。"
+                f"{calculated_amount_text}，"
+                f"但目标单据总金额为 {target_total}，"
+                "说明目标单据单价与总金额计算关系不一致，"
             )
 
         finding = (
@@ -1130,6 +1138,8 @@ class AuditOrchestratorService:
             "confidence": 1.0,
             "your_value": target_unit_price,
             "source_value": po_unit_price,
+            "matched_po_value": po_unit_price,
+            "observed_value": target_unit_price,
             "source": "PO/基准单据",
             "field_location": "Unit Price",
         }
@@ -1153,9 +1163,19 @@ class AuditOrchestratorService:
                 continue
             text = " ".join(
                 str(issue.get(key, ""))
-                for key in ("field_name", "finding", "message", "suggestion", "reason")
+                for key in (
+                    "field_name",
+                    "finding",
+                    "message",
+                    "suggestion",
+                    "reason",
+                    "your_value",
+                    "source_value",
+                    "matched_po_value",
+                    "observed_value",
+                )
             ).lower()
-            if any(keyword in text for keyword in ("单价", "unit price", "金额计算", "总金额", "total value")):
+            if any(keyword in text for keyword in ("单价", "unit price", "金额计算", "金额计算矛盾", "总金额", "total value")):
                 return index
         return None
 
@@ -1446,6 +1466,10 @@ class AuditOrchestratorService:
                 matched_po_value=optional_issue_text(issue, "matched_po_value"),
                 observed_value=optional_issue_text(issue, "observed_value"),
                 source_excerpt=optional_issue_text(issue, "source_excerpt"),
+                your_value=optional_issue_text(issue, "your_value"),
+                source_value=optional_issue_text(issue, "source_value"),
+                source=optional_issue_text(issue, "source"),
+                field_location=optional_issue_text(issue, "field_location"),
             )
             for issue in aggregate_result.get("issues", [])
             if isinstance(issue, dict)

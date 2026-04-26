@@ -945,9 +945,6 @@ Cross-check instructions:
             raw_issue.get("your_value") or raw_issue.get("observed_value")
         ) or cls._extract_unit_price_value_from_text(text, baseline=False)
         if source_value and your_value and source_value != your_value:
-            prefix = f"PO/基准单据单价 {source_value} 与目标单据单价 {your_value} 不一致。"
-            if not finding.startswith(prefix):
-                finding = f"{prefix}{finding}"
             return "单价不一致", finding, suggestion
 
         if cls._contains_baseline_and_target_unit_price_evidence(text) and cls._contains_amount_math_evidence(text):
