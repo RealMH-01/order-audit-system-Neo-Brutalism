@@ -552,10 +552,10 @@ export function HistoryDetail({
         <Badge variant="inverse">详情查看</Badge>
         <CardTitle>审核详情回看</CardTitle>
         <CardDescription>
-          这里展示所选审核记录的基本信息、审核摘要、问题明细和报告入口。
+          这里展示所选审核记录的基本信息、问题明细、报告入口和规则快照。
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-8">
         {loading ? (
           <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
             <p className="text-sm font-bold leading-6">正在加载历史详情...</p>
@@ -741,7 +741,7 @@ export function HistoryDetail({
         ) : (
           <div className="issue-yellow p-4">
             <p className="text-sm font-bold leading-6">
-              请先从左侧选择一条历史记录，右侧会加载本次审核的详情回看。
+              请先从上方选择一条历史记录，详情区会加载本次审核的详情回看。
             </p>
           </div>
         )}

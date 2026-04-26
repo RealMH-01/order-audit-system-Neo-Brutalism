@@ -161,7 +161,7 @@ export function HistoryShell() {
     <section className="space-y-6">
       <SectionHeading
         title="审核历史"
-        description="这里展示你已经完成的审核记录。点击左侧记录后，可以在右侧查看详情并重新下载报告。"
+        description="这里展示你已经完成的审核记录。选择一条记录后，下方详情区会展示审核结果并提供报告下载。"
         icon={History}
       />
 
@@ -217,49 +217,47 @@ export function HistoryShell() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <div>
-          <HistoryList
-            items={filteredItems}
-            loading={listLoading}
-            error={listError}
-            activeId={activeId}
-            filter={filter}
-            onFilterChange={setFilter}
-            onSelect={(historyId) => {
-              if (!token) {
-                return;
-              }
+      <div className="space-y-8">
+        <HistoryList
+          items={filteredItems}
+          loading={listLoading}
+          error={listError}
+          activeId={activeId}
+          filter={filter}
+          onFilterChange={setFilter}
+          onSelect={(historyId) => {
+            if (!token) {
+              return;
+            }
 
-              void fetchDetail(historyId, token);
-            }}
-            onRetry={() => {
-              if (!token) {
-                return;
-              }
+            void fetchDetail(historyId, token);
+          }}
+          onRetry={() => {
+            if (!token) {
+              return;
+            }
 
-              void fetchList(token, 1, false);
-            }}
-          />
+            void fetchList(token, 1, false);
+          }}
+        />
 
-          {items.length < totalCount ? (
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!token) {
-                    return;
-                  }
+        {items.length < totalCount ? (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!token) {
+                  return;
+                }
 
-                  void fetchList(token, currentPage + 1, true);
-                }}
-                disabled={listLoading}
-              >
-                {listLoading ? "加载中..." : "加载更多"}
-              </Button>
-            </div>
-          ) : null}
-        </div>
+                void fetchList(token, currentPage + 1, true);
+              }}
+              disabled={listLoading}
+            >
+              {listLoading ? "加载中..." : "加载更多"}
+            </Button>
+          </div>
+        ) : null}
 
         <HistoryDetail
           item={detail}

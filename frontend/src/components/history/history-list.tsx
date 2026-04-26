@@ -69,7 +69,7 @@ export function HistoryList({
 
         <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
           <p className="text-sm font-bold leading-6">
-            列表默认按最近创建时间优先展示。点击任一记录后，右侧会加载该次审核的详情。
+            列表默认按最近创建时间优先展示。点击任一记录后，下方详情区会加载该次审核的详情。
           </p>
         </div>
 
