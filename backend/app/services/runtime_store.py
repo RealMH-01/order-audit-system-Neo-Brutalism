@@ -19,6 +19,7 @@ class RuntimeStore:
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     system_rule: dict[str, Any] | None = None
     templates: dict[str, dict[str, Any]] = field(default_factory=dict)
+    audit_templates: dict[str, dict[str, Any]] = field(default_factory=dict)
     files: dict[str, dict[str, Any]] = field(default_factory=dict)
     audit_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     audit_history: dict[str, list[dict[str, Any]]] = field(default_factory=dict)

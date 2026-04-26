@@ -16,6 +16,7 @@ from app.services.report_generator import ReportGeneratorService
 from app.services.rules_config import RulesConfigService
 from app.services.runtime_store import RuntimeStore, get_runtime_store
 from app.services.settings_service import SettingsService
+from app.services.template_library import TemplateLibraryService
 from app.services.token_utils import TokenUtilityService
 from app.services.wizard_engine import WizardEngineService
 
@@ -107,6 +108,13 @@ def get_settings_service(
         llm_client=llm_client,
         repo=repo,
     )
+
+
+def get_template_library_service(
+    store: RuntimeStore = Depends(get_runtime_state),
+    repo: SupabaseRepository | None = Depends(get_repository),
+) -> TemplateLibraryService:
+    return TemplateLibraryService(store=store, repo=repo)
 
 
 def get_audit_orchestrator_service(

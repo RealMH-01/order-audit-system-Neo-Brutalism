@@ -224,6 +224,87 @@ class SupabaseRepository:
     def update_system_rule(self, data: dict[str, Any]) -> dict[str, Any]:
         return self.update_system_rules(data)
 
+    def list_rule_packages(self) -> list[dict[str, Any]]:
+        return self._select_many(
+            "audit_rule_packages",
+            "list rule packages",
+            lambda table: table.select("*").eq("is_active", True).order("package_type").order("code"),
+        )
+
+    def list_audit_templates(self, user_id: str) -> list[dict[str, Any]]:
+        return self._select_many(
+            "audit_templates",
+            "list audit templates",
+            lambda table: table.select("*")
+            .eq("user_id", user_id)
+            .order("is_default", desc=True)
+            .order("updated_at", desc=True),
+        )
+
+    def get_audit_template(self, template_id: str, user_id: str) -> dict[str, Any] | None:
+        return self._select_one(
+            "audit_templates",
+            "read audit template",
+            lambda table: table.select("*").eq("id", template_id).eq("user_id", user_id).limit(1),
+        )
+
+    def create_audit_template(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        payload = self._encode(data)
+        payload["user_id"] = user_id
+        self._execute(
+            "create audit template",
+            lambda: self.client.table("audit_templates").insert(payload).execute(),
+        )
+        template_id = str(payload.get("id", ""))
+        template = self.get_audit_template(template_id, user_id)
+        if template is None:
+            raise AppError("Audit template creation succeeded but no record was returned.", status_code=500)
+        return template
+
+    def update_audit_template(
+        self,
+        template_id: str,
+        user_id: str,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        existing = self.get_audit_template(template_id, user_id)
+        if existing is None:
+            raise AppError("Audit template not found.", status_code=404)
+
+        payload = self._encode(data, exclude_fields={"id", "user_id", "created_at"})
+        if payload:
+            self._execute(
+                "update audit template",
+                lambda: self.client.table("audit_templates")
+                .update(payload)
+                .eq("id", template_id)
+                .eq("user_id", user_id)
+                .execute(),
+            )
+
+        template = self.get_audit_template(template_id, user_id)
+        if template is None:
+            raise AppError("Audit template update succeeded but no record was returned.", status_code=500)
+        return template
+
+    def delete_audit_template(self, template_id: str, user_id: str) -> None:
+        if self.get_audit_template(template_id, user_id) is None:
+            raise AppError("Audit template not found.", status_code=404)
+
+        self._execute(
+            "delete audit template",
+            lambda: self.client.table("audit_templates").delete().eq("id", template_id).eq("user_id", user_id).execute(),
+        )
+
+    def clear_default_audit_templates(self, user_id: str) -> None:
+        self._execute(
+            "clear default audit templates",
+            lambda: self.client.table("audit_templates")
+            .update({"is_default": False, "updated_at": datetime.now(timezone.utc)})
+            .eq("user_id", user_id)
+            .execute(),
+        )
+
     def create_audit_history(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
         payload = self._encode({"user_id": user_id, **data})
         try:

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class FeatureStatus(BaseModel):
@@ -240,6 +240,140 @@ class TemplateListResponse(BaseModel):
     """Template-list response."""
 
     templates: list[TemplateResponse]
+
+
+BusinessType = Literal["domestic", "foreign"]
+
+
+class SystemHardRuleItem(BaseModel):
+    """Fixed backend hard rule shown to users."""
+
+    code: str
+    title: str
+    content: str
+
+
+class SystemHardRulesResponse(BaseModel):
+    """Fixed hard rules response."""
+
+    title: str
+    description: str
+    version: int
+    rules: list[SystemHardRuleItem]
+
+
+class AuditRulePackageRecord(BaseModel):
+    """Database-facing audit rule package."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str
+    code: str
+    name: str
+    description: str | None = None
+    business_type: BusinessType | None = None
+    package_type: Literal["base_common", "business"]
+    version: int = 1
+    rules: list[str] = Field(default_factory=list)
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AuditRulePackageListResponse(BaseModel):
+    """Enabled audit rule package list."""
+
+    packages: list[AuditRulePackageRecord]
+
+
+class AuditTemplateRecord(BaseModel):
+    """Database-facing user audit template."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID | str
+    user_id: UUID | str
+    name: str
+    description: str = ""
+    business_type: BusinessType
+    supplemental_rules: str = ""
+    is_default: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AuditTemplateResponse(BaseModel):
+    """User audit template response."""
+
+    id: str
+    user_id: str
+    name: str
+    description: str
+    business_type: BusinessType
+    supplemental_rules: str
+    is_default: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AuditTemplateListResponse(BaseModel):
+    """Current user's audit templates."""
+
+    templates: list[AuditTemplateResponse]
+
+
+class AuditTemplateCreateRequest(BaseModel):
+    """Create user audit template request."""
+
+    name: str = Field(min_length=1)
+    description: str = ""
+    business_type: BusinessType
+    supplemental_rules: str = ""
+    is_default: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("模板名称不能为空。")
+        return stripped
+
+    @field_validator("business_type", mode="before")
+    @classmethod
+    def validate_business_type(cls, value: str) -> str:
+        if value not in ("domestic", "foreign"):
+            raise ValueError("业务类型只能是 domestic 或 foreign。")
+        return value
+
+
+class AuditTemplateUpdateRequest(BaseModel):
+    """Patch user audit template request."""
+
+    name: str | None = None
+    description: str | None = None
+    business_type: BusinessType | None = None
+    supplemental_rules: str | None = None
+    is_default: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("模板名称不能为空。")
+        return stripped
+
+    @field_validator("business_type", mode="before")
+    @classmethod
+    def validate_optional_business_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if value not in ("domestic", "foreign"):
+            raise ValueError("业务类型只能是 domestic 或 foreign。")
+        return value
 
 
 class AuditHistoryRecord(BaseModel):
