@@ -49,8 +49,8 @@ const providerModels: Record<
     { label: "DeepSeek Reasoner", value: "deepseek-reasoner" }
   ],
   zhipuai: [
-    { label: "智谱 GLM-4-Flash", value: "glm-4-flash" },
-    { label: "智谱 GLM-4V", value: "glm-4v" }
+    { label: "智谱 GLM-4.6V", value: "glm-4.6v" },
+    { label: "智谱 GLM-4.6V-Flash", value: "glm-4.6v-flash" }
   ]
 };
 

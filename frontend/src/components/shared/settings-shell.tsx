@@ -65,8 +65,8 @@ const providerModels: Record<
     { label: "DeepSeek V4 Pro", value: "deepseek-v4-pro" }
   ],
   zhipuai: [
-    { label: "智谱 GLM-4-Flash", value: "glm-4-flash" },
-    { label: "智谱 GLM-4V", value: "glm-4v" }
+    { label: "智谱 GLM-4.6V", value: "glm-4.6v" },
+    { label: "智谱 GLM-4.6V-Flash", value: "glm-4.6v-flash" }
   ]
 };
 
@@ -108,10 +108,18 @@ const DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
   "deepseek-reasoner": "deepseek-v4-pro"
 };
 
+const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
+  "glm-4v": "glm-4.6v",
+  "glm-4-flash": "glm-4.6v-flash"
+};
+
 function normalizeModelForDisplay(model: string) {
   const normalized = model.trim().toLowerCase();
   if (normalized in DEEPSEEK_LEGACY_MODEL_MAP) {
     return DEEPSEEK_LEGACY_MODEL_MAP[normalized];
+  }
+  if (normalized in ZHIPU_LEGACY_MODEL_MAP) {
+    return ZHIPU_LEGACY_MODEL_MAP[normalized];
   }
   return model;
 }
@@ -209,7 +217,7 @@ export function SettingsShell() {
               ? "gpt-4o"
               : provider === "deepseek"
                 ? "deepseek-v4-flash"
-                : "glm-4-flash";
+                : "glm-4.6v";
           if (provider === "zhipuai") {
             next.deepThinkEnabled = false;
           }

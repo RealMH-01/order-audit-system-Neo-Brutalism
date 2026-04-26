@@ -116,6 +116,19 @@ function resolveProviderFromModel(model: string) {
   return "openai" as const;
 }
 
+const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
+  "glm-4v": "glm-4.6v",
+  "glm-4-flash": "glm-4.6v-flash"
+};
+
+function normalizeModelForDisplay(model: string) {
+  const normalized = model.trim().toLowerCase();
+  if (normalized in ZHIPU_LEGACY_MODEL_MAP) {
+    return ZHIPU_LEGACY_MODEL_MAP[normalized];
+  }
+  return model;
+}
+
 function getRequiredApiKey(
   provider: WizardFormState["provider"],
   form: WizardFormState
@@ -239,7 +252,7 @@ export function WizardContainer() {
         ...previous,
         token,
         provider,
-        selectedModel: data.selected_model,
+        selectedModel: normalizeModelForDisplay(data.selected_model),
         deepThinkEnabled: data.deep_think_enabled && provider !== "zhipuai",
         manualRulesText: data.active_custom_rules.join("\n"),
         generatedRules: data.active_custom_rules,
@@ -296,7 +309,7 @@ export function WizardContainer() {
               ? "gpt-4o"
               : provider === "deepseek"
                 ? "deepseek-chat"
-                : "glm-4-flash";
+                : "glm-4.6v";
           if (provider === "zhipuai") {
             next.deepThinkEnabled = false;
           }
