@@ -642,7 +642,7 @@ export function SettingsShell() {
                   引导状态
                 </p>
                 <p className="mt-2 text-sm font-bold leading-6">
-                  {state.wizardCompleted ? "已完成" : "未完成"}
+                  {state.wizardCompleted ? "当前可用" : "未完成"}
                 </p>
               </div>
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -656,7 +656,7 @@ export function SettingsShell() {
             </div>
             <div className="issue-blue p-4">
               <p className="text-sm font-bold leading-6">
-                引导完成后可直接进入审核工作台；使用审核功能前，需要先确认使用须知。
+                你可以直接进入审核工作台；如果此前跳过了引导，也可以随时重新运行引导补充配置。
               </p>
             </div>
           </CardContent>
