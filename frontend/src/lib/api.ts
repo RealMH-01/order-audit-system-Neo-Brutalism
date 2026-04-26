@@ -32,18 +32,22 @@ type DownloadAuditReportResult = {
 };
 
 async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
+  const responseText = await response.text();
+
   if (!response.ok) {
     handleUnauthorizedResponse(response.status);
 
     let detail = "请求失败，请稍后重试。";
 
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        detail = body.detail;
+    if (responseText) {
+      try {
+        const body = JSON.parse(responseText) as { detail?: string };
+        if (body.detail) {
+          detail = body.detail;
+        }
+      } catch {
+        detail = responseText;
       }
-    } catch {
-      // 使用默认中文报错文案。
     }
 
     const error: ApiError = {
@@ -53,7 +57,7 @@ async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
     throw error;
   }
 
-  const data = (await response.json()) as T;
+  const data = responseText ? (JSON.parse(responseText) as T) : (undefined as T);
   return { data };
 }
 
@@ -71,9 +75,9 @@ function handleUnauthorizedResponse(status: number) {
   window.location.href = "/login";
 }
 
-function buildHeaders(token?: string | null): HeadersInit {
+function buildHeaders(token?: string | null, hasBody = false): HeadersInit {
   return {
-    "Content-Type": "application/json",
+    ...(hasBody ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 }
@@ -108,11 +112,12 @@ async function request<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   options: RequestOptions = {}
 ): Promise<ApiSuccess<T>> {
+  const hasBody = options.body !== undefined;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     cache: "no-store",
-    headers: buildHeaders(options.token),
-    body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    headers: buildHeaders(options.token, hasBody),
+    body: hasBody ? JSON.stringify(options.body) : undefined
   });
 
   return parseResponse<T>(response);

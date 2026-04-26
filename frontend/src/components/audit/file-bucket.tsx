@@ -111,6 +111,7 @@ export function FileBucket({
                   </Select>
                 ) : null}
                 <Button
+                  type="button"
                   variant="outline"
                   disabled={disabled || fileBusy}
                   onClick={() => onRemove(file.id)}

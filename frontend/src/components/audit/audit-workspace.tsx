@@ -117,6 +117,14 @@ function normalizeError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function getErrorStatus(error: unknown) {
+  if (typeof error === "object" && error && "status" in error) {
+    const status = Number(error.status);
+    return Number.isFinite(status) ? status : null;
+  }
+  return null;
+}
+
 function resolveDefaultDocumentType(detectedType: string): AuditDocumentType {
   if (detectedType === "invoice") {
     return "invoice";
@@ -693,7 +701,11 @@ export function AuditWorkspace() {
         return;
       }
 
-      setRemovingFileIds((previous) => [...previous, fileId]);
+      setRemovingFileIds((previous) =>
+        previous.includes(fileId) ? previous : [...previous, fileId]
+      );
+      setWorkspaceError(null);
+      setWorkspaceMessage(null);
 
       try {
         const { data } = await apiDelete<AuditDeleteResponse>(`/files/${fileId}`, {
@@ -704,8 +716,16 @@ export function AuditWorkspace() {
         invalidateFinishedRun(`${resolveBucketName(key)}已调整，请重新启动审核。`);
         setWorkspaceMessage(data.message || `${resolveBucketName(key)}已删除。`);
       } catch (error) {
+        if (getErrorStatus(error) === 404) {
+          onSuccess();
+          setResidualFiles((previous) => previous.filter((file) => file.id !== fileId));
+          invalidateFinishedRun(`${resolveBucketName(key)}已调整，请重新启动审核。`);
+          setWorkspaceMessage("该文件已不在暂存区，已从页面移除。");
+          return;
+        }
+
         setWorkspaceError(
-          normalizeError(error, `${resolveBucketName(key)}删除失败，请稍后重试。`)
+          `${resolveBucketName(key)}删除失败：${normalizeError(error, "请稍后重试。")}`
         );
       } finally {
         setRemovingFileIds((previous) => previous.filter((item) => item !== fileId));
