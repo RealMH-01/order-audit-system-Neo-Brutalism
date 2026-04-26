@@ -185,7 +185,7 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
               label={isRegister ? "注册入口" : "登录入口"}
               tone={isRegister ? "success" : "warning"}
             />
-            <StatusPill label="Auth API 已接通" tone="neutral" />
+            <StatusPill label="账号服务已连接" tone="neutral" />
           </div>
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
@@ -263,13 +263,19 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-3 text-sm font-bold leading-6">
-            <p>成功拿到 token 后，页面会先校验当前会话，再读取现有 profile 状态。</p>
-            <p>
-              如果当前账号还没完成向导，会进入 `/wizard`；如果向导已完成，则直接进入 `/audit`。
-            </p>
-            <p>
-              disclaimer 仍保持在 `/audit` 页面内处理，不会挪到登录或注册阶段打断流程。
-            </p>
+            {isRegister ? (
+              <>
+                <p>注册成功后，系统会自动创建你的个人配置。</p>
+                <p>首次使用时会进入引导向导，帮助你完成模型、规则和公司信息配置。</p>
+                <p>后续登录时，系统会自动使用你保存过的配置。</p>
+              </>
+            ) : (
+              <>
+                <p>登录成功后，系统会自动读取你已保存的模型、规则和密钥配置。</p>
+                <p>如果你是首次使用，系统会引导你完成基础配置；如果已经配置完成，会直接进入审核工作台。</p>
+                <p>使用审核功能前，需要先阅读并确认使用须知。</p>
+              </>
+            )}
           </div>
 
           <Link
