@@ -88,6 +88,17 @@ class LLMClientService:
     ) -> str:
         """根据 provider 与场景选择默认模型。"""
 
+        if provider == "deepseek":
+            normalized_request = (requested_model or "").strip().lower()
+            # DeepSeek 开启深度思考时统一使用 V4 Pro，避免沿用普通审核的 V4 Flash。
+            if deep_think and normalized_request in {
+                "",
+                "deepseek-chat",
+                "deepseek-v4-flash",
+                "deepseek-reasoner",
+            }:
+                return "deepseek-v4-pro"
+
         if requested_model:
             normalized_request = requested_model.strip().lower()
             # DeepSeek 兼容：旧模型名 deepseek-chat / deepseek-reasoner 自动映射到 V4。
