@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Download,
   History,
+  BookOpenCheck,
   Loader2,
   Play,
   ScanSearch,
@@ -52,8 +53,13 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Tooltip } from "@/components/ui/tooltip";
+import type {
+  AuditTemplate,
+  AuditTemplateListResponse
+} from "@/components/templates/types";
 import type { WizardProfile } from "@/components/wizard/types";
 
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "cancelling"]);
@@ -148,6 +154,10 @@ function resolveDefaultDocumentType(detectedType: string): AuditDocumentType {
     return "letter_of_credit";
   }
   return "other";
+}
+
+function resolveBusinessTypeLabel(type: AuditTemplate["business_type"]) {
+  return type === "foreign" ? "外贸" : "内贸";
 }
 
 function toBucketFile(file: AuditFileUploadResponse["file"]): AuditBucketFile {
@@ -318,6 +328,10 @@ export function AuditWorkspace() {
   const [token, setToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<WizardProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [auditTemplates, setAuditTemplates] = useState<AuditTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [acceptingDisclaimer, setAcceptingDisclaimer] = useState(false);
 
@@ -392,6 +406,10 @@ export function AuditWorkspace() {
   const residualVisibleFiles = useMemo(
     () => residualFiles.filter((file) => !activeFileIds.has(file.id)),
     [activeFileIds, residualFiles]
+  );
+  const selectedTemplate = useMemo(
+    () => auditTemplates.find((template) => template.id === selectedTemplateId) ?? null,
+    [auditTemplates, selectedTemplateId]
   );
 
   const clearRunState = useCallback((nextMessage?: string) => {
@@ -468,18 +486,45 @@ export function AuditWorkspace() {
     }
   }, []);
 
+  const fetchAuditTemplates = useCallback(async (accessToken: string) => {
+    setTemplatesLoading(true);
+    setTemplatesError(null);
+
+    try {
+      const { data } = await apiGet<AuditTemplateListResponse>("/templates", {
+        token: accessToken
+      });
+      const templates = data.templates;
+      setAuditTemplates(templates);
+      setSelectedTemplateId((current) => {
+        if (current && templates.some((template) => template.id === current)) {
+          return current;
+        }
+
+        const defaultTemplate = templates.find((template) => template.is_default);
+        return defaultTemplate?.id ?? templates[0]?.id ?? "";
+      });
+    } catch (error) {
+      setTemplatesError(normalizeError(error, "读取审核模板失败，请稍后重试。"));
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const accessToken = getStoredAccessToken();
     setToken(accessToken);
 
     if (!accessToken) {
       setProfileLoading(false);
+      setTemplatesLoading(false);
       return;
     }
 
     void fetchProfile(accessToken);
     void fetchResidualFiles(accessToken);
-  }, [fetchProfile, fetchResidualFiles]);
+    void fetchAuditTemplates(accessToken);
+  }, [fetchAuditTemplates, fetchProfile, fetchResidualFiles]);
 
   useEffect(() => {
     if (!taskId || !token) {
@@ -811,6 +856,7 @@ export function AuditWorkspace() {
         label: file.label ?? file.filename
       })),
       template_file_id: templateFile?.id ?? null,
+      ...(selectedTemplateId ? { template_id: selectedTemplateId } : {}),
       reference_file_ids: referenceFiles.map((file) => file.id),
       deep_think: runDeepThink
     };
@@ -838,6 +884,7 @@ export function AuditWorkspace() {
     prevTicketFiles,
     referenceFiles,
     runDeepThink,
+    selectedTemplateId,
     targetFiles,
     templateFile,
     token
@@ -1171,6 +1218,80 @@ export function AuditWorkspace() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <BookOpenCheck size={18} strokeWidth={3} />
+                      <p className="text-xs font-black uppercase tracking-[0.14em]">
+                        本轮审核模板
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold leading-6">
+                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、基础通用规则、业务规则包和你的补充规则。
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push("/templates")}
+                  >
+                    去模板库
+                  </Button>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+                  <Select
+                    value={selectedTemplateId}
+                    disabled={templatesLoading || auditTemplates.length === 0 || workspaceDisabled}
+                    onChange={(event) => {
+                      setSelectedTemplateId(event.target.value);
+                      invalidateFinishedRun("本轮审核模板已调整，请重新启动审核。");
+                    }}
+                  >
+                    <option value="">
+                      {auditTemplates.length > 0 ? "请选择审核模板" : "暂无可选模板"}
+                    </option>
+                    {auditTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                        {template.is_default ? " · 默认模板" : ""}
+                        {" · "}
+                        {resolveBusinessTypeLabel(template.business_type)}
+                      </option>
+                    ))}
+                  </Select>
+                  {selectedTemplate ? (
+                    <Badge variant="inverse">
+                      {selectedTemplate.is_default ? "默认模板" : resolveBusinessTypeLabel(selectedTemplate.business_type)}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                {templatesLoading ? (
+                  <p className="mt-3 text-sm font-bold leading-6">正在读取审核模板。</p>
+                ) : null}
+                {templatesError ? (
+                  <div className="issue-red mt-3 p-4">
+                    <p className="text-sm font-bold leading-6">{templatesError}</p>
+                  </div>
+                ) : null}
+                {!templatesLoading && auditTemplates.length === 0 ? (
+                  <div className="issue-yellow mt-3 p-4">
+                    <p className="text-sm font-bold leading-6">
+                      还没有自定义模板，可先前往模板库创建。未选择模板时，将按默认审核规则执行。
+                    </p>
+                  </div>
+                ) : null}
+                {!templatesLoading && auditTemplates.length > 0 && !selectedTemplateId ? (
+                  <div className="issue-yellow mt-3 p-4">
+                    <p className="text-sm font-bold leading-6">
+                      未选择模板时，系统会优先使用默认模板；没有默认模板则按默认审核规则执行。
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                   <p className="text-xs font-black uppercase tracking-[0.14em]">

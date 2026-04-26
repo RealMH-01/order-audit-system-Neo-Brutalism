@@ -54,6 +54,7 @@ export type AuditStartPayload = {
     label?: string | null;
   }>;
   template_file_id: string | null;
+  template_id?: string | null;
   reference_file_ids: string[];
   deep_think: boolean;
 };

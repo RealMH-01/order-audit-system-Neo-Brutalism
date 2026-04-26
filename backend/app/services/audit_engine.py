@@ -250,10 +250,12 @@ class AuditEngineService:
         has_prev_ticket: bool,
         has_template: bool,
         company_affiliates: list[str] | None = None,
+        audit_rules_text: str | None = None,
     ) -> str:
         """按上下文动态拼接审核规则文本。"""
 
         sections = [
+            _normalize_text_block(audit_rules_text),
             _LEVEL_DEFINITIONS,
             _NON_NEGOTIABLE_RULES,
             _get_target_type_rule(target_type),
@@ -298,6 +300,7 @@ Template comparison:
         company_affiliates: list[str] | None = None,
         deep_think: bool = False,
         system_prompt_override: str | None = None,
+        audit_rules_text: str | None = None,
     ) -> list[dict[str, str]]:
         """构造可直接给 LLM 客户端消费的审核消息列表。"""
 
@@ -306,6 +309,7 @@ Template comparison:
             has_prev_ticket=bool(_normalize_text_block(prev_ticket_text)),
             has_template=bool(_normalize_text_block(template_text)),
             company_affiliates=company_affiliates,
+            audit_rules_text=audit_rules_text,
         )
 
         system_prompt = _normalize_text_block(system_prompt_override) or _SYSTEM_PROMPT

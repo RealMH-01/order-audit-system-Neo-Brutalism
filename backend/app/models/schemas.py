@@ -538,6 +538,7 @@ class AuditStartRequest(BaseModel):
     target_files: list[AuditFileRefItem] = Field(min_length=1)
     prev_ticket_files: list[AuditFileRefItem] = Field(default_factory=list)
     template_file_id: str | None = None
+    template_id: str | None = None
     reference_file_ids: list[str] = Field(default_factory=list)
     deep_think: bool = False
 

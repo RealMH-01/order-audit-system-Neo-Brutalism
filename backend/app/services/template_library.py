@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -138,6 +139,14 @@ FALLBACK_RULE_PACKAGES = [
 ]
 
 
+@dataclass(frozen=True)
+class ResolvedAuditTemplateRules:
+    """Resolved audit-rule text for one audit run."""
+
+    template: AuditTemplateResponse | None
+    rules_text: str
+
+
 class TemplateLibraryService:
     """Service for the new backend template library surface."""
 
@@ -264,6 +273,48 @@ class TemplateLibraryService:
             updated = template
         return self._to_template_response(updated)
 
+    def resolve_audit_rules_for_run(
+        self,
+        current_user: CurrentUser,
+        template_id: str | None = None,
+        temporary_rules: list[str] | None = None,
+    ) -> ResolvedAuditTemplateRules:
+        """Resolve the actual audit-rule stack used by an audit run."""
+
+        selected_template = self._resolve_template_for_run(current_user.id, template_id)
+        base_package = self._get_rule_package_by_code("base_common_v1")
+        business_package = None
+        if selected_template is not None:
+            business_code = f"{selected_template.business_type}_v1"
+            business_package = self._get_rule_package_by_code(business_code)
+
+        sections = [
+            self._format_system_hard_rules(),
+            self._format_rule_package("基础通用规则", base_package),
+        ]
+
+        if selected_template is not None and business_package is not None:
+            business_label = "内贸" if selected_template.business_type == "domestic" else "外贸"
+            sections.append(self._format_rule_package(f"业务场景规则：{business_label}", business_package))
+            if selected_template.supplemental_rules.strip():
+                sections.append(f"【模板补充规则】\n{selected_template.supplemental_rules.strip()}")
+
+        clean_temporary_rules = [
+            rule.strip()
+            for rule in (temporary_rules or [])
+            if isinstance(rule, str) and rule.strip()
+        ]
+        if clean_temporary_rules:
+            sections.append(
+                "【本轮临时补充规则】\n"
+                + "\n".join(f"- {rule}" for rule in clean_temporary_rules)
+            )
+
+        return ResolvedAuditTemplateRules(
+            template=selected_template,
+            rules_text="\n\n".join(section for section in sections if section.strip()),
+        )
+
     def _get_owned_template(self, user_id: str, template_id: str) -> dict[str, object]:
         template = (
             self.repo.get_audit_template(template_id, user_id)
@@ -273,6 +324,57 @@ class TemplateLibraryService:
         if template is None or str(template.get("user_id")) != user_id:
             raise AppError("未找到指定模板，或你无权访问该模板。", status_code=404)
         return template
+
+    def _resolve_template_for_run(
+        self,
+        user_id: str,
+        template_id: str | None,
+    ) -> AuditTemplateResponse | None:
+        clean_template_id = (template_id or "").strip()
+        if clean_template_id:
+            return self._to_template_response(self._get_owned_template(user_id, clean_template_id))
+
+        default_template = self._get_default_template(user_id)
+        if default_template is None:
+            return None
+        return self._to_template_response(default_template)
+
+    def _get_default_template(self, user_id: str) -> dict[str, object] | None:
+        templates = (
+            self.repo.list_audit_templates(user_id)
+            if self.repo is not None
+            else [
+                template
+                for template in self.store.audit_templates.values()
+                if str(template.get("user_id")) == user_id
+            ]
+        )
+        for template in templates:
+            if bool(template.get("is_default", False)):
+                return template
+        return None
+
+    def _get_rule_package_by_code(self, code: str) -> AuditRulePackageRecord:
+        records = self.repo.list_rule_packages() if self.repo is not None else []
+        fallback_by_code = {str(record["code"]): record for record in FALLBACK_RULE_PACKAGES}
+        record_by_code = {str(record.get("code")): record for record in records}
+        record = record_by_code.get(code) or fallback_by_code.get(code)
+        if record is None:
+            raise AppError("审核规则包暂不可用，请稍后重试。", status_code=500)
+        return AuditRulePackageRecord.model_validate(record)
+
+    @staticmethod
+    def _format_system_hard_rules() -> str:
+        lines = [
+            f"- {rule.title}：{rule.content}"
+            for rule in SYSTEM_HARD_RULES.rules
+        ]
+        return "【系统硬规则】\n" + "\n".join(lines)
+
+    @staticmethod
+    def _format_rule_package(title: str, package: AuditRulePackageRecord) -> str:
+        lines = [f"- {rule}" for rule in package.rules if rule.strip()]
+        return f"【{title}】\n" + "\n".join(lines)
 
     def _clear_default_templates(self, user_id: str) -> None:
         if self.repo is not None:

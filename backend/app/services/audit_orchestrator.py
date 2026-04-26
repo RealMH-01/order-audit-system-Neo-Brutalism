@@ -34,6 +34,7 @@ from app.services.file_parser import FileParserService
 from app.services.llm_client import LLMClientService
 from app.services.report_generator import ReportGeneratorService
 from app.services.runtime_store import RuntimeStore
+from app.services.template_library import TemplateLibraryService
 from app.services.token_utils import TokenUtilityService
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,7 @@ class AuditOrchestratorService:
         self.repo = repo
         self.cipher = ApiKeyCipher(settings)
         self.audit_engine = AuditEngineService()
+        self.template_library = TemplateLibraryService(store=store, repo=repo)
         # 允许 Settings 覆盖默认并发上限，同时至少保留 1 个审核槽位，避免配置错误导致服务不可用。
         self.max_concurrent_audits = max(1, int(settings.max_concurrent_audits or self.MAX_CONCURRENT_AUDITS))
 
@@ -207,6 +209,12 @@ class AuditOrchestratorService:
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
         self._require_profile_api_key(profile, primary_provider)
+        custom_rules = list(profile.get("active_custom_rules", []))
+        resolved_rules = self.template_library.resolve_audit_rules_for_run(
+            current_user=current_user,
+            template_id=payload.template_id,
+            temporary_rules=custom_rules,
+        )
 
         task_id = str(uuid4())
         now = datetime.now(timezone.utc)
@@ -220,8 +228,10 @@ class AuditOrchestratorService:
             "target_files": [item.model_dump() for item in payload.target_files],
             "prev_ticket_files": [item.model_dump() for item in payload.prev_ticket_files],
             "template_file_id": payload.template_file_id,
+            "template_id": resolved_rules.template.id if resolved_rules.template else None,
             "reference_file_ids": list(payload.reference_file_ids),
-            "custom_rules": list(profile.get("active_custom_rules", [])),
+            "custom_rules": custom_rules,
+            "audit_rules_text": resolved_rules.rules_text,
             "deep_think": payload.deep_think,
             "cancel_requested": False,
             "created_at": now,
@@ -248,6 +258,7 @@ class AuditOrchestratorService:
         company_affiliates = list(profile.get("company_affiliates", []))
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
+        audit_rules_text = str(task.get("audit_rules_text") or "")
 
         await self._notify_progress(progress_callback, 5, "正在准备审核上下文。")
         self._ensure_not_cancelled(should_cancel)
@@ -282,6 +293,7 @@ class AuditOrchestratorService:
                 target_count=len(targets),
                 deep_think=bool(task["deep_think"]),
                 custom_rules=list(task["custom_rules"]),
+                audit_rules_text=audit_rules_text,
                 company_affiliates=company_affiliates,
                 should_cancel=should_cancel,
                 progress_callback=progress_callback,
@@ -426,6 +438,7 @@ class AuditOrchestratorService:
         target_count: int,
         deep_think: bool,
         custom_rules: list[str],
+        audit_rules_text: str,
         company_affiliates: list[str],
         should_cancel: Callable[[], bool] | None,
         progress_callback: Callable[[int, str], Awaitable[None] | None] | None,
@@ -490,6 +503,7 @@ class AuditOrchestratorService:
             reference_texts=reference_text_contexts,
             company_affiliates=company_affiliates,
             deep_think=deep_think,
+            audit_rules_text=audit_rules_text,
         )
 
         # 每次 LLM 调用前后都检查取消状态，并传入单次超时，避免取消审核后继续长时间等待同步 SDK。
