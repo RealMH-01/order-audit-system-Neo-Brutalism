@@ -168,6 +168,7 @@ You must follow these non-negotiable rules:
 8. Never state that a field is absent unless you have verified that it does not appear in the relevant document text. If uncertain, write “未能确认” instead of “未列出/未显示/没有”.
 9. Be deterministic: given the same inputs, produce the same output. Do not introduce variation or speculative findings.
 10. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
+11. If “系统预提取关键字段” is provided, use it as the starting point for review and verify it against the original text. If the pre-extracted fields conflict with the original text, the original text controls.
 
 Unit-price and amount audit order:
 1. First extract Unit Price / 单价 from the baseline document / PO. If the baseline document table explicitly contains a Unit Price field, you MUST use that explicit field value first. Do not skip it and do not first calculate an implied price from Amount ÷ Quantity.
@@ -471,6 +472,7 @@ Template comparison:
         deep_think: bool = False,
         system_prompt_override: str | None = None,
         audit_rules_text: str | None = None,
+        evidence_block: str = "",
     ) -> list[dict[str, str]]:
         """构造可直接给 LLM 客户端消费的审核消息列表。"""
 
@@ -494,11 +496,17 @@ Template comparison:
             deep_think_instruction,
             "Audit rules:",
             rules_text,
-            "PO text:",
-            _normalize_text_block(po_text) or "[PO text is empty]",
-            "Target document text:",
-            _normalize_text_block(target_text) or "[Target document text is empty]",
         ]
+        if _normalize_text_block(evidence_block):
+            sections.extend(["系统预提取关键字段:", _normalize_text_block(evidence_block)])
+        sections.extend(
+            [
+                "PO text:",
+                _normalize_text_block(po_text) or "[PO text is empty]",
+                "Target document text:",
+                _normalize_text_block(target_text) or "[Target document text is empty]",
+            ]
+        )
 
         if _normalize_text_block(prev_ticket_text):
             sections.extend(["Previous ticket text:", _normalize_text_block(prev_ticket_text)])

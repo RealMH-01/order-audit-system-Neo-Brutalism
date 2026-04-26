@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
+import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +42,26 @@ try:
     from PIL import Image
 except Exception:  # pragma: no cover
     Image = None
+
+logger = logging.getLogger(__name__)
+
+_DIAG_KEYWORDS = (
+    "1.85",
+    "1.83",
+    "unit price",
+    "Unit Price",
+    "单价",
+    "1,050",
+    "1050",
+    "20 IBC",
+    "38,850",
+    "38850",
+    "21,000",
+    "21000",
+    "Contract No",
+    "Invoice No",
+    "PO No",
+)
 
 
 class FileParserService:
@@ -216,7 +239,7 @@ class FileParserService:
             "image_base64": None,
         }
 
-    def _parse_xlsx(self, file_bytes: bytes, _: str) -> dict[str, object]:
+    def _parse_xlsx(self, file_bytes: bytes, filename: str) -> dict[str, object]:
         """解析 Excel 文档。"""
 
         if load_workbook is None:
@@ -232,8 +255,10 @@ class FileParserService:
                     rows.append(" | ".join(values))
             if rows:
                 chunks.append(f"[Sheet: {sheet.title}]\n" + "\n".join(rows))
+        text = "\n\n".join(chunks).strip()
+        self._log_diag_text("xlsx_parse", text, filename=filename)
         return {
-            "text": "\n\n".join(chunks).strip(),
+            "text": text,
             "page_count": len(workbook.worksheets) or 1,
             "source_kind": "xlsx",
             "parse_mode": "xlsx",
@@ -319,10 +344,10 @@ class FileParserService:
     def _detect_type(filename: str, extension: str) -> str:
         """从文件名和扩展名推断单据类型。"""
 
-        name = filename.lower()
-        if "po" in name:
+        name = Path(filename).stem.lower()
+        if FileParserService._matches_po_filename(name):
             return "po"
-        if "invoice" in name or "inv" in name:
+        if FileParserService._matches_invoice_filename(name):
             return "invoice"
         if "packing" in name or "plist" in name:
             return "packing_list"
@@ -339,6 +364,59 @@ class FileParserService:
         if extension in {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"}:
             return extension
         return "other"
+
+    @staticmethod
+    def _matches_invoice_filename(name: str) -> bool:
+        normalized = name.replace(" ", "_").replace(".", "_")
+        if "commercial_invoice" in normalized or "invoice" in normalized:
+            return True
+        if normalized.startswith(("ci-", "ci_", "commercial")):
+            return True
+        if "-ci-" in normalized or "_ci_" in normalized:
+            return True
+        return bool(re.search(r"(?:^|[-_\s])inv(?:$|[-_\s])", name, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _matches_po_filename(name: str) -> bool:
+        normalized = name.replace(" ", "_").replace(".", "_")
+        if "purchase_order" in normalized:
+            return True
+        return bool(re.search(r"(?:^|[-_\s])po(?:$|[-_\s])", name, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _collect_diag_hits(text: str, keywords: tuple[str, ...] = _DIAG_KEYWORDS) -> dict[str, int]:
+        lowered = text.lower()
+        hits: dict[str, int] = {}
+        for keyword in keywords:
+            count = lowered.count(keyword.lower())
+            if count:
+                hits[keyword] = count
+        return hits
+
+    @staticmethod
+    def _collect_diag_snippets(
+        text: str,
+        keywords: tuple[str, ...] = _DIAG_KEYWORDS,
+        *,
+        radius: int = 120,
+    ) -> dict[str, list[str]]:
+        snippets: dict[str, list[str]] = {}
+        lowered = text.lower()
+        for keyword in keywords:
+            index = lowered.find(keyword.lower())
+            if index < 0:
+                continue
+            start = max(0, index - radius)
+            end = min(len(text), index + len(keyword) + radius)
+            snippets[keyword] = [text[start:end].replace("\n", "\\n")]
+        return snippets
+
+    @classmethod
+    def _log_diag_text(cls, label: str, text: str, *, filename: str = "") -> None:
+        hits = cls._collect_diag_hits(text or "")
+        logger.info("DIAG %s filename=%s len=%d keyword_hits=%s", label, filename, len(text or ""), sorted(hits))
+        if os.getenv("AUDIT_DEBUG_DIAG", "").lower() == "true":
+            logger.info("DIAG %s snippets=%s", label, cls._collect_diag_snippets(text or ""))
 
     @staticmethod
     def _build_preview_text(text: str, detected_type: str) -> str:

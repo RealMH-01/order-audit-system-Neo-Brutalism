@@ -6,8 +6,10 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -49,6 +51,36 @@ _DOC_TYPE_HINTS = {
     "customs_declaration": {"customs_declaration", "customs", "declaration"},
     "letter_of_credit": {"letter_of_credit", "lc", "l_c"},
     "po": {"po", "purchase_order"},
+}
+
+_EXTENSION_FALLBACKS = {"pdf", "xlsx", "xlsm", "xls", "docx", "png", "jpg", "jpeg", "txt", "csv", "other"}
+
+_DIAG_KEYWORDS = (
+    "1.85",
+    "1.83",
+    "unit price",
+    "Unit Price",
+    "单价",
+    "1,050",
+    "1050",
+    "20 IBC",
+    "38,850",
+    "38850",
+    "21,000",
+    "21000",
+    "Contract No",
+    "Invoice No",
+    "PO No",
+)
+
+_EVIDENCE_FIELD_LABELS = {
+    "contract_no": ("Contract No.", "contract no", "contract number", "合同号", "合同编号"),
+    "invoice_no": ("Invoice No.", "invoice no", "invoice number", "发票号", "发票号码"),
+    "po_no": ("PO No.", "po no", "po number", "purchase order no", "采购订单号", "订单号"),
+    "unit_price": ("Unit Price", "unit price", "单价"),
+    "quantity": ("Quantity", "quantity", "Qty", "qty", "数量"),
+    "packing": ("Packing", "packing", "包装"),
+    "amount": ("Amount", "amount", "Total Value", "total value", "Total", "total", "总金额", "金额"),
 }
 
 _DOWNGRADE_ALLOWED_FIELDS = {
@@ -601,6 +633,9 @@ class AuditOrchestratorService:
             self._prepare_text_context(text, model_for_call, document_token_budget)[0]
             for text in reference_texts
         ]
+        self._log_diag_text("po_text", po_text_context)
+        self._log_diag_text("target_text", target_text_context)
+        evidence_block = self._build_evidence_block(po_text_context, target_text_context)
 
         messages = self.audit_engine.build_audit_prompt(
             po_text=po_text_context,
@@ -612,6 +647,7 @@ class AuditOrchestratorService:
             company_affiliates=company_affiliates,
             deep_think=deep_think,
             audit_rules_text=audit_rules_text,
+            evidence_block=evidence_block,
         )
 
         # 每次 LLM 调用前后都检查取消状态，并传入单次超时，避免取消审核后继续长时间等待同步 SDK。
@@ -718,7 +754,8 @@ class AuditOrchestratorService:
         """手动类型优先，其次依据已解析出的 detected_type 和文件名提示。"""
 
         if manual_type:
-            return manual_type.strip().lower()
+            normalized_manual = manual_type.strip().lower()
+            return "generic" if normalized_manual in _EXTENSION_FALLBACKS else normalized_manual
 
         detected_type = str(file_record.get("detected_type", "")).strip().lower()
         if detected_type in _DOC_TYPE_HINTS:
@@ -726,9 +763,15 @@ class AuditOrchestratorService:
 
         filename = str(file_record.get("filename", "")).lower()
         for doc_type, hints in _DOC_TYPE_HINTS.items():
-            if any(hint in filename for hint in hints):
+            if doc_type == "invoice" and self._matches_invoice_filename(filename):
+                return doc_type
+            if doc_type == "po" and self._matches_po_filename(filename):
+                return doc_type
+            if doc_type not in {"invoice", "po"} and any(hint in filename for hint in hints):
                 return doc_type
 
+        if detected_type in _EXTENSION_FALLBACKS:
+            return "generic"
         return detected_type or "generic"
 
     def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> tuple[str, str]:
@@ -763,6 +806,215 @@ class AuditOrchestratorService:
         was_truncated = self.token_utils.estimate_tokens(normalized_text, model) > token_budget
         truncated_text = self.token_utils.truncate_text(normalized_text, max_tokens=token_budget, model=model)
         return truncated_text, was_truncated
+
+    @staticmethod
+    def _matches_invoice_filename(filename: str) -> bool:
+        name = filename.lower()
+        stem = name.rsplit(".", 1)[0].replace(" ", "_").replace(".", "_")
+        if "commercial_invoice" in stem or "invoice" in stem:
+            return True
+        if stem.startswith(("ci-", "ci_", "commercial")):
+            return True
+        if "-ci-" in stem or "_ci_" in stem:
+            return True
+        return bool(re.search(r"(?:^|[-_\s])inv(?:$|[-_\s])", stem, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _matches_po_filename(filename: str) -> bool:
+        name = filename.lower()
+        stem = name.rsplit(".", 1)[0].replace(" ", "_").replace(".", "_")
+        if "purchase_order" in stem:
+            return True
+        return bool(re.search(r"(?:^|[-_\s])po(?:$|[-_\s])", stem, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _collect_diag_hits(text: str, keywords: tuple[str, ...] = _DIAG_KEYWORDS) -> dict[str, int]:
+        lowered = (text or "").lower()
+        hits: dict[str, int] = {}
+        for keyword in keywords:
+            count = lowered.count(keyword.lower())
+            if count:
+                hits[keyword] = count
+        return hits
+
+    @staticmethod
+    def _collect_diag_snippets(
+        text: str,
+        keywords: tuple[str, ...] = _DIAG_KEYWORDS,
+        *,
+        radius: int = 120,
+    ) -> dict[str, list[str]]:
+        snippets: dict[str, list[str]] = {}
+        source = text or ""
+        lowered = source.lower()
+        for keyword in keywords:
+            index = lowered.find(keyword.lower())
+            if index < 0:
+                continue
+            start = max(0, index - radius)
+            end = min(len(source), index + len(keyword) + radius)
+            snippets[keyword] = [source[start:end].replace("\n", "\\n")]
+        return snippets
+
+    @classmethod
+    def _log_diag_text(cls, label: str, text: str) -> None:
+        source = text or ""
+        hits = cls._collect_diag_hits(source)
+        logger.info("DIAG %s len=%d keyword_hits=%s", label, len(source), sorted(hits))
+        if os.getenv("AUDIT_DEBUG_DIAG", "").lower() == "true":
+            logger.info("DIAG %s snippets=%s", label, cls._collect_diag_snippets(source))
+
+    @classmethod
+    def _build_evidence_block(cls, po_text: str, target_text: str) -> str:
+        po_fields = cls._extract_key_fields(po_text, source="po")
+        target_fields = cls._extract_key_fields(target_text, source="target")
+        if not po_fields and not target_fields:
+            return ""
+
+        lines = ["=== 系统预提取关键字段（仅供参考，以原文为准）==="]
+        if po_fields:
+            lines.append("PO/基准单据:")
+            for key, label in (
+                ("contract_no", "Contract No."),
+                ("unit_price", "Unit Price"),
+                ("quantity", "Quantity"),
+                ("packing", "Packing"),
+                ("amount", "Amount"),
+            ):
+                if po_fields.get(key):
+                    lines.append(f"- {label}: {po_fields[key]}")
+        if target_fields:
+            lines.append("目标单据:")
+            for key, label in (
+                ("invoice_no", "Invoice No."),
+                ("po_no", "PO No."),
+                ("unit_price", "Unit Price"),
+                ("quantity", "Quantity"),
+                ("amount", "Total Value"),
+            ):
+                if target_fields.get(key):
+                    lines.append(f"- {label}: {target_fields[key]}")
+        lines.append("===")
+        return "\n".join(lines)
+
+    @classmethod
+    def _extract_key_fields(cls, text: str, *, source: str) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        wanted = (
+            ("contract_no", "unit_price", "quantity", "packing", "amount")
+            if source == "po"
+            else ("invoice_no", "po_no", "unit_price", "quantity", "amount")
+        )
+        for key in wanted:
+            value = cls._extract_field_value(text, _EVIDENCE_FIELD_LABELS[key])
+            if value:
+                fields[key] = value
+        return fields
+
+    @classmethod
+    def _extract_field_value(cls, text: str, labels: tuple[str, ...]) -> str:
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        table_value = cls._extract_field_from_table(lines, labels)
+        if table_value:
+            return table_value
+
+        for line in lines:
+            cells = cls._split_table_line(line)
+            for index, cell in enumerate(cells[:-1]):
+                if cls._cell_matches_any_label(cell, labels) and not cls._cell_matches_known_label(cells[index + 1]):
+                    return cls._clean_field_value(cells[index + 1])
+
+            regex_value = cls._extract_field_from_line(line, labels)
+            if regex_value:
+                return regex_value
+        return ""
+
+    @classmethod
+    def _extract_field_from_table(cls, lines: list[str], labels: tuple[str, ...]) -> str:
+        for index, line in enumerate(lines[:-1]):
+            cells = cls._split_table_line(line)
+            if len(cells) < 2 or cls._count_known_labels(cells) < 2:
+                continue
+            next_cells = cls._split_table_line(lines[index + 1])
+            for cell_index, cell in enumerate(cells):
+                if cls._cell_matches_any_label(cell, labels) and cell_index < len(next_cells):
+                    value = cls._clean_field_value(next_cells[cell_index])
+                    if value and not cls._cell_matches_known_label(value):
+                        return value
+        return ""
+
+    @staticmethod
+    def _split_table_line(line: str) -> list[str]:
+        return [cell.strip() for cell in line.split("|") if cell.strip()]
+
+    @classmethod
+    def _extract_field_from_line(cls, line: str, labels: tuple[str, ...]) -> str:
+        for label in labels:
+            escaped = re.escape(label)
+            pattern = rf"{escaped}\s*(?:[:：#-]|\s)\s*([^|。；;\n]{{1,80}})"
+            match = re.search(pattern, line, flags=re.IGNORECASE)
+            if match:
+                value = cls._clean_field_value(match.group(1))
+                if value and not cls._cell_matches_known_label(value):
+                    return value
+        return ""
+
+    @classmethod
+    def _count_known_labels(cls, cells: list[str]) -> int:
+        return sum(1 for cell in cells if cls._cell_matches_known_label(cell))
+
+    @classmethod
+    def _cell_matches_known_label(cls, cell: str) -> bool:
+        return any(
+            cls._cell_matches_any_label(cell, labels)
+            for labels in _EVIDENCE_FIELD_LABELS.values()
+        )
+
+    @staticmethod
+    def _normalize_label(value: str) -> str:
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (value or "").lower())
+
+    @classmethod
+    def _cell_matches_any_label(cls, cell: str, labels: tuple[str, ...]) -> bool:
+        normalized_cell = cls._normalize_label(cell)
+        if not normalized_cell:
+            return False
+        return any(cls._normalize_label(label) in normalized_cell for label in labels)
+
+    @staticmethod
+    def _clean_field_value(value: str) -> str:
+        return (value or "").strip().strip("|;；,，。")
+
+    @classmethod
+    def _extract_explicit_unit_price(cls, text: str) -> str:
+        value = cls._extract_field_value(text, _EVIDENCE_FIELD_LABELS["unit_price"])
+        if value and any(char.isdigit() for char in value):
+            return value
+        return ""
+
+    @classmethod
+    def _parse_decimal(cls, value: str) -> Decimal | None:
+        match = re.search(r"\d[\d,]*(?:\.\d+)?", value or "")
+        if not match:
+            return None
+        try:
+            return Decimal(match.group(0).replace(",", ""))
+        except InvalidOperation:
+            return None
+
+    @staticmethod
+    def _extract_currency(*values: str) -> str:
+        for value in values:
+            match = re.search(r"\b(USD|EUR|CNY|RMB|GBP|JPY|HKD)\b", value or "", flags=re.IGNORECASE)
+            if match:
+                return match.group(1).upper()
+        return ""
+
+    @staticmethod
+    def _format_decimal(value: Decimal) -> str:
+        quantized = value.quantize(Decimal("0.01"))
+        text = f"{quantized:,.2f}"
+        return text[:-3] if text.endswith(".00") else text
 
     def _append_truncation_notice(self, parsed_result: dict[str, Any], doc_type: str, index: int) -> None:
         """在结果末尾追加长文档截断提醒。"""
@@ -811,6 +1063,7 @@ class AuditOrchestratorService:
             self._retitle_unit_price_issue(issue)
 
         self._ensure_core_identifier_issues(issues, po_text=po_text, target_text=target_text, doc_type=doc_type)
+        self._ensure_unit_price_issue(issues, po_text=po_text, target_text=target_text, doc_type=doc_type)
         parsed_result["summary"] = self._recount_summary(
             [issue for issue in issues if isinstance(issue, dict)]
         )
@@ -826,6 +1079,85 @@ class AuditOrchestratorService:
             issue["field_name"] = "单价不一致"
             if "finding" not in issue and issue.get("message"):
                 issue["finding"] = issue["message"]
+
+    def _ensure_unit_price_issue(
+        self,
+        issues: list[Any],
+        *,
+        po_text: str,
+        target_text: str,
+        doc_type: str,
+    ) -> None:
+        po_unit_price = self._extract_explicit_unit_price(po_text)
+        target_unit_price = self._extract_explicit_unit_price(target_text)
+        po_unit_number = self._parse_decimal(po_unit_price)
+        target_unit_number = self._parse_decimal(target_unit_price)
+        if po_unit_number is None or target_unit_number is None or po_unit_number == target_unit_number:
+            return
+
+        target_fields = self._extract_key_fields(target_text, source="target")
+        target_qty = target_fields.get("quantity", "")
+        target_total = target_fields.get("amount", "")
+        calculation_text = ""
+        qty_number = self._parse_decimal(target_qty)
+        total_number = self._parse_decimal(target_total)
+        if qty_number is not None and total_number is not None:
+            calculated_amount = target_unit_number * qty_number
+            currency = self._extract_currency(target_unit_price, target_total, po_unit_price)
+            currency_suffix = f" {currency}" if currency else ""
+            calculation_text = (
+                f"按目标单据单价 {target_unit_price} × {target_qty} 计算为 "
+                f"{self._format_decimal(calculated_amount)}{currency_suffix}，"
+                f"但目标单据总金额为 {target_total}。"
+            )
+
+        finding = (
+            f"PO/基准单据 Unit Price 为 {po_unit_price}，目标单据 Unit Price 为 {target_unit_price}，两者不一致。"
+        )
+        if calculation_text:
+            finding = f"{finding}{calculation_text}根因应优先归因为单价不一致。"
+        suggestion = (
+            f"请将目标单据单价核对并修正为 PO/基准单据单价 {po_unit_price}，或补充说明单价差异依据；"
+            "同时确保单价、数量、总金额三者计算关系一致。"
+        )
+        rebuilt_issue = {
+            "id": f"{doc_type}-unit-price-mismatch",
+            "level": "RED",
+            "field_name": "单价不一致",
+            "finding": finding,
+            "message": finding,
+            "suggestion": suggestion,
+            "confidence": 1.0,
+            "your_value": target_unit_price,
+            "source_value": po_unit_price,
+            "source": "PO/基准单据",
+            "field_location": "Unit Price",
+        }
+
+        existing_index = self._find_unit_price_related_issue_index(issues)
+        if existing_index is None:
+            issues.append(rebuilt_issue)
+        else:
+            issue = issues[existing_index]
+            if isinstance(issue, dict):
+                existing_id = issue.get("id")
+                issue.clear()
+                issue.update(rebuilt_issue)
+                if existing_id:
+                    issue["id"] = existing_id
+
+    @staticmethod
+    def _find_unit_price_related_issue_index(issues: list[Any]) -> int | None:
+        for index, issue in enumerate(issues):
+            if not isinstance(issue, dict):
+                continue
+            text = " ".join(
+                str(issue.get(key, ""))
+                for key in ("field_name", "finding", "message", "suggestion", "reason")
+            ).lower()
+            if any(keyword in text for keyword in ("单价", "unit price", "金额计算", "总金额", "total value")):
+                return index
+        return None
 
     def _ensure_core_identifier_issues(
         self,
