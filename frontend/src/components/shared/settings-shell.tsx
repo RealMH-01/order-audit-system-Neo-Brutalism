@@ -325,7 +325,7 @@ export function SettingsShell() {
         { token }
       );
 
-      setSuccess("设置已保存，wizard 和 settings 现在会读取同一套配置。");
+      setSuccess("配置已保存，后续审核会自动使用这套模型、密钥和规则。");
       await loadProfile(token);
     } catch (saveError) {
       setError(
@@ -358,10 +358,10 @@ export function SettingsShell() {
       <section className="space-y-6">
         <Card className="bg-paper">
           <CardHeader>
-            <Badge variant="accent">Settings</Badge>
+            <Badge variant="accent">配置中心</Badge>
             <CardTitle>请先进入向导或完成登录</CardTitle>
             <CardDescription>
-              当前 settings 页面依赖现有登录态。你可以先进入 wizard，完成最小登录后再回来维护配置。
+              当前页面需要登录后使用。你可以先进入引导向导，完成基础配置后再回来维护审核配置。
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
@@ -381,12 +381,12 @@ export function SettingsShell() {
         <CardHeader className="md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
             <Badge variant="inverse" className="rotate-[-2deg]">
-              Settings
+              配置中心
             </Badge>
             <div className="space-y-2">
-              <CardTitle>统一维护当前 profile 与规则</CardTitle>
+              <CardTitle>统一维护模型、密钥与审核规则</CardTitle>
               <CardDescription>
-                这里直接维护 wizard 已经生成或将要生成的模型、密钥、规则与公司架构配置。
+                这里可以维护审核时使用的模型、密钥、规则与公司信息。
               </CardDescription>
             </div>
           </div>
@@ -468,7 +468,7 @@ export function SettingsShell() {
                   <p className="text-sm font-bold leading-6">
                     {state.provider === "zhipuai"
                       ? "智谱当前不支持深度思考，这个开关会自动禁用。"
-                      : "该开关会和 wizard 使用同一份 deep_think_enabled 状态。"}
+                      : "开启后，系统会在支持的模型上使用更强的推理能力进行审核。"}
                   </p>
                 </div>
                 <Button
@@ -491,7 +491,7 @@ export function SettingsShell() {
 
         <Card className="bg-muted">
           <CardHeader>
-            <Badge variant="inverse">Wizard 状态</Badge>
+            <Badge variant="inverse">引导状态</Badge>
             <CardTitle>当前引导完成情况</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -502,12 +502,12 @@ export function SettingsShell() {
             </div>
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
               <p className="text-sm font-bold leading-6">
-                免责声明：{state.disclaimerAccepted ? "已接受" : "尚未接受"}
+                使用须知：{state.disclaimerAccepted ? "已确认" : "尚未确认"}
               </p>
             </div>
             <div className="issue-blue p-4">
               <p className="text-sm font-bold leading-6">
-                完成向导后会跳转到审核页；如果免责声明尚未确认，将在审核页再弹出，而不是在向导之前打断流程。
+                引导完成后可直接进入审核工作台。使用审核功能前，需要先确认使用须知。
               </p>
             </div>
           </CardContent>
@@ -518,9 +518,9 @@ export function SettingsShell() {
         <Card className="bg-secondary">
           <CardHeader>
             <Badge variant="inverse">密钥状态</Badge>
-            <CardTitle>API Key 与连接测试</CardTitle>
+            <CardTitle>密钥与连接测试</CardTitle>
             <CardDescription>
-              这里展示 has_xxx_key 状态。输入新密钥后保存即可更新，留空则默认保留已保存密钥。
+              这里展示各模型服务的密钥保存状态。输入新密钥并保存即可更新；留空则保留原有密钥。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -542,10 +542,10 @@ export function SettingsShell() {
             <label className="space-y-2">
               <span className="text-sm font-bold uppercase tracking-[0.14em]">
                 {state.provider === "openai"
-                  ? "OpenAI API Key"
+                  ? "OpenAI 密钥"
                   : state.provider === "deepseek"
-                    ? "DeepSeek API Key"
-                    : "智谱 API Key"}
+                    ? "DeepSeek 密钥"
+                    : "智谱密钥"}
               </span>
               <Input
                 type="password"
@@ -569,7 +569,7 @@ export function SettingsShell() {
                 placeholder={
                   currentHasKey
                     ? "已有保存密钥，如需更新可直接输入新的值"
-                    : "请输入当前 provider 的 API Key"
+                    : "请输入当前模型服务的密钥"
                 }
               />
             </label>
@@ -616,7 +616,7 @@ export function SettingsShell() {
         <Card className="bg-paper">
           <CardHeader>
             <Badge variant="muted">公司架构</Badge>
-            <CardTitle>和 wizard 保持同一份公司信息</CardTitle>
+            <CardTitle>维护审核使用的公司信息</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-3">
@@ -715,13 +715,9 @@ export function SettingsShell() {
       <Card className="bg-paper">
         <CardHeader>
           <Badge variant="accent">审核规则</Badge>
-          <CardTitle>维护当前 active_custom_rules</CardTitle>
+          <CardTitle>维护当前审核规则</CardTitle>
           <CardDescription>
-            这里读取和保存的是与 wizard 同一份自定义规则。保存时会通过
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              /api/rules/custom
-            </code>
-            一次性写回。
+            这里展示当前启用的自定义审核规则。每行一条规则，保存后会在后续审核中自动使用。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -729,7 +725,7 @@ export function SettingsShell() {
             value={state.rulesText}
             onChange={(event) => updateField("rulesText", event.target.value)}
             className="min-h-[20rem]"
-            placeholder="每行一条审核规则。这里会显示 wizard 生成的规则，也可以继续人工维护。"
+            placeholder="每行一条审核规则。可以继续人工维护。"
           />
         </CardContent>
       </Card>
