@@ -369,19 +369,19 @@ class FileDeleteResponse(BaseModel):
 
 
 class FileListResponse(BaseModel):
-    """当前用户暂存文件列表响应。"""
+    """Current user file list response."""
 
     files: list[FileRecord]
 
 
 class FileBulkDeleteRequest(BaseModel):
-    """批量删除暂存文件请求。"""
+    """Bulk file delete request with optional file ID filter."""
 
     file_ids: list[str] | None = None
 
 
 class FileBulkDeleteResponse(BaseModel):
-    """批量删除暂存文件响应。"""
+    """Bulk file delete response."""
 
     deleted_count: int
 
