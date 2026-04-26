@@ -15,7 +15,7 @@ export function Footer() {
         <div className="space-y-3">
           <Badge variant="inverse">Order Audit System</Badge>
           <p className="max-w-2xl text-sm font-bold leading-6 text-ink">
-            当前前端底座已统一到 Neo-Brutalism 设计系统：粗黑边框、硬阴影、强对比色块、快速机械交互。
+            用于辅助外贸单据审核、问题追踪与报告沉淀。审核结果仅供参考，请结合人工复核后使用。
           </p>
         </div>
         <nav className="flex flex-wrap gap-3">
