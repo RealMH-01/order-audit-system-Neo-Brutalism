@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_audit_orchestrator_service, get_current_user
@@ -116,10 +116,12 @@ async def download_report_zip(
 
 @router.get("/history", response_model=AuditHistoryListResponse)
 async def get_audit_history(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),
     service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
 ) -> AuditHistoryListResponse:
-    return service.get_history(current_user)
+    return service.get_history(current_user, page=page, page_size=page_size)
 
 
 @router.get("/history/{history_id}", response_model=AuditHistoryDetailResponse)

@@ -312,8 +312,24 @@ class AuditOrchestratorService:
             return AuditReportResponse(task_id=task_id, message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。")
         return AuditReportResponse(task_id=task_id, message="报告尚未生成，请先等待审核任务完成。")
 
-    def get_history(self, current_user: CurrentUser) -> AuditHistoryListResponse:
+    def get_history(
+        self,
+        current_user: CurrentUser,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> AuditHistoryListResponse:
         """读取当前用户的历史列表。"""
+
+        page = max(page, 1)
+        page_size = max(page_size, 1)
+        if self.repo is not None:
+            history_records = self.repo.list_audit_history(current_user.id, page=page, page_size=page_size)
+            total_count = self.repo.count_audit_history(current_user.id)
+        else:
+            all_records = self.store.audit_history.get(current_user.id, [])
+            total_count = len(all_records)
+            offset = (page - 1) * page_size
+            history_records = all_records[offset : offset + page_size]
 
         items = [
             AuditHistoryItem(
@@ -326,13 +342,14 @@ class AuditOrchestratorService:
                 deep_think_used=bool(item["deep_think_used"]),
                 created_at=item.get("created_at"),
             )
-            for item in (
-                self.repo.list_audit_history(current_user.id)
-                if self.repo is not None
-                else self.store.audit_history.get(current_user.id, [])
-            )
+            for item in history_records
         ]
-        return AuditHistoryListResponse(items=items)
+        return AuditHistoryListResponse(
+            items=items,
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+        )
 
     def get_history_detail(self, current_user: CurrentUser, history_id: str) -> AuditHistoryDetailResponse:
         """读取单条历史记录。"""

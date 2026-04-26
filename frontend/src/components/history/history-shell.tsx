@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { apiGet, getStoredAccessToken } from "@/lib/api";
 
+const HISTORY_PAGE_SIZE = 20;
+
 function normalizeError(error: unknown, fallback: string) {
   if (typeof error === "object" && error && "detail" in error) {
     return String(error.detail);
@@ -37,6 +39,8 @@ export function HistoryShell() {
 
   const [token, setToken] = useState<string | null>(null);
   const [items, setItems] = useState<HistoryListItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -64,19 +68,33 @@ export function HistoryShell() {
   }, []);
 
   const fetchList = useCallback(
-    async (accessToken: string) => {
+    async (accessToken: string, page = 1, append = false) => {
       setListLoading(true);
       setListError(null);
 
       try {
-        const { data } = await apiGet<HistoryListResponse>("/audit/history", {
-          token: accessToken
-        });
+        const { data } = await apiGet<HistoryListResponse>(
+          `/audit/history?page=${page}&page_size=${HISTORY_PAGE_SIZE}`,
+          {
+            token: accessToken
+          }
+        );
 
-        const sortedItems = sortHistoryItems(data.items);
-        setItems(sortedItems);
+        const sortedPageItems = sortHistoryItems(data.items);
+        const nextItems = sortedPageItems;
+        if (append) {
+          setItems((previous) => sortHistoryItems([...previous, ...sortedPageItems]));
+        } else {
+          setItems(nextItems);
+        }
+        setCurrentPage(data.page ?? page);
+        setTotalCount((previous) => data.total_count ?? (append ? previous : nextItems.length));
 
-        if (sortedItems.length === 0) {
+        if (append) {
+          return;
+        }
+
+        if (nextItems.length === 0) {
           setActiveId(null);
           setDetail(null);
           setDetailError(null);
@@ -84,9 +102,9 @@ export function HistoryShell() {
         }
 
         const nextActiveId =
-          activeId && sortedItems.some((item) => item.id === activeId)
+          activeId && nextItems.some((item) => item.id === activeId)
             ? activeId
-            : sortedItems[0].id;
+            : nextItems[0].id;
 
         void fetchDetail(nextActiveId, accessToken);
       } catch (error) {
@@ -107,7 +125,7 @@ export function HistoryShell() {
       return;
     }
 
-    void fetchList(accessToken);
+    void fetchList(accessToken, 1, false);
   }, [fetchList]);
 
   const filteredItems = useMemo(() => {
@@ -194,7 +212,7 @@ export function HistoryShell() {
                       return;
                     }
 
-                    void fetchList(token);
+                    void fetchList(token, 1, false);
                   }}
                   disabled={listLoading}
                 >
@@ -208,28 +226,48 @@ export function HistoryShell() {
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <HistoryList
-          items={filteredItems}
-          loading={listLoading}
-          error={listError}
-          activeId={activeId}
-          filter={filter}
-          onFilterChange={setFilter}
-          onSelect={(historyId) => {
-            if (!token) {
-              return;
-            }
+        <div>
+          <HistoryList
+            items={filteredItems}
+            loading={listLoading}
+            error={listError}
+            activeId={activeId}
+            filter={filter}
+            onFilterChange={setFilter}
+            onSelect={(historyId) => {
+              if (!token) {
+                return;
+              }
 
-            void fetchDetail(historyId, token);
-          }}
-          onRetry={() => {
-            if (!token) {
-              return;
-            }
+              void fetchDetail(historyId, token);
+            }}
+            onRetry={() => {
+              if (!token) {
+                return;
+              }
 
-            void fetchList(token);
-          }}
-        />
+              void fetchList(token, 1, false);
+            }}
+          />
+
+          {items.length < totalCount ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!token) {
+                    return;
+                  }
+
+                  void fetchList(token, currentPage + 1, true);
+                }}
+                disabled={listLoading}
+              >
+                {listLoading ? "加载中..." : "加载更多"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
 
         <HistoryDetail
           item={detail}

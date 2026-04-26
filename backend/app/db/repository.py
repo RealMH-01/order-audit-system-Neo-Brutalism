@@ -293,12 +293,28 @@ class SupabaseRepository:
             logger.warning("Supabase report download failed for %s/%s.", bucket, path, exc_info=True)
             return None
 
-    def list_audit_history(self, user_id: str) -> list[dict[str, Any]]:
+    def list_audit_history(self, user_id: str, page: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
+        offset = (max(page, 1) - 1) * max(page_size, 1)
         return self._select_many(
             "audit_history",
             "list audit history",
-            lambda table: table.select("*").eq("user_id", user_id).order("created_at", desc=True),
+            lambda table: table.select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .range(offset, offset + page_size - 1),
         )
+
+    def count_audit_history(self, user_id: str) -> int:
+        try:
+            response = (
+                self.client.table("audit_history")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .execute()
+            )
+        except Exception as exc:
+            raise AppError("Supabase count audit history failed.", status_code=500) from exc
+        return int(getattr(response, "count", 0) or 0)
 
     def get_audit_history(self, audit_id: str, user_id: str) -> dict[str, Any] | None:
         return self._select_one(

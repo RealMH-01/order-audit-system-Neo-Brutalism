@@ -21,6 +21,9 @@ export type HistoryListItem = {
 
 export type HistoryListResponse = {
   items: HistoryListItem[];
+  total_count?: number;
+  page?: number;
+  page_size?: number;
 };
 
 export type HistoryIssue = {

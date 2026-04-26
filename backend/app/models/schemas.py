@@ -280,6 +280,9 @@ class AuditHistoryListResponse(BaseModel):
     """Audit-history list response."""
 
     items: list[AuditHistoryItem]
+    total_count: int | None = None
+    page: int | None = None
+    page_size: int | None = None
 
 
 class AuditHistoryDetailResponse(BaseModel):
