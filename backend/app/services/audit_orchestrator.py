@@ -6,7 +6,7 @@ import asyncio
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -139,6 +139,36 @@ class AuditOrchestratorService:
             ],
         )
 
+    def _cleanup_stale_tasks(self) -> None:
+        """清理已结束任务中不再需要的内存对象。"""
+
+        now = datetime.now(timezone.utc)
+        clear_after = timedelta(minutes=30)
+        delete_after = timedelta(hours=2)
+        removable_statuses = {"completed", "failed", "cancelled"}
+        task_ids_to_delete: list[str] = []
+
+        for task_id, task in list(self.store.audit_tasks.items()):
+            if task.get("status") not in removable_statuses:
+                continue
+
+            updated_at = task.get("updated_at")
+            if not isinstance(updated_at, datetime):
+                continue
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+            age = now - updated_at
+            if age > clear_after:
+                task["full_result"] = None
+                task["report_bundle"] = None
+                task["result"] = None
+            if age > delete_after:
+                task_ids_to_delete.append(task_id)
+
+        for task_id in task_ids_to_delete:
+            self.store.audit_tasks.pop(task_id, None)
+
     def start_audit(
         self,
         current_user: CurrentUser,
@@ -146,6 +176,7 @@ class AuditOrchestratorService:
     ) -> AuditStartResponse:
         """创建审核任务并启动后台协程。"""
 
+        self._cleanup_stale_tasks()
         self.file_parser.get_user_file(current_user.id, payload.po_file_id)
         for item in payload.target_files:
             self.file_parser.get_user_file(current_user.id, item.file_id)
@@ -724,6 +755,8 @@ class AuditOrchestratorService:
             task["message"] = "审核任务已完成。"
             task["updated_at"] = datetime.now(timezone.utc)
             report_paths = self._upload_report_bundle(user_id, task_id, report_bundle)
+            if report_paths is not None:
+                task["report_bundle"] = None
 
             history_item = {
                 "id": str(uuid4()),
@@ -748,6 +781,7 @@ class AuditOrchestratorService:
                     self.store.audit_history[user_id][0] = persisted_history
                 except Exception:
                     logger.warning("Audit history persistence failed; keeping RuntimeStore history only.", exc_info=True)
+            task["full_result"] = None
             self.file_parser.delete_files_by_ids(user_id, self._collect_task_file_ids(task))
         except asyncio.CancelledError:
             await self._finalize_cancel(task)
