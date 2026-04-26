@@ -109,7 +109,7 @@ function parseFilenameFromDisposition(
 
 async function request<T>(
   path: string,
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   options: RequestOptions = {}
 ): Promise<ApiSuccess<T>> {
   const hasBody = options.body !== undefined;
@@ -144,6 +144,14 @@ export async function apiPut<T>(
   options: Omit<RequestOptions, "body"> = {}
 ): Promise<ApiSuccess<T>> {
   return request<T>(path, "PUT", { ...options, body });
+}
+
+export async function apiPatch<T>(
+  path: string,
+  body?: unknown,
+  options: Omit<RequestOptions, "body"> = {}
+): Promise<ApiSuccess<T>> {
+  return request<T>(path, "PATCH", { ...options, body });
 }
 
 export async function apiDelete<T>(
