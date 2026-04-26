@@ -26,12 +26,14 @@ export type AuthAction =
   | { type: "AUTH_START" }
   | { type: "AUTH_SUCCESS"; payload: AuthUser }
   | { type: "AUTH_FAILURE"; payload: string }
+  | { type: "UPDATE_CURRENT_USER"; payload: Partial<AuthUser> }
   | { type: "SIGN_OUT" };
 
 export type AuthContextValue = {
   state: AuthState;
   dispatch: Dispatch<AuthAction>;
   signOut: () => void;
+  updateCurrentUser: (partialUser: Partial<AuthUser>) => void;
 };
 
 export type AuditDocument = {

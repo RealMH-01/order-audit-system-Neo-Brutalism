@@ -126,7 +126,7 @@ function normalizeModelForDisplay(model: string) {
 
 export function SettingsShell() {
   const router = useRouter();
-  const { state: authState } = useAuth();
+  const { state: authState, updateCurrentUser } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -352,6 +352,7 @@ export function SettingsShell() {
         { token }
       );
 
+      updateCurrentUser({ display_name: state.displayName.trim() || null });
       setSuccess("配置已保存，后续审核会自动使用这套模型、密钥和规则。");
       await loadProfile(token);
     } catch (saveError) {
@@ -363,7 +364,7 @@ export function SettingsShell() {
     } finally {
       setSaving(false);
     }
-  }, [loadProfile, state, token]);
+  }, [loadProfile, state, token, updateCurrentUser]);
 
   if (loading) {
     return (

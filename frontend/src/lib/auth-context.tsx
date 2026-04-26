@@ -27,6 +27,10 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return { status: "authenticated", user: action.payload, error: null };
     case "AUTH_FAILURE":
       return { ...state, status: "error", error: action.payload };
+    case "UPDATE_CURRENT_USER":
+      return state.user
+        ? { ...state, user: { ...state.user, ...action.payload } }
+        : state;
     case "SIGN_OUT":
       return initialState;
     default:
@@ -42,14 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredAccessToken();
     dispatch({ type: "SIGN_OUT" });
   }, [dispatch]);
+  const updateCurrentUser = useCallback(
+    (partialUser: Parameters<AuthContextValue["updateCurrentUser"]>[0]) => {
+      dispatch({ type: "UPDATE_CURRENT_USER", payload: partialUser });
+    },
+    [dispatch]
+  );
 
   const value = useMemo(
     () => ({
       state,
       dispatch,
-      signOut
+      signOut,
+      updateCurrentUser
     }),
-    [state, dispatch, signOut]
+    [state, dispatch, signOut, updateCurrentUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
