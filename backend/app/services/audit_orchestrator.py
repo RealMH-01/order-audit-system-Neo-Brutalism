@@ -183,7 +183,7 @@ class AuditOrchestratorService:
             "full_result": None,
             "report_bundle": None,
         }
-        asyncio.create_task(self._run_task(task_id))
+        self.store.audit_tasks[task_id]["_async_task"] = asyncio.create_task(self._run_task(task_id))
         return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
 
     async def run_full_audit(
@@ -232,10 +232,12 @@ class AuditOrchestratorService:
                 reference_records=reference_records,
                 selected_model=selected_model,
                 primary_provider=primary_provider,
+                target_count=len(targets),
                 deep_think=bool(task["deep_think"]),
                 custom_rules=list(task["custom_rules"]),
                 company_affiliates=company_affiliates,
                 should_cancel=should_cancel,
+                progress_callback=progress_callback,
             )
             await _update_target_progress(result["doc_type"])
             return result
@@ -283,6 +285,9 @@ class AuditOrchestratorService:
         task["status"] = "cancelling"
         task["message"] = "已收到取消请求，正在停止任务。"
         task["updated_at"] = datetime.now(timezone.utc)
+        async_task = task.get("_async_task")
+        if isinstance(async_task, asyncio.Task) and not async_task.done():
+            async_task.cancel()
         return AuditCancelResponse(task_id=task_id, status="cancelling", message="已收到取消请求，正在停止任务。")
 
     def get_result(self, current_user: CurrentUser, task_id: str) -> AuditResultResponse:
@@ -354,10 +359,12 @@ class AuditOrchestratorService:
         reference_records: list[dict[str, Any]],
         selected_model: str,
         primary_provider: str,
+        target_count: int,
         deep_think: bool,
         custom_rules: list[str],
         company_affiliates: list[str],
         should_cancel: Callable[[], bool] | None,
+        progress_callback: Callable[[int, str], Awaitable[None] | None] | None,
     ) -> dict[str, Any]:
         """对单个 target 文件执行完整审核链路。"""
 
@@ -370,27 +377,63 @@ class AuditOrchestratorService:
         template_text = str(template_record.get("text", "")) if template_record else ""
         reference_texts = [str(record.get("text", "")) for record in reference_records if record.get("text")]
         provider_for_call = primary_provider
+        model_for_call = selected_model
+        needs_ocr = bool(target_record.get("needs_ocr")) and bool(target_record.get("page_images"))
+
+        if needs_ocr:
+            selected_ocr_provider, selected_ocr_model = self._select_ocr_provider(primary_provider, profile)
+            if selected_ocr_provider != primary_provider:
+                await self._notify_progress(
+                    progress_callback,
+                    15,
+                    f"当前文档为扫描件，已自动切换至 {selected_ocr_provider} 视觉模型进行识别。",
+                )
+            provider_for_call = selected_ocr_provider
+            model_for_call = selected_ocr_model
         user_api_key = self._require_profile_api_key(profile, provider_for_call)
 
+        safe_limit = self.token_utils.get_safe_token_limit(model_for_call)
+        if target_count <= 1:
+            document_token_budget = max(512, safe_limit // 2)
+        elif target_count <= 3:
+            document_token_budget = max(512, safe_limit // 3)
+        else:
+            document_token_budget = max(512, safe_limit // 4)
+
+        po_text_context, po_truncated = self._prepare_text_context(
+            str(po_record.get("text", "")),
+            model_for_call,
+            document_token_budget,
+        )
+        target_text_context, target_truncated = self._prepare_text_context(
+            str(target_record.get("text", "")),
+            model_for_call,
+            document_token_budget,
+        )
+        prev_text_context, _ = self._prepare_text_context(prev_text, model_for_call, document_token_budget)
+        template_text_context, _ = self._prepare_text_context(template_text, model_for_call, document_token_budget)
+        reference_text_contexts = [
+            self._prepare_text_context(text, model_for_call, document_token_budget)[0]
+            for text in reference_texts
+        ]
+
         messages = self.audit_engine.build_audit_prompt(
-            po_text=self._prepare_text_context(str(po_record.get("text", "")), selected_model),
-            target_text=self._prepare_text_context(str(target_record.get("text", "")), selected_model),
+            po_text=po_text_context,
+            target_text=target_text_context,
             target_type=doc_type,
-            prev_ticket_text=self._prepare_text_context(prev_text, selected_model),
-            template_text=self._prepare_text_context(template_text, selected_model),
-            reference_texts=[self._prepare_text_context(text, selected_model) for text in reference_texts],
+            prev_ticket_text=prev_text_context,
+            template_text=template_text_context,
+            reference_texts=reference_text_contexts,
             company_affiliates=company_affiliates,
             deep_think=deep_think,
         )
 
-        if bool(target_record.get("needs_ocr")) and target_record.get("page_images"):
-            provider_for_call = self._select_ocr_provider(primary_provider, profile)
-            user_api_key = self._require_profile_api_key(profile, provider_for_call)
+        if needs_ocr:
             raw_response = await self.llm_client.call_llm_with_image(
                 messages,
                 image_payloads=list(target_record.get("page_images", [])),
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -398,7 +441,7 @@ class AuditOrchestratorService:
             raw_response = await self.llm_client.call_llm(
                 messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -411,14 +454,14 @@ class AuditOrchestratorService:
             custom_messages = self.audit_engine.build_custom_rules_review_prompt(
                 original_result=parsed_result,
                 custom_rules=custom_rules,
-                po_text=po_record.get("text", ""),
-                target_text=target_record.get("text", ""),
+                po_text=po_text_context,
+                target_text=target_text_context,
                 target_type=doc_type,
             )
             custom_response = await self.llm_client.call_llm(
                 custom_messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -430,18 +473,18 @@ class AuditOrchestratorService:
         if prev_text or template_text or reference_texts:
             self._ensure_not_cancelled(should_cancel)
             cross_check_messages = self.audit_engine.build_cross_check_prompt(
-                po_text=po_record.get("text", ""),
-                target_text=target_record.get("text", ""),
+                po_text=po_text_context,
+                target_text=target_text_context,
                 current_result=parsed_result,
-                prev_ticket_text=prev_text,
-                template_text=template_text,
-                reference_texts=reference_texts,
+                prev_ticket_text=prev_text_context,
+                template_text=template_text_context,
+                reference_texts=reference_text_contexts,
                 target_type=doc_type,
             )
             cross_response = await self.llm_client.call_llm(
                 cross_check_messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=False,
             )
@@ -449,6 +492,9 @@ class AuditOrchestratorService:
                 self.audit_engine.parse_audit_result(cross_response),
                 company_affiliates,
             )
+
+        if po_truncated or target_truncated:
+            self._append_truncation_notice(parsed_result, doc_type, index)
 
         enriched = self._attach_document_context(parsed_result, target_item, target_record, doc_type, index)
         return {
@@ -475,15 +521,15 @@ class AuditOrchestratorService:
 
         return detected_type or "generic"
 
-    def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> str:
+    def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> tuple[str, str]:
         """当主 provider 不适合视觉/OCR 时，选择降级/切换 provider。"""
 
         if primary_provider != "deepseek":
-            return primary_provider
+            return primary_provider, self.llm_client._resolve_model(provider=primary_provider, vision=True)
         if self._get_profile_api_key(profile, "zhipuai"):
-            return "zhipuai"
+            return "zhipuai", self.llm_client._resolve_model(provider="zhipuai", vision=True)
         if self._get_profile_api_key(profile, "openai"):
-            return "openai"
+            return "openai", self.llm_client._resolve_model(provider="openai", vision=True)
         raise AppError("当前扫描件需要视觉/OCR 模型，但未配置可用的 OpenAI 或智谱 API Key。", status_code=400)
 
     def _collect_previous_ticket_text(self, doc_type: str, prev_records: list[dict[str, Any]]) -> str:
@@ -499,11 +545,36 @@ class AuditOrchestratorService:
         fallback_matches = [str(record.get("text", "")) for record in prev_records if record.get("text")]
         return "\n\n".join(fallback_matches)
 
-    def _prepare_text_context(self, text: str, model: str) -> str:
+    def _prepare_text_context(self, text: str, model: str, max_tokens: int) -> tuple[str, bool]:
         """根据 token 安全上限控制输入文本大小。"""
 
-        safe_limit = self.token_utils.get_safe_token_limit(model)
-        return self.token_utils.truncate_text(text, max_tokens=max(512, safe_limit // 4), model=model)
+        token_budget = max(512, max_tokens)
+        normalized_text = text or ""
+        was_truncated = self.token_utils.estimate_tokens(normalized_text, model) > token_budget
+        truncated_text = self.token_utils.truncate_text(normalized_text, max_tokens=token_budget, model=model)
+        return truncated_text, was_truncated
+
+    def _append_truncation_notice(self, parsed_result: dict[str, Any], doc_type: str, index: int) -> None:
+        """在结果末尾追加长文档截断提醒。"""
+
+        issues = parsed_result.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+            parsed_result["issues"] = issues
+
+        issues.append(
+            {
+                "id": f"{doc_type}-{index}-truncation-notice",
+                "level": "BLUE",
+                "field_name": "document_coverage",
+                "finding": "本文档原文较长，系统仅截取了前部分内容进行审核，未覆盖部分可能包含需要人工复核的信息。",
+                "suggestion": "建议人工检查本文档后半部分内容，确认无遗漏。",
+                "confidence": 1.0,
+            }
+        )
+        parsed_result["summary"] = self._recount_summary(
+            [issue for issue in issues if isinstance(issue, dict)]
+        )
 
     def _attach_document_context(
         self,
@@ -589,6 +660,29 @@ class AuditOrchestratorService:
         matched = self._normalize_affiliate_text(matched_po_value)
         return any(affiliate in observed or affiliate in matched for affiliate in normalized_affiliates if affiliate)
 
+    @staticmethod
+    def _collect_task_file_ids(task: dict[str, Any]) -> list[str]:
+        """收集当前审核任务实际引用过的 file_id。"""
+
+        file_ids: list[str] = []
+
+        def _append(file_id: Any) -> None:
+            if file_id:
+                file_ids.append(str(file_id))
+
+        _append(task.get("po_file_id"))
+        for item in task.get("target_files", []):
+            if isinstance(item, dict):
+                _append(item.get("file_id"))
+        for item in task.get("prev_ticket_files", []):
+            if isinstance(item, dict):
+                _append(item.get("file_id"))
+        _append(task.get("template_file_id"))
+        for file_id in task.get("reference_file_ids", []):
+            _append(file_id)
+
+        return list(dict.fromkeys(file_ids))
+
     async def _run_task(self, task_id: str) -> None:
         """后台任务入口。"""
 
@@ -637,6 +731,7 @@ class AuditOrchestratorService:
                     self.store.audit_history[user_id][0] = persisted_history
                 except Exception:
                     logger.warning("Audit history persistence failed; keeping RuntimeStore history only.", exc_info=True)
+            self.file_parser.delete_files_by_ids(user_id, self._collect_task_file_ids(task))
         except asyncio.CancelledError:
             await self._finalize_cancel(task)
         except AppError as exc:

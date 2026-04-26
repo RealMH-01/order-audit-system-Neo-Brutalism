@@ -368,6 +368,24 @@ class FileDeleteResponse(BaseModel):
     message: str
 
 
+class FileListResponse(BaseModel):
+    """Current user file list response."""
+
+    files: list[FileRecord]
+
+
+class FileBulkDeleteRequest(BaseModel):
+    """Bulk file delete request with optional file ID filter."""
+
+    file_ids: list[str] | None = None
+
+
+class FileBulkDeleteResponse(BaseModel):
+    """Bulk file delete response."""
+
+    deleted_count: int
+
+
 class AuditFileRefItem(BaseModel):
     """Object-style file reference used by audit-start payloads."""
 

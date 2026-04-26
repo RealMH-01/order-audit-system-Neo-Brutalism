@@ -98,6 +98,30 @@ class FileParserService:
         self._get_user_file_data(user_id, file_id)
         del self.store.files[file_id]
 
+    def list_user_files(self, user_id: str) -> list[FileRecord]:
+        """列出当前用户仍在运行态暂存的文件。"""
+
+        user_files = [
+            item
+            for item in self.store.files.values()
+            if item.get("user_id") == user_id
+        ]
+        user_files.sort(key=lambda item: str(item.get("uploaded_at") or ""), reverse=True)
+        return [self._to_file_record(item) for item in user_files]
+
+    def delete_files_by_ids(self, user_id: str, file_ids: list[str]) -> int:
+        """按 file_id 集合删除当前用户自己的暂存文件。"""
+
+        target_ids = {str(file_id).strip() for file_id in file_ids if str(file_id).strip()}
+        deleted_count = 0
+        for file_id in list(target_ids):
+            file_data = self.store.files.get(file_id)
+            if not file_data or file_data.get("user_id") != user_id:
+                continue
+            del self.store.files[file_id]
+            deleted_count += 1
+        return deleted_count
+
     def get_user_file(self, user_id: str, file_id: str) -> dict[str, object]:
         """读取当前用户文件的完整运行态记录。"""
 

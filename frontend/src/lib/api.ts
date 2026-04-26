@@ -3,6 +3,7 @@ import type { ApiError, ApiSuccess } from "@/types";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 const ACCESS_TOKEN_KEY = "order-audit-access-token";
+let isRedirecting = false;
 
 type RequestOptions = {
   token?: string | null;
@@ -32,6 +33,8 @@ type DownloadAuditReportResult = {
 
 async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
   if (!response.ok) {
+    handleUnauthorizedResponse(response.status);
+
     let detail = "请求失败，请稍后重试。";
 
     try {
@@ -52,6 +55,20 @@ async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
 
   const data = (await response.json()) as T;
   return { data };
+}
+
+function handleUnauthorizedResponse(status: number) {
+  if (status !== 401 && status !== 403) {
+    return;
+  }
+
+  clearStoredAccessToken();
+  if (typeof window === "undefined" || isRedirecting) {
+    return;
+  }
+
+  isRedirecting = true;
+  window.location.href = "/login";
 }
 
 function buildHeaders(token?: string | null): HeadersInit {
@@ -126,7 +143,7 @@ export async function apiPut<T>(
 
 export async function apiDelete<T>(
   path: string,
-  options: Omit<RequestOptions, "body"> = {}
+  options: RequestOptions = {}
 ): Promise<ApiSuccess<T>> {
   return request<T>(path, "DELETE", options);
 }
@@ -171,6 +188,8 @@ export async function downloadAuditReport(
   );
 
   if (!response.ok) {
+    handleUnauthorizedResponse(response.status);
+
     let detail = "报告下载失败，请稍后重试。";
 
     try {

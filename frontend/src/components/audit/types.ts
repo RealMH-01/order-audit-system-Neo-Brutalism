@@ -23,9 +23,17 @@ export type AuditFileUploadResponse = {
   message: string;
 };
 
+export type AuditFileListResponse = {
+  files: AuditFileRecord[];
+};
+
 export type AuditDeleteResponse = {
   file_id: string;
   message: string;
+};
+
+export type AuditBulkDeleteResponse = {
+  deleted_count: number;
 };
 
 export type AuditBucketFile = AuditFileRecord & {
