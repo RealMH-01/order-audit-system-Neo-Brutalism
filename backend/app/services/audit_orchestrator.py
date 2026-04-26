@@ -1103,5 +1103,7 @@ class AuditOrchestratorService:
             elif level == "BLUE":
                 summary["blue"] += 1
             else:
+                if level not in ("RED", "YELLOW", "BLUE"):
+                    logger.warning("Unexpected issue level '%s' in recount, treating as YELLOW.", level)
                 summary["yellow"] += 1
         return summary

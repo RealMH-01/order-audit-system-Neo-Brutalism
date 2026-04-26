@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import re
 from statistics import mean
 from typing import Any
 
 from app.models.schemas import FeatureStatus
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """
 You are a professional export-document audit engine.
@@ -506,9 +509,17 @@ Cross-check instructions:
             if not isinstance(raw_issue, dict):
                 raw_issue = {"finding": str(raw_issue)}
 
-            level = str(raw_issue.get("level") or "YELLOW").upper().strip()
-            if level not in level_counts:
+            raw_level = str(raw_issue.get("level") or "YELLOW").upper().strip()
+            if raw_level not in level_counts:
+                logger.warning(
+                    "Issue #%d has non-standard level '%s', remapped to YELLOW. field_name=%s",
+                    index,
+                    raw_level,
+                    raw_issue.get("field_name", "unknown"),
+                )
                 level = "YELLOW"
+            else:
+                level = raw_level
 
             confidence = self._clamp_confidence(raw_issue.get("confidence", 0.5))
             field_name = str(
