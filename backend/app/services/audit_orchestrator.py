@@ -236,6 +236,7 @@ class AuditOrchestratorService:
                 custom_rules=list(task["custom_rules"]),
                 company_affiliates=company_affiliates,
                 should_cancel=should_cancel,
+                progress_callback=progress_callback,
             )
             await _update_target_progress(result["doc_type"])
             return result
@@ -358,6 +359,7 @@ class AuditOrchestratorService:
         custom_rules: list[str],
         company_affiliates: list[str],
         should_cancel: Callable[[], bool] | None,
+        progress_callback: Callable[[int, str], Awaitable[None] | None] | None,
     ) -> dict[str, Any]:
         """对单个 target 文件执行完整审核链路。"""
 
@@ -370,6 +372,19 @@ class AuditOrchestratorService:
         template_text = str(template_record.get("text", "")) if template_record else ""
         reference_texts = [str(record.get("text", "")) for record in reference_records if record.get("text")]
         provider_for_call = primary_provider
+        model_for_call = selected_model
+        needs_ocr = bool(target_record.get("needs_ocr")) and bool(target_record.get("page_images"))
+
+        if needs_ocr:
+            selected_ocr_provider, selected_ocr_model = self._select_ocr_provider(primary_provider, profile)
+            if selected_ocr_provider != primary_provider:
+                await self._notify_progress(
+                    progress_callback,
+                    15,
+                    f"当前文档为扫描件，已自动切换至 {selected_ocr_provider} 视觉模型进行识别。",
+                )
+            provider_for_call = selected_ocr_provider
+            model_for_call = selected_ocr_model
         user_api_key = self._require_profile_api_key(profile, provider_for_call)
 
         messages = self.audit_engine.build_audit_prompt(
@@ -383,14 +398,12 @@ class AuditOrchestratorService:
             deep_think=deep_think,
         )
 
-        if bool(target_record.get("needs_ocr")) and target_record.get("page_images"):
-            provider_for_call = self._select_ocr_provider(primary_provider, profile)
-            user_api_key = self._require_profile_api_key(profile, provider_for_call)
+        if needs_ocr:
             raw_response = await self.llm_client.call_llm_with_image(
                 messages,
                 image_payloads=list(target_record.get("page_images", [])),
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -398,7 +411,7 @@ class AuditOrchestratorService:
             raw_response = await self.llm_client.call_llm(
                 messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -418,7 +431,7 @@ class AuditOrchestratorService:
             custom_response = await self.llm_client.call_llm(
                 custom_messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=deep_think,
             )
@@ -441,7 +454,7 @@ class AuditOrchestratorService:
             cross_response = await self.llm_client.call_llm(
                 cross_check_messages,
                 provider=provider_for_call,
-                requested_model=selected_model,
+                requested_model=model_for_call,
                 api_key=user_api_key,
                 deep_think=False,
             )
@@ -475,15 +488,15 @@ class AuditOrchestratorService:
 
         return detected_type or "generic"
 
-    def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> str:
+    def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> tuple[str, str]:
         """当主 provider 不适合视觉/OCR 时，选择降级/切换 provider。"""
 
         if primary_provider != "deepseek":
-            return primary_provider
+            return primary_provider, self.llm_client._resolve_model(provider=primary_provider, vision=True)
         if self._get_profile_api_key(profile, "zhipuai"):
-            return "zhipuai"
+            return "zhipuai", self.llm_client._resolve_model(provider="zhipuai", vision=True)
         if self._get_profile_api_key(profile, "openai"):
-            return "openai"
+            return "openai", self.llm_client._resolve_model(provider="openai", vision=True)
         raise AppError("当前扫描件需要视觉/OCR 模型，但未配置可用的 OpenAI 或智谱 API Key。", status_code=400)
 
     def _collect_previous_ticket_text(self, doc_type: str, prev_records: list[dict[str, Any]]) -> str:
