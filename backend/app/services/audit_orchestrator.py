@@ -1016,11 +1016,6 @@ class AuditOrchestratorService:
         text = f"{quantized:,.2f}"
         return text[:-3] if text.endswith(".00") else text
 
-    @classmethod
-    def _format_amount_with_currency(cls, value: Decimal, currency: str) -> str:
-        amount = cls._format_decimal(value)
-        return f"{currency} {amount}" if currency else amount
-
     def _append_truncation_notice(self, parsed_result: dict[str, Any], doc_type: str, index: int) -> None:
         """在结果末尾追加长文档截断提醒。"""
 
@@ -1102,32 +1097,10 @@ class AuditOrchestratorService:
         if po_unit_number is None or target_unit_number is None or po_unit_number == target_unit_number:
             return
 
-        target_fields = self._extract_key_fields(target_text, source="target")
-        target_qty = target_fields.get("quantity", "")
-        target_total = target_fields.get("amount", "")
-        calculation_text = ""
-        qty_number = self._parse_decimal(target_qty)
-        total_number = self._parse_decimal(target_total)
-        if qty_number is not None and total_number is not None:
-            calculated_amount = target_unit_number * qty_number
-            currency = self._extract_currency(target_unit_price, target_total, po_unit_price)
-            calculated_amount_text = self._format_amount_with_currency(calculated_amount, currency)
-            calculation_text = (
-                f"按目标单据单价 {target_unit_price} × {target_qty} 计算为 "
-                f"{calculated_amount_text}，"
-                f"但目标单据总金额为 {target_total}，"
-                "说明目标单据单价与总金额计算关系不一致，"
-            )
-
         finding = (
             f"PO/基准单据 Unit Price 为 {po_unit_price}，目标单据 Unit Price 为 {target_unit_price}，两者不一致。"
         )
-        if calculation_text:
-            finding = f"{finding}{calculation_text}根因应优先归因为单价不一致。"
-        suggestion = (
-            f"请将目标单据单价核对并修正为 PO/基准单据单价 {po_unit_price}，或补充说明单价差异依据；"
-            "同时确保单价、数量、总金额三者计算关系一致。"
-        )
+        suggestion = "请核对并修正目标单据单价，或补充单价差异依据。"
         rebuilt_issue = {
             "id": f"{doc_type}-unit-price-mismatch",
             "level": "RED",
@@ -1140,7 +1113,7 @@ class AuditOrchestratorService:
             "source_value": po_unit_price,
             "matched_po_value": po_unit_price,
             "observed_value": target_unit_price,
-            "source": "PO/基准单据",
+            "source": "PO/基准单据 Unit Price",
             "field_location": "Unit Price",
         }
 
