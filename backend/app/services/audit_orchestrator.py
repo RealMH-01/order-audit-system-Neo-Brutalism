@@ -801,15 +801,6 @@ class AuditOrchestratorService:
         self._log_diag_text("po_text", po_text_context)
         self._log_diag_text("target_text", target_text_context)
 
-        # 把用户自定义规则拼入 audit_rules_text，作为第一轮主 prompt 的一部分
-        clean_custom_rules = [rule.strip() for rule in custom_rules if isinstance(rule, str) and rule.strip()]
-        if clean_custom_rules:
-            custom_rules_block = "【用户自定义审核规则】\n" + "\n".join(f"- {rule}" for rule in clean_custom_rules)
-            if audit_rules_text.strip():
-                audit_rules_text = audit_rules_text + "\n\n" + custom_rules_block
-            else:
-                audit_rules_text = custom_rules_block
-
         evidence_block = self._build_evidence_block(po_text_context, target_text_context)
 
         messages = self.audit_engine.build_audit_prompt(
