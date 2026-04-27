@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends
 
 from app.dependencies import get_current_user, get_template_library_service
 from app.models.schemas import (
-    AuditRulePackageListResponse,
     AuditTemplateCreateRequest,
     AuditTemplateListResponse,
     AuditTemplateResponse,
@@ -21,13 +20,6 @@ async def get_system_hard_rules(
     service: TemplateLibraryService = Depends(get_template_library_service),
 ) -> SystemHardRulesResponse:
     return service.get_system_hard_rules()
-
-
-@router.get("/rule-packages", response_model=AuditRulePackageListResponse)
-async def list_rule_packages(
-    service: TemplateLibraryService = Depends(get_template_library_service),
-) -> AuditRulePackageListResponse:
-    return service.list_rule_packages()
 
 
 @router.get("", response_model=AuditTemplateListResponse)

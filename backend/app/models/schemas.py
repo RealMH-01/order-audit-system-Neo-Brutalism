@@ -275,30 +275,6 @@ class SystemHardRulesResponse(BaseModel):
     rules: list[SystemHardRuleItem]
 
 
-class AuditRulePackageRecord(BaseModel):
-    """Database-facing audit rule package."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    id: UUID | str
-    code: str
-    name: str
-    description: str | None = None
-    business_type: BusinessType | None = None
-    package_type: Literal["base_common", "business"]
-    version: int = 1
-    rules: list[str] = Field(default_factory=list)
-    is_active: bool = True
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class AuditRulePackageListResponse(BaseModel):
-    """Enabled audit rule package list."""
-
-    packages: list[AuditRulePackageRecord]
-
-
 class AuditTemplateRecord(BaseModel):
     """Database-facing user audit template."""
 

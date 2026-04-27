@@ -1467,7 +1467,7 @@ export function AuditWorkspace() {
                       </p>
                     </div>
                     <p className="text-sm font-bold leading-6">
-                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、基础通用规则、业务规则包和你的补充规则。
+                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、模板补充规则和本轮临时补充规则。
                     </p>
                   </div>
                   <Button

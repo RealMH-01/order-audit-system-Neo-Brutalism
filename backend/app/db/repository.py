@@ -143,13 +143,6 @@ class SupabaseRepository:
     def update_system_rule(self, data: dict[str, Any]) -> dict[str, Any]:
         return self.update_system_rules(data)
 
-    def list_rule_packages(self) -> list[dict[str, Any]]:
-        return self._select_many(
-            "audit_rule_packages",
-            "list rule packages",
-            lambda table: table.select("*").eq("is_active", True).order("package_type").order("code"),
-        )
-
     def list_audit_templates(self, user_id: str) -> list[dict[str, Any]]:
         return self._select_many(
             "audit_templates",

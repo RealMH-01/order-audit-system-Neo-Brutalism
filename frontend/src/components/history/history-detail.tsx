@@ -247,24 +247,6 @@ function resolveBusinessTypeLabel(type?: string | null) {
   return "未保存";
 }
 
-function resolvePackageLabel(
-  packageItem: HistoryRuleSnapshot["base_rule_package"] | HistoryRuleSnapshot["business_rule_package"]
-) {
-  if (!packageItem) {
-    return "未保存";
-  }
-  return `${packageItem.name || "未命名规则包"} v${packageItem.version ?? 1}`;
-}
-
-function resolveBusinessPackageSummary(
-  packageItem: HistoryRuleSnapshot["business_rule_package"]
-) {
-  if (!packageItem) {
-    return "未启用";
-  }
-  return resolvePackageLabel(packageItem);
-}
-
 function countSystemRules(snapshot: HistoryRuleSnapshot) {
   return snapshot.system_rules?.rules?.length ?? 0;
 }
@@ -347,7 +329,7 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
   const templateSupplementalRules = normalizeRuleLines(template?.supplemental_rules);
   const runSupplementalRules = normalizeRuleLines(snapshot?.run_supplemental_rules);
   const resolvedSections = snapshot?.resolved_sections ?? [];
-  const businessType = template?.business_type ?? snapshot?.business_rule_package?.business_type ?? null;
+  const businessType = template?.business_type ?? null;
 
   return (
     <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -377,18 +359,6 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               <p className="text-xs font-black uppercase tracking-[0.14em]">系统硬规则</p>
               <p className="mt-2 text-sm font-bold leading-6">
                 固定启用，v{snapshot.system_rules?.version ?? 1}
-              </p>
-            </div>
-            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">基础通用规则包</p>
-              <p className="mt-2 text-sm font-bold leading-6">
-                固定启用，{resolvePackageLabel(snapshot.base_rule_package)}
-              </p>
-            </div>
-            <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">业务规则包</p>
-              <p className="mt-2 text-sm font-bold leading-6">
-                {resolveBusinessPackageSummary(snapshot.business_rule_package)}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">

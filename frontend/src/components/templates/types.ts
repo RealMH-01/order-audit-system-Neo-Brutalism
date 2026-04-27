@@ -13,24 +13,6 @@ export type SystemHardRulesResponse = {
   rules: SystemHardRuleItem[];
 };
 
-export type AuditRulePackage = {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  business_type: TemplateBusinessType | null;
-  package_type: "base_common" | "business";
-  version: number;
-  rules: string[];
-  is_active: boolean;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-export type AuditRulePackageListResponse = {
-  packages: AuditRulePackage[];
-};
-
 export type AuditTemplate = {
   id: string;
   user_id: string;

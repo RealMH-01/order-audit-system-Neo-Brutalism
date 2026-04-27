@@ -1,5 +1,4 @@
 import type {
-  AuditRulePackage,
   AuditTemplate,
   AuditTemplateDraft,
   TemplateBusinessType
@@ -34,14 +33,6 @@ export function resolveBusinessTypeLabel(type: TemplateBusinessType | null) {
   }
 
   return "全部场景";
-}
-
-export function resolvePackageTone(packageItem: AuditRulePackage) {
-  if (packageItem.package_type === "base_common") {
-    return "bg-secondary";
-  }
-
-  return packageItem.business_type === "domestic" ? "bg-muted" : "bg-acid";
 }
 
 export function sortTemplates(templates: AuditTemplate[]) {

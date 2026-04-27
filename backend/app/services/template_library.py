@@ -1,4 +1,4 @@
-"""Backend foundation for fixed audit rules, rule packages, and user templates."""
+"""Backend foundation for fixed audit rules and user templates."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from uuid import uuid4
 from app.db.repository import SupabaseRepository
 from app.errors import AppError
 from app.models.schemas import (
-    AuditRulePackageListResponse,
-    AuditRulePackageRecord,
     AuditTemplateCreateRequest,
     AuditTemplateListResponse,
     AuditTemplateResponse,
@@ -94,73 +92,6 @@ SYSTEM_HARD_RULES = SystemHardRulesResponse(
 )
 
 
-FALLBACK_RULE_PACKAGES = [
-    {
-        "id": "base_common_v1",
-        "code": "base_common_v1",
-        "name": "基础通用规则包",
-        "description": "所有单据审核默认启用，不区分内贸或外贸。",
-        "business_type": None,
-        "package_type": "base_common",
-        "version": 1,
-        "rules": [
-            "金额是否一致",
-            "数量是否一致",
-            "日期逻辑是否合理",
-            "买卖双方信息是否一致",
-            "单据编号是否缺失",
-            "商品名称、规格、单位是否冲突",
-            "关键字段是否存在异常",
-            "缺失字段、冲突字段、异常字段要提示人工复核",
-        ],
-        "is_active": True,
-        "created_at": None,
-        "updated_at": None,
-    },
-    {
-        "id": "domestic_v1",
-        "code": "domestic_v1",
-        "name": "内贸规则包",
-        "description": "适用于国内订单、国内合同、增值税发票、送货单、对账单、采购单、销售单。",
-        "business_type": "domestic",
-        "package_type": "business",
-        "version": 1,
-        "rules": [
-            "公司名称",
-            "统一社会信用代码",
-            "开票信息",
-            "含税金额、未税金额、税率、税额",
-            "送货数量、签收数量、开票数量",
-            "付款条件、账期、结算方式",
-            "收货地址、联系人、电话",
-        ],
-        "is_active": True,
-        "created_at": None,
-        "updated_at": None,
-    },
-    {
-        "id": "foreign_v1",
-        "code": "foreign_v1",
-        "name": "外贸规则包",
-        "description": "适用于 PO、PI、Commercial Invoice、Packing List、B/L、出口合同、报关资料。",
-        "business_type": "foreign",
-        "package_type": "business",
-        "version": 1,
-        "rules": [
-            "Buyer / Seller / Consignee / Notify Party",
-            "Incoterms",
-            "目的港、装运港、交货期",
-            "币种、金额、数量、单价",
-            "箱数、毛重、净重、体积",
-            "核对英文品名、规格、型号等货品信息是否一致；如涉及 HS Code / 海关编码，应检查其是否缺失、冲突或前后不一致。",
-            "外贸付款方式、信用证、唛头、运输方式",
-        ],
-        "is_active": True,
-        "created_at": None,
-        "updated_at": None,
-    },
-]
-
 
 @dataclass(frozen=True)
 class ResolvedAuditTemplateRules:
@@ -180,12 +111,6 @@ class TemplateLibraryService:
 
     def get_system_hard_rules(self) -> SystemHardRulesResponse:
         return SYSTEM_HARD_RULES
-
-    def list_rule_packages(self) -> AuditRulePackageListResponse:
-        records = self.repo.list_rule_packages() if self.repo is not None else FALLBACK_RULE_PACKAGES
-        packages = [AuditRulePackageRecord.model_validate(record) for record in records]
-        packages.sort(key=lambda item: (0 if item.package_type == "base_common" else 1, item.code))
-        return AuditRulePackageListResponse(packages=packages)
 
     def list_templates(self, current_user: CurrentUser) -> AuditTemplateListResponse:
         records = (
@@ -328,8 +253,6 @@ class TemplateLibraryService:
             rules_text="\n\n".join(section for section in sections if section.strip()),
             rule_snapshot=self._build_rule_snapshot(
                 selected_template=selected_template,
-                base_package=None,
-                business_package=None,
                 temporary_rules=clean_temporary_rules,
             ),
         )
@@ -373,15 +296,6 @@ class TemplateLibraryService:
                 return template
         return None
 
-    def _get_rule_package_by_code(self, code: str) -> AuditRulePackageRecord:
-        records = self.repo.list_rule_packages() if self.repo is not None else []
-        fallback_by_code = {str(record["code"]): record for record in FALLBACK_RULE_PACKAGES}
-        record_by_code = {str(record.get("code")): record for record in records}
-        record = record_by_code.get(code) or fallback_by_code.get(code)
-        if record is None:
-            raise AppError("审核规则包暂不可用，请稍后重试。", status_code=500)
-        return AuditRulePackageRecord.model_validate(record)
-
     @staticmethod
     def _format_system_hard_rules() -> str:
         lines = [
@@ -390,17 +304,10 @@ class TemplateLibraryService:
         ]
         return "【系统硬规则】\n" + "\n".join(lines)
 
-    @staticmethod
-    def _format_rule_package(title: str, package: AuditRulePackageRecord) -> str:
-        lines = [f"- {rule}" for rule in package.rules if rule.strip()]
-        return f"【{title}】\n" + "\n".join(lines)
-
     def _build_rule_snapshot(
         self,
         *,
         selected_template: AuditTemplateResponse | None,
-        base_package: AuditRulePackageRecord,
-        business_package: AuditRulePackageRecord | None,
         temporary_rules: list[str],
     ) -> dict[str, Any]:
         resolved_sections = [
@@ -410,21 +317,6 @@ class TemplateLibraryService:
             },
         ]
 
-        if base_package is not None:
-            resolved_sections.append(
-                {
-                    "title": "基础通用规则包",
-                    "rules": [rule for rule in base_package.rules if rule.strip()],
-                }
-            )
-
-        if business_package is not None:
-            resolved_sections.append(
-                {
-                    "title": str(business_package.name),
-                    "rules": [rule for rule in business_package.rules if rule.strip()],
-                }
-            )
         if selected_template is not None and selected_template.supplemental_rules.strip():
             resolved_sections.append(
                 {
@@ -448,23 +340,9 @@ class TemplateLibraryService:
                 "version": SYSTEM_HARD_RULES.version,
                 "rules": [rule.model_dump(mode="json") for rule in SYSTEM_HARD_RULES.rules],
             },
-            "base_rule_package": self._rule_package_snapshot(base_package),
-            "business_rule_package": self._rule_package_snapshot(business_package),
             "template": self._template_snapshot(selected_template),
             "run_supplemental_rules": list(temporary_rules),
             "resolved_sections": resolved_sections,
-        }
-
-    @staticmethod
-    def _rule_package_snapshot(package: AuditRulePackageRecord | None) -> dict[str, Any] | None:
-        if package is None:
-            return None
-        return {
-            "code": package.code,
-            "name": package.name,
-            "business_type": package.business_type,
-            "version": package.version,
-            "rules": [rule for rule in package.rules if rule.strip()],
         }
 
     @staticmethod

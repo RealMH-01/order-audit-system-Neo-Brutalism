@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  BookOpenCheck,
   Copy,
   FilePlus2,
   Loader2,
@@ -14,8 +13,6 @@ import {
 } from "lucide-react";
 
 import type {
-  AuditRulePackage,
-  AuditRulePackageListResponse,
   AuditTemplate,
   AuditTemplateDraft,
   AuditTemplateListResponse,
@@ -27,7 +24,6 @@ import {
   formatTemplateDate,
   normalizeTemplateError,
   resolveBusinessTypeLabel,
-  resolvePackageTone,
   sortTemplates,
   summarizeSupplementalRules,
   toTemplateDraft
@@ -65,7 +61,6 @@ const SUPPLEMENTAL_PLACEHOLDER = [
 export function TemplateLibraryShell() {
   const [token, setToken] = useState<string | null>(null);
   const [systemRules, setSystemRules] = useState<SystemHardRulesResponse | null>(null);
-  const [rulePackages, setRulePackages] = useState<AuditRulePackage[]>([]);
   const [templates, setTemplates] = useState<AuditTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -96,16 +91,12 @@ export function TemplateLibraryShell() {
       setLoadError(null);
 
       try {
-        const [systemResult, packageResult, templateResult] = await Promise.all([
+        const [systemResult, templateResult] = await Promise.all([
           apiGet<SystemHardRulesResponse>("/templates/system-rules", { token: accessToken }),
-          apiGet<AuditRulePackageListResponse>("/templates/rule-packages", {
-            token: accessToken
-          }),
           apiGet<AuditTemplateListResponse>("/templates", { token: accessToken })
         ]);
 
         setSystemRules(systemResult.data);
-        setRulePackages(packageResult.data.packages);
         setTemplates(sortTemplates(templateResult.data.templates));
       } catch (error) {
         setLoadError(normalizeTemplateError(error, "模板资料读取失败，请稍后重试。"));
@@ -128,15 +119,6 @@ export function TemplateLibraryShell() {
 
     void loadAll(accessToken);
   }, [loadAll]);
-
-  const groupedPackages = useMemo(
-    () => ({
-      base: rulePackages.filter((item) => item.package_type === "base_common"),
-      domestic: rulePackages.filter((item) => item.business_type === "domestic"),
-      foreign: rulePackages.filter((item) => item.business_type === "foreign")
-    }),
-    [rulePackages]
-  );
 
   const openCreateDialog = () => {
     setEditorMode("create");
@@ -349,7 +331,7 @@ export function TemplateLibraryShell() {
         </div>
         <div className="mt-6 border-4 border-ink bg-acid p-4 shadow-neo-sm">
           <p className="text-sm font-black leading-6 md:text-base">
-            系统硬规则 + 基础通用规则 + 内贸/外贸规则包 + 我的补充规则 = 本轮审核规则
+            系统硬规则 + 模板补充规则 + 本轮临时补充规则 = 本轮审核规则
           </p>
         </div>
       </header>
@@ -361,18 +343,6 @@ export function TemplateLibraryShell() {
       {feedback ? <Notice tone={feedback.tone} message={feedback.message} /> : null}
 
       <SystemHardRulesPanel systemRules={systemRules} />
-
-      <section className="space-y-4">
-        <SectionTitle
-          title="规则包"
-          description="基础规则和业务规则只读展示，实际审核时按模板业务类型匹配内贸或外贸规则包。"
-        />
-        <div className="grid gap-5 lg:grid-cols-3">
-          <PackageGroup title="基础通用规则包" packages={groupedPackages.base} />
-          <PackageGroup title="内贸规则包" packages={groupedPackages.domestic} />
-          <PackageGroup title="外贸规则包" packages={groupedPackages.foreign} />
-        </div>
-      </section>
 
       <section className="space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -517,66 +487,6 @@ function SystemHardRulesPanel({
         </CardContent>
       </Card>
     </section>
-  );
-}
-
-function PackageGroup({
-  title,
-  packages
-}: {
-  title: string;
-  packages: AuditRulePackage[];
-}) {
-  if (packages.length === 0) {
-    return (
-      <Card className="bg-paper">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm font-bold leading-6">当前没有可展示的规则包。</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      {packages.map((packageItem) => (
-        <Card
-          key={packageItem.id}
-          className={cn(resolvePackageTone(packageItem), "h-full")}
-        >
-          <CardHeader>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="inverse">第 {packageItem.version} 版</Badge>
-              <Badge variant="neutral">
-                适用场景：{resolveBusinessTypeLabel(packageItem.business_type)}
-              </Badge>
-            </div>
-            <CardTitle>{packageItem.name || title}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm font-bold leading-6">
-              {packageItem.description || "这组规则会参与对应业务场景的审核。"}
-            </p>
-            <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
-              <p className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-[0.14em]">
-                <BookOpenCheck size={16} strokeWidth={3} />
-                规则列表
-              </p>
-              <ul className="space-y-2">
-                {packageItem.rules.map((rule) => (
-                  <li key={rule} className="text-sm font-bold leading-6">
-                    {rule}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
   );
 }
 

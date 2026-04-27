@@ -69,14 +69,6 @@ export type HistoryRuleSnapshotSection = {
   rules?: string[];
 };
 
-export type HistoryRulePackageSnapshot = {
-  code?: string;
-  name?: string;
-  business_type?: "domestic" | "foreign" | null;
-  version?: number;
-  rules?: string[];
-};
-
 export type HistoryTemplateSnapshot = {
   id?: string;
   name?: string;
@@ -98,8 +90,6 @@ export type HistoryRuleSnapshot = {
       content?: string;
     }>;
   };
-  base_rule_package?: HistoryRulePackageSnapshot | null;
-  business_rule_package?: HistoryRulePackageSnapshot | null;
   template?: HistoryTemplateSnapshot | null;
   run_supplemental_rules?: string[] | string | null;
   resolved_sections?: HistoryRuleSnapshotSection[];
