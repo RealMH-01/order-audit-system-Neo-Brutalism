@@ -45,8 +45,8 @@ const providerModels: Record<
     { label: "OpenAI o3-mini", value: "o3-mini" }
   ],
   deepseek: [
-    { label: "DeepSeek Chat", value: "deepseek-chat" },
-    { label: "DeepSeek Reasoner", value: "deepseek-reasoner" }
+    { label: "DeepSeek V4 Flash", value: "deepseek-v4-flash" },
+    { label: "DeepSeek V4 Pro", value: "deepseek-v4-pro" }
   ],
   zhipuai: [
     { label: "智谱 GLM-4.6V", value: "glm-4.6v" },

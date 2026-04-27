@@ -102,14 +102,14 @@ export function StepRulesConfig({
               <Badge variant="inverse">AI 引导对话</Badge>
               <CardTitle>让 AI 帮你梳理规则</CardTitle>
               <CardDescription>
-                AI 会根据当前模板、模型配置和你的规则草稿继续追问。信息足够后，可以让它直接总结。
+                AI 会根据业务背景、模型配置和你的规则草稿继续追问。信息足够后，可以让它直接总结。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {!aiReady ? (
                 <div className="space-y-4 border-4 border-ink bg-paper p-5 shadow-neo-sm">
                   <p className="text-sm font-bold leading-6">
-                    AI 会参考当前模板、模型配置和现有手写规则草稿，逐步帮你整理审核规则。
+                    AI 会参考业务背景、模型配置和现有手写规则草稿，逐步帮你整理审核规则。
                   </p>
                   <Button onClick={onStartAi} disabled={!canStartAi || chatLoading}>
                     <Sparkles size={18} strokeWidth={3} />

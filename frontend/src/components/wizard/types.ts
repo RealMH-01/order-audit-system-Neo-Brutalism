@@ -105,7 +105,7 @@ export type WizardFormState = {
   hasDeepseekKey: boolean;
   hasZhipuKey: boolean;
   hasZhipuOcrKey: boolean;
-  selectedTemplateId: WizardTemplateOptionId;
+  businessBackground: string;
   ruleMode: WizardRuleMode;
   manualRulesText: string;
   sessionId: string | null;

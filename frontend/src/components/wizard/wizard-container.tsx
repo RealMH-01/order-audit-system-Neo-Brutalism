@@ -37,51 +37,15 @@ import type {
   WizardFormState,
   WizardProfile,
   WizardStartApiResponse,
-  WizardStepKey,
-  WizardTemplateOption,
-  WizardTemplateOptionId
+  WizardStepKey
 } from "@/components/wizard/types";
 
 const steps: Array<{ key: WizardStepKey; label: string }> = [
   { key: "model", label: "模型与密钥" },
-  { key: "template", label: "行业模板" },
+  { key: "template", label: "业务背景" },
   { key: "rules", label: "审核规则" },
   { key: "company", label: "公司架构" },
   { key: "confirm", label: "确认完成" }
-];
-
-const templateOptions: WizardTemplateOption[] = [
-  {
-    id: "generic-order",
-    label: "通用订单审核",
-    description: "适合采购、销售、履约、外贸等多行业订单审核场景，重点核对关键字段和业务一致性。",
-    rulesText:
-      "优先核对订单号、合同号、主体名称、品名规格、数量、金额、交付日期、收发货信息和履约要求；任何关键字段缺失、冲突或数字歧义都必须重点提示。",
-    companyAffiliates: []
-  },
-  {
-    id: "generic-trade",
-    label: "通用外贸",
-    description: "适合标准外贸跟单场景，重点核对 PO、贸易单据关键信息和一致性。",
-    rulesText:
-      "优先核对抬头、PO 号、合同号、数量、金额、贸易术语、买方、收货人与发货信息；任何数字歧义都必须重点提示。",
-    companyAffiliates: []
-  },
-  {
-    id: "chemical",
-    label: "化工行业",
-    description: "适合需要关注品名、规格、包装、批次和危险品说明的场景。",
-    rulesText:
-      "额外关注化学品名称、规格型号、包装方式、危险品说明、批次信息和运输条件；任何规格或包装等级差异都应重点提示。",
-    companyAffiliates: []
-  },
-  {
-    id: "blank",
-    label: "空白 / 不使用模板",
-    description: "不带预设规则，从零开始配置审核要求。",
-    rulesText: "",
-    companyAffiliates: []
-  }
 ];
 
 const RULES_IMPORT_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
@@ -105,7 +69,7 @@ const initialFormState: WizardFormState = {
   hasDeepseekKey: false,
   hasZhipuKey: false,
   hasZhipuOcrKey: false,
-  selectedTemplateId: "generic-order",
+  businessBackground: "",
   ruleMode: "ai",
   manualRulesText: "",
   sessionId: null,
@@ -175,8 +139,16 @@ const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
   "glm-4-flash": "glm-4.6v-flash"
 };
 
+const DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
+  "deepseek-chat": "deepseek-v4-flash",
+  "deepseek-reasoner": "deepseek-v4-pro"
+};
+
 function normalizeModelForDisplay(model: string) {
   const normalized = model.trim().toLowerCase();
+  if (normalized in DEEPSEEK_LEGACY_MODEL_MAP) {
+    return DEEPSEEK_LEGACY_MODEL_MAP[normalized];
+  }
   if (normalized in ZHIPU_LEGACY_MODEL_MAP) {
     return ZHIPU_LEGACY_MODEL_MAP[normalized];
   }
@@ -194,13 +166,6 @@ function getRequiredApiKey(
     return form.deepseekApiKey.trim() || (form.hasDeepseekKey ? "__saved__" : "");
   }
   return form.zhipuApiKey.trim() || (form.hasZhipuKey ? "__saved__" : "");
-}
-
-function mergeRuleText(existing: string, incoming: string) {
-  const lines = [...existing.split("\n"), ...incoming.split("\n")]
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return Array.from(new Set(lines)).join("\n");
 }
 
 function mergeAffiliates(
@@ -224,10 +189,6 @@ function getStepValidationMessage(step: number, state: WizardFormState) {
     if (!getRequiredApiKey(state.provider, state)) {
       return "请填写当前模型对应的必填密钥后再继续。";
     }
-  }
-
-  if (step === 1 && !state.selectedTemplateId) {
-    return "请先选择一个模板，空白模板也算有效选择。";
   }
 
   if (step === 2 && state.ruleMode === "ai") {
@@ -259,19 +220,9 @@ export function WizardContainer() {
   const [testingProvider, setTestingProvider] = useState<
     "openai" | "deepseek" | "zhipuai" | null
   >(null);
-  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [pendingTemplateId, setPendingTemplateId] =
-    useState<WizardTemplateOptionId | null>(null);
   const [skipDialogOpen, setSkipDialogOpen] = useState(false);
   const [wizardCompleted, setWizardCompleted] = useState(false);
   const [forceRestart, setForceRestart] = useState(false);
-
-  const selectedTemplate = useMemo(
-    () =>
-      templateOptions.find((item) => item.id === form.selectedTemplateId) ??
-      templateOptions[0],
-    [form.selectedTemplateId]
-  );
 
   const finalRules = useMemo(() => {
     if (form.ruleMode === "manual") {
@@ -282,16 +233,6 @@ export function WizardContainer() {
     }
     return form.generatedRules;
   }, [form.generatedRules, form.manualRulesText, form.ruleMode]);
-
-  const hasTemplateSensitiveState = useMemo(
-    () =>
-      Boolean(
-        form.manualRulesText.trim() ||
-          form.generatedRules.length > 0 ||
-          form.chatMessages.length > 0
-      ),
-    [form.chatMessages.length, form.generatedRules.length, form.manualRulesText]
-  );
 
   const loadProfile = useCallback(async (token: string) => {
     setProfileLoading(true);
@@ -363,7 +304,7 @@ export function WizardContainer() {
             provider === "openai"
               ? "gpt-4o"
               : provider === "deepseek"
-                ? "deepseek-chat"
+                ? "deepseek-v4-flash"
                 : "glm-4.6v";
         }
 
@@ -382,99 +323,6 @@ export function WizardContainer() {
       });
     },
     []
-  );
-
-  const applyTemplateSelection = useCallback(
-    (templateId: WizardTemplateOptionId, mode: "direct" | "overwrite" | "append") => {
-      const template =
-        templateOptions.find((item) => item.id === templateId) ?? templateOptions[0];
-      const templateRules = template.rulesText.trim();
-      const mergedRoles = mergeAffiliates(
-        mode === "overwrite" ? [] : form.affiliateRoles,
-        template.companyAffiliates
-      );
-
-      setForm((previous) => {
-        if (mode === "overwrite") {
-          return {
-            ...previous,
-            selectedTemplateId: templateId,
-            manualRulesText: templateRules,
-            generatedRules: [],
-            generatedAffiliates: template.companyAffiliates,
-            aiCompleted: false,
-            aiRulesConfirmed: false,
-            sessionId: null,
-            chatMessages: [],
-            chatInput: "",
-            companyMode: template.companyAffiliates.length > 0 ? "group" : "single",
-            affiliateRoles: mergedRoles
-          };
-        }
-
-        const nextManualRules =
-          mode === "append"
-            ? mergeRuleText(previous.manualRulesText, templateRules)
-            : previous.manualRulesText.trim()
-              ? previous.manualRulesText
-              : templateRules;
-
-        return {
-          ...previous,
-          selectedTemplateId: templateId,
-          manualRulesText: nextManualRules,
-          generatedAffiliates:
-            previous.generatedAffiliates.length > 0
-              ? Array.from(
-                  new Set([...previous.generatedAffiliates, ...template.companyAffiliates])
-                )
-              : template.companyAffiliates,
-          companyMode:
-            mergedRoles.length > 0 || previous.companyMode === "group"
-              ? "group"
-              : previous.companyMode,
-          affiliateRoles:
-            mergedRoles.length > 0 ? mergedRoles : previous.affiliateRoles
-        };
-      });
-    },
-    [form.affiliateRoles]
-  );
-
-  const handleTemplateSelection = useCallback(
-    (templateId: WizardTemplateOptionId) => {
-      if (templateId === form.selectedTemplateId) {
-        return;
-      }
-
-      if (!hasTemplateSensitiveState) {
-        applyTemplateSelection(templateId, "direct");
-        return;
-      }
-
-      setPendingTemplateId(templateId);
-      setTemplateDialogOpen(true);
-    },
-    [
-      applyTemplateSelection,
-      form.selectedTemplateId,
-      hasTemplateSensitiveState
-    ]
-  );
-
-  const handleTemplateDialogAction = useCallback(
-    (mode: "overwrite" | "append" | "cancel") => {
-      if (mode === "cancel" || !pendingTemplateId) {
-        setTemplateDialogOpen(false);
-        setPendingTemplateId(null);
-        return;
-      }
-
-      applyTemplateSelection(pendingTemplateId, mode);
-      setTemplateDialogOpen(false);
-      setPendingTemplateId(null);
-    },
-    [applyTemplateSelection, pendingTemplateId]
   );
 
   const handleTestConnection = useCallback(async () => {
@@ -540,9 +388,7 @@ export function WizardContainer() {
         "/wizard/start",
         {
           first_message: firstMessage,
-          selected_template:
-            selectedTemplate.id === "blank" ? null : selectedTemplate.label,
-          template_rules: selectedTemplate.rulesText || null,
+          business_background: form.businessBackground.trim() || null,
           provider: form.provider
         },
         { token: form.token }
@@ -563,7 +409,7 @@ export function WizardContainer() {
     } finally {
       setChatLoading(false);
     }
-  }, [form.manualRulesText, form.provider, form.token, selectedTemplate]);
+  }, [form.businessBackground, form.manualRulesText, form.provider, form.token]);
 
   const handleSendChatMessage = useCallback(
     async (message: string) => {
@@ -843,9 +689,10 @@ export function WizardContainer() {
       case "template":
         return (
           <StepIndustryTemplate
-            options={templateOptions}
-            selectedTemplateId={form.selectedTemplateId}
-            onSelect={handleTemplateSelection}
+            businessBackground={form.businessBackground}
+            onBusinessBackgroundChange={(value) =>
+              updateField("businessBackground", value)
+            }
           />
         );
       case "rules":
@@ -929,7 +776,7 @@ export function WizardContainer() {
             provider={form.provider}
             selectedModel={form.selectedModel}
             deepThinkEnabled={form.deepThinkEnabled}
-            selectedTemplate={selectedTemplate}
+            businessBackground={form.businessBackground}
             ruleMode={form.ruleMode}
             finalRules={finalRules}
             companyMode={form.companyMode}
@@ -1032,7 +879,7 @@ export function WizardContainer() {
                   AI 引导向导
                 </h1>
                 <p className="max-w-3xl text-sm font-bold leading-6 md:text-base">
-                  跟着步骤完成模型、行业模板、审核规则和公司架构设置，之后就可以进入订单审核。
+                  跟着步骤完成模型、业务背景、审核规则和公司架构设置，之后就可以进入订单审核。
                 </p>
               </div>
             </div>
@@ -1072,7 +919,7 @@ export function WizardContainer() {
           <footer className="neo-panel p-4 md:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <p className="text-sm font-bold leading-6">
-                当前步骤：{steps[currentStep].label}。后退时不会清空已填内容；如果回到模板步骤后切换模板，会给出覆盖或保留当前规则的确认。
+                当前步骤：{steps[currentStep].label}。后退时不会清空已填内容；业务背景只会帮助 AI 更好地追问，不会单独保存成规则体系。
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button
@@ -1099,35 +946,6 @@ export function WizardContainer() {
       </div>
 
       <Dialog
-        open={templateDialogOpen}
-        onClose={() => handleTemplateDialogAction("cancel")}
-        title="切换模板会影响当前规则"
-        description="你已经有现有规则或对话记录。请选择是重新开始，还是保留当前规则并把新模板追加进来。"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => handleTemplateDialogAction("cancel")}>
-              取消
-            </Button>
-            <Button variant="secondary" onClick={() => handleTemplateDialogAction("append")}>
-              追加并保留当前规则
-            </Button>
-            <Button onClick={() => handleTemplateDialogAction("overwrite")}>
-              覆盖并重新开始
-            </Button>
-          </>
-        }
-      >
-        <DialogSection>
-          <p className="text-sm font-bold leading-6">
-            覆盖：会清空当前 AI 对话与已生成规则，以新模板重新开始。
-          </p>
-          <p className="text-sm font-bold leading-6">
-            追加：会保留当前规则和对话，并把新模板规则追加到手动编辑器作为上下文。
-          </p>
-        </DialogSection>
-      </Dialog>
-
-      <Dialog
         open={skipDialogOpen}
         onClose={() => setSkipDialogOpen(false)}
         title="跳过引导，直接使用"
@@ -1145,7 +963,7 @@ export function WizardContainer() {
       >
         <DialogSection>
           <p className="text-sm font-bold leading-6">
-            这不会自动导入新的模板规则，只会保存当前页面收集到的模型、规则和公司架构。
+            这只会保存当前页面收集到的模型、规则和公司架构。业务背景用于辅助 AI 引导，不会单独保存成规则体系。
           </p>
         </DialogSection>
       </Dialog>

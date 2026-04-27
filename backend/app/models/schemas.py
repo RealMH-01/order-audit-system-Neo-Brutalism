@@ -629,6 +629,8 @@ class WizardStartRequest(BaseModel):
     """Wizard start request."""
 
     first_message: str | None = None
+    business_background: str | None = None
+    business_context: str | None = None
     selected_template: str | None = None
     template_rules: str | None = None
     provider: Literal["openai", "deepseek", "zhipuai"] | None = None

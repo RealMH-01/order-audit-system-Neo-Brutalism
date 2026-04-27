@@ -13,15 +13,14 @@ import {
 import type {
   WizardAffiliateRole,
   WizardProvider,
-  WizardRuleMode,
-  WizardTemplateOption
+  WizardRuleMode
 } from "@/components/wizard/types";
 
 type StepConfirmProps = {
   provider: WizardProvider;
   selectedModel: string;
   deepThinkEnabled: boolean;
-  selectedTemplate: WizardTemplateOption;
+  businessBackground: string;
   ruleMode: WizardRuleMode;
   finalRules: string[];
   companyMode: "single" | "group";
@@ -37,7 +36,7 @@ export function StepConfirm({
   provider,
   selectedModel,
   deepThinkEnabled,
-  selectedTemplate,
+  businessBackground,
   ruleMode,
   finalRules,
   companyMode,
@@ -84,9 +83,11 @@ export function StepConfirm({
         <Card className="bg-paper">
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div className="space-y-2">
-              <Badge variant="secondary">行业模板</Badge>
-              <CardTitle>{selectedTemplate.label}</CardTitle>
-              <CardDescription>{selectedTemplate.description}</CardDescription>
+              <Badge variant="secondary">业务背景</Badge>
+              <CardTitle>行业或业务场景</CardTitle>
+              <CardDescription>
+                这段背景只用于 AI 引导提问和生成初始自定义规则。
+              </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(1)}>
               <ArrowLeftRight size={18} strokeWidth={3} />
@@ -95,7 +96,8 @@ export function StepConfirm({
           </CardHeader>
           <CardContent>
             <p className="whitespace-pre-line text-sm font-bold leading-6">
-              {selectedTemplate.rulesText || "当前没有使用预设模板规则。"}
+              {businessBackground.trim() ||
+                "未填写，将按通用订单审核场景继续。"}
             </p>
           </CardContent>
         </Card>

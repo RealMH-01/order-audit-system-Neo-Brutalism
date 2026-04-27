@@ -41,7 +41,7 @@ WIZARD_SYSTEM_PROMPT = """
 2. 每次只问 1 到 2 个问题，不要像机械表单一样追问。
 3. 如果用户说“没有”“不确定”“不需要”“一般一样”，请自然跳过当前主题，不要死追问。
 4. 语气要像资深同事带新人，简洁、温和、专业。
-5. 如果用户选择了行业模板或描述了行业、公司信息、订单类型，请基于这些上下文生成规则；如果没有行业信息，请保持采购、销售、履约、订单审核等中性表达。
+5. 如果用户描述了业务背景、行业、公司信息或订单类型，请基于这些上下文生成规则；如果没有行业信息，请保持采购、销售、履约、订单审核等中性表达。
 6. 生成规则时要覆盖关键字段一致性、金额数量、主体信息、日期交付、附件完整性、业务例外和人工复核触发条件，不要输出空泛建议。
 7. 当信息已经足够生成审核规则时，请先用自然语言做一个简短总结，然后在回复最后追加一个 fenced json 代码块。
 
@@ -57,7 +57,7 @@ WIZARD_SYSTEM_PROMPT = """
 注意：
 - generated_rules 必须是可以直接写入系统的审核规则要点列表。
 - generated_affiliates 只保留用户明确提到的集团关联公司或关联主体。
-- 不要默认假设用户是外贸公司；只有当用户选择外贸模板或明确说明外贸场景时，才使用外贸、报关、贸易术语等行业表达。
+- 不要默认假设用户是外贸公司；只有当用户明确说明外贸场景时，才使用外贸、报关、贸易术语等行业表达。
 - 如果信息还不够，请不要输出完成标记。
 """.strip()
 
@@ -71,6 +71,7 @@ class WizardSession:
     provider: str
     api_key: str | None
     selected_model: str
+    business_background: str | None
     selected_template: str | None
     template_rules: str | None
     messages: list[dict[str, str]] = field(default_factory=list)
@@ -133,10 +134,15 @@ class WizardEngineService:
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         provider = self.llm_client._resolve_provider(payload.provider, selected_model)
         api_key = self._resolve_api_key(profile, provider)
+        business_background = self._resolve_business_background(payload)
         selected_template, template_rules = self._resolve_template_context(payload)
 
         session_id = str(uuid4())
-        initial_message = self.build_wizard_initial_message(selected_template, template_rules)
+        initial_message = self.build_wizard_initial_message(
+            business_background,
+            selected_template,
+            template_rules,
+        )
 
         session = WizardSession(
             session_id=session_id,
@@ -144,6 +150,7 @@ class WizardEngineService:
             provider=provider,
             api_key=api_key,
             selected_model=selected_model,
+            business_background=business_background,
             selected_template=selected_template,
             template_rules=template_rules,
             messages=[
@@ -254,30 +261,39 @@ class WizardEngineService:
 
     def build_wizard_initial_message(
         self,
+        business_background: str | None,
         selected_template: str | None,
         template_rules: str | None,
     ) -> str:
-        """根据模板上下文生成自然的第一条引导消息。"""
+        """根据业务背景生成自然的第一条引导消息，并保留旧模板字段兼容。"""
 
+        background = (business_background or "").strip()
         template_name = (selected_template or "").strip()
         template_text = (template_rules or "").strip()
+
+        if background:
+            return (
+                f"我会先参考你提供的业务背景：{background[:220]}。"
+                "接下来我会围绕这个场景逐步追问，帮你整理可执行的审核规则。"
+                "先告诉我：这个背景里有没有公司主体或业务角色需要特别区分？"
+            )
 
         if not template_name or template_name in {"generic", "default"}:
             return (
                 "我们先从最基础的场景开始。我会像老同事带新人一样，帮你一点点把审核规则理顺。"
-                "先告诉我两件事：你现在主要审核哪些订单或业务文件，和你们这个业务最怕出错的点是什么？"
+                "你可以先简单说说公司主体、常见业务文件或任何需要特别说明的背景；如果暂时没有，我会按通用订单审核场景继续提问。"
             )
 
         if template_text:
             return (
-                f"我先按你选的模板“{template_name}”做参考，这样我们不用从零开始。"
-                f"我看到模板里已经强调了这些方向：{template_text[:180]}。"
-                "接下来我只想确认两点：这个模板在哪些地方还不够贴合你们实际业务？你们公司有没有集团关联公司或多个主体需要特别区分？"
+                f"我会把历史向导上下文中的业务方向“{template_name}”作为参考。"
+                f"其中已有这些关注点：{template_text[:180]}。"
+                "接下来我会继续确认：你们公司有没有集团关联公司或多个主体需要特别区分？"
             )
 
         return (
-            f"我们先以“{template_name}”这个模板为基础往下收细节。"
-            "你先告诉我：这个模板最需要补强的是哪一类规则？另外你们有没有固定客户要求或内部特殊要求？"
+            f"我会把历史向导上下文中的业务方向“{template_name}”作为参考继续往下收细节。"
+            "你先告诉我：你们有没有固定客户要求、内部特殊要求或需要区分的公司主体？"
         )
 
     def cleanup_expired_sessions(self) -> int:
@@ -399,6 +415,13 @@ class WizardEngineService:
                 return str(template.get("name")), str(template.get("rules_text") or "")
 
         return selected, None
+
+    @staticmethod
+    def _resolve_business_background(payload: WizardStartRequest) -> str | None:
+        """解析业务背景；business_context 仅作为兼容别名。"""
+
+        background = (payload.business_background or payload.business_context or "").strip()
+        return background or None
 
     def _save_profile(self, user_id: str, profile: dict[str, object]) -> dict[str, object]:
         if self.repo is not None:
