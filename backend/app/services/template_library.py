@@ -230,12 +230,12 @@ class TemplateLibraryService:
     ) -> ResolvedAuditTemplateRules:
         """Resolve the actual audit-rule stack used by an audit run."""
 
-        selected_template = self._resolve_template_for_run(current_user.id, template_id)
+        resolved_template = self._resolve_template_for_run(current_user.id, template_id)
         sections = [self._format_system_hard_rules()]
 
-        if selected_template is not None:
-            if selected_template.supplemental_rules.strip():
-                sections.append(f"【模板补充规则】\n{selected_template.supplemental_rules.strip()}")
+        if resolved_template is not None:
+            if resolved_template.supplemental_rules.strip():
+                sections.append(f"【模板补充规则】\n{resolved_template.supplemental_rules.strip()}")
 
         clean_temporary_rules = [
             rule.strip()
@@ -249,10 +249,10 @@ class TemplateLibraryService:
             )
 
         return ResolvedAuditTemplateRules(
-            template=selected_template,
+            template=resolved_template,
             rules_text="\n\n".join(section for section in sections if section.strip()),
             rule_snapshot=self._build_rule_snapshot(
-                selected_template=selected_template,
+                resolved_template=resolved_template,
                 temporary_rules=clean_temporary_rules,
             ),
         )
@@ -307,7 +307,7 @@ class TemplateLibraryService:
     def _build_rule_snapshot(
         self,
         *,
-        selected_template: AuditTemplateResponse | None,
+        resolved_template: AuditTemplateResponse | None,
         temporary_rules: list[str],
     ) -> dict[str, Any]:
         resolved_sections = [
@@ -317,11 +317,11 @@ class TemplateLibraryService:
             },
         ]
 
-        if selected_template is not None and selected_template.supplemental_rules.strip():
+        if resolved_template is not None and resolved_template.supplemental_rules.strip():
             resolved_sections.append(
                 {
                     "title": "模板补充规则",
-                    "rules": [selected_template.supplemental_rules.strip()],
+                    "rules": [resolved_template.supplemental_rules.strip()],
                 }
             )
         if temporary_rules:
@@ -340,7 +340,7 @@ class TemplateLibraryService:
                 "version": SYSTEM_HARD_RULES.version,
                 "rules": [rule.model_dump(mode="json") for rule in SYSTEM_HARD_RULES.rules],
             },
-            "template": self._template_snapshot(selected_template),
+            "template": self._template_snapshot(resolved_template),
             "run_supplemental_rules": list(temporary_rules),
             "resolved_sections": resolved_sections,
         }

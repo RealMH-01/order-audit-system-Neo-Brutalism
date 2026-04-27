@@ -72,8 +72,6 @@ class WizardSession:
     api_key: str | None
     selected_model: str
     business_background: str | None
-    selected_template: str | None
-    template_rules: str | None
     messages: list[dict[str, str]] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_active_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -135,14 +133,9 @@ class WizardEngineService:
         provider = self.llm_client._resolve_provider(payload.provider, selected_model)
         api_key = self._resolve_api_key(profile, provider)
         business_background = self._resolve_business_background(payload)
-        selected_template, template_rules = self._resolve_template_context(payload)
 
         session_id = str(uuid4())
-        initial_message = self.build_wizard_initial_message(
-            business_background,
-            selected_template,
-            template_rules,
-        )
+        initial_message = self.build_wizard_initial_message(business_background)
 
         session = WizardSession(
             session_id=session_id,
@@ -151,8 +144,6 @@ class WizardEngineService:
             api_key=api_key,
             selected_model=selected_model,
             business_background=business_background,
-            selected_template=selected_template,
-            template_rules=template_rules,
             messages=[
                 {"role": "system", "content": WIZARD_SYSTEM_PROMPT},
                 {"role": "assistant", "content": initial_message},
@@ -262,15 +253,10 @@ class WizardEngineService:
     def build_wizard_initial_message(
         self,
         business_background: str | None,
-        selected_template: str | None,
-        template_rules: str | None,
     ) -> str:
-        """根据业务背景生成自然的第一条引导消息，并保留旧模板字段兼容。"""
+        """根据业务背景生成自然的第一条引导消息。"""
 
         background = (business_background or "").strip()
-        template_name = (selected_template or "").strip()
-        template_text = (template_rules or "").strip()
-
         if background:
             return (
                 f"我会先参考你提供的业务背景：{background[:220]}。"
@@ -278,22 +264,10 @@ class WizardEngineService:
                 "先告诉我：这个背景里有没有公司主体或业务角色需要特别区分？"
             )
 
-        if not template_name or template_name in {"generic", "default"}:
-            return (
-                "我们先从最基础的场景开始。我会像老同事带新人一样，帮你一点点把审核规则理顺。"
-                "你可以先简单说说公司主体、常见业务文件或任何需要特别说明的背景；如果暂时没有，我会按通用订单审核场景继续提问。"
-            )
-
-        if template_text:
-            return (
-                f"我会把历史向导上下文中的业务方向“{template_name}”作为参考。"
-                f"其中已有这些关注点：{template_text[:180]}。"
-                "接下来我会继续确认：你们公司有没有集团关联公司或多个主体需要特别区分？"
-            )
-
         return (
-            f"我会把历史向导上下文中的业务方向“{template_name}”作为参考继续往下收细节。"
-            "你先告诉我：你们有没有固定客户要求、内部特殊要求或需要区分的公司主体？"
+            "我们先从最基础的场景开始。我会像有经验的同事带新人一样，帮你一点点把审核规则理顺。"
+            "你可以先简单说说公司主体、常见业务文件或任何需要特别说明的背景；"
+            "如果暂时没有，我会按通用订单审核场景继续提问。"
         )
 
     def cleanup_expired_sessions(self) -> int:
@@ -389,32 +363,6 @@ class WizardEngineService:
         if not profile:
             raise AppError("当前用户资料不存在，请重新登录后再试。", status_code=404)
         return profile
-
-    def _resolve_template_context(self, payload: WizardStartRequest) -> tuple[str | None, str | None]:
-        """解析模板名称与模板规则文本。"""
-
-        if payload.template_rules:
-            return payload.selected_template, payload.template_rules
-
-        selected = (payload.selected_template or "").strip()
-        if not selected:
-            return None, None
-
-        if self.repo is not None:
-            template = self.repo.get_template(selected)
-            if template:
-                self.store.templates[str(template["id"])] = template
-                return str(template.get("name") or selected), str(template.get("rules_text") or "")
-
-        if selected in self.store.templates:
-            template = self.store.templates[selected]
-            return str(template.get("name") or selected), str(template.get("rules_text") or "")
-
-        for template in self.store.templates.values():
-            if str(template.get("name", "")).strip() == selected:
-                return str(template.get("name")), str(template.get("rules_text") or "")
-
-        return selected, None
 
     @staticmethod
     def _resolve_business_background(payload: WizardStartRequest) -> str | None:
