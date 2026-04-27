@@ -9,6 +9,10 @@ export type ApiError = {
   detail: string;
 };
 
+export type MessageResponse = {
+  message: string;
+};
+
 export type AuthUser = {
   id: string;
   email: string;

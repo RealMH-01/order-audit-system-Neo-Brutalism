@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import httpx
+
 from app.config import Settings
 from app.db.repository import SupabaseRepository
 from app.db.supabase_client import (
@@ -32,6 +34,9 @@ from app.services.runtime_store import RuntimeStore
 logger = logging.getLogger(__name__)
 
 AUTH_CACHE_TTL_SECONDS = 300
+PASSWORD_RESET_SENT_MESSAGE = "如果该邮箱已注册，我们会发送密码重置邮件。"
+PASSWORD_RESET_UNSUPPORTED_MESSAGE = "当前认证服务暂不支持在线重置密码，请联系管理员重置。"
+PASSWORD_RESET_CONFIRM_MESSAGE = "密码已重置，请使用新密码重新登录。"
 
 
 class AuthService:
@@ -267,6 +272,73 @@ class AuthService:
         return AuthTokenResponse(access_token=access_token, user=current_user)
 
     # ------------------------------------------------------------------
+    # Password reset
+    # ------------------------------------------------------------------
+
+    def request_password_reset(
+        self,
+        payload: "PasswordResetRequest",
+        *,
+        request_origin: str | None = None,
+    ) -> str:
+        """Send a Supabase password-reset email without exposing account existence."""
+
+        if not is_supabase_auth_available(self.settings):
+            logger.info("Password reset requested while Supabase Auth is unavailable.")
+            raise AppError(PASSWORD_RESET_UNSUPPORTED_MESSAGE, status_code=503)
+
+        email = payload.email.lower()
+        redirect_to = self._resolve_password_reset_redirect(request_origin)
+
+        try:
+            self._supabase_auth_request(
+                "POST",
+                "/auth/v1/recover",
+                params={"redirect_to": redirect_to},
+                json_body={"email": email},
+            )
+        except AppError as exc:
+            if self._is_account_lookup_error(exc.message):
+                logger.info("Password reset requested for an unknown email.")
+                return PASSWORD_RESET_SENT_MESSAGE
+            logger.error("Supabase password reset email failed: %s", exc.message)
+            raise AppError(
+                "密码重置邮件暂时无法发送，请稍后重试或联系管理员。",
+                status_code=502,
+            ) from exc
+        except Exception as exc:
+            logger.error("Unexpected password reset email failure: %s", exc)
+            raise AppError(
+                "密码重置邮件暂时无法发送，请稍后重试或联系管理员。",
+                status_code=502,
+            ) from exc
+
+        return PASSWORD_RESET_SENT_MESSAGE
+
+    def confirm_password_reset(self, payload: "PasswordResetConfirmRequest") -> str:
+        """Update a password after Supabase has verified the email reset link."""
+
+        if not is_supabase_auth_available(self.settings):
+            logger.info("Password reset confirmation attempted without Supabase Auth.")
+            raise AppError(PASSWORD_RESET_UNSUPPORTED_MESSAGE, status_code=503)
+
+        try:
+            self._supabase_auth_request(
+                "PUT",
+                "/auth/v1/user",
+                json_body={"password": payload.password},
+                user_access_token=payload.access_token.strip(),
+            )
+        except Exception as exc:
+            logger.warning("Supabase password update failed: %s", exc)
+            raise AppError(
+                "密码重置失败或链接已过期，请重新申请重置邮件。",
+                status_code=400,
+            ) from exc
+
+        return PASSWORD_RESET_CONFIRM_MESSAGE
+
+    # ------------------------------------------------------------------
     # Current user
     # ------------------------------------------------------------------
 
@@ -459,6 +531,70 @@ class AuthService:
                 "用户资料初始化失败，请稍后重试或联系管理员。",
                 status_code=500,
             ) from exc
+
+    def _resolve_password_reset_redirect(self, request_origin: str | None) -> str:
+        if request_origin and request_origin in self.settings.password_reset_local_origins:
+            return f"{request_origin.rstrip('/')}/reset-password"
+        return self.settings.password_reset_redirect_url
+
+    def _supabase_auth_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json_body: Any = None,
+        user_access_token: str | None = None,
+    ) -> Any:
+        if not self.settings.supabase_url or not self.settings.supabase_anon_key:
+            raise AppError("Supabase Auth is not configured.", status_code=500)
+
+        headers = {
+            "apikey": self.settings.supabase_anon_key,
+            "Authorization": (
+                f"Bearer {user_access_token}"
+                if user_access_token
+                else f"Bearer {self.settings.supabase_anon_key}"
+            ),
+        }
+        if json_body is not None:
+            headers["Content-Type"] = "application/json"
+
+        response = httpx.request(
+            method=method,
+            url=f"{self.settings.supabase_url.rstrip('/')}{path}",
+            headers=headers,
+            params=params,
+            json=json_body,
+            timeout=30.0,
+            trust_env=False,
+        )
+        if response.status_code >= 400:
+            detail = response.text.strip() or response.reason_phrase
+            raise AppError(
+                f"Supabase auth request failed: {detail}",
+                status_code=response.status_code,
+            )
+        if not response.text.strip():
+            return {}
+        try:
+            return response.json()
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _is_account_lookup_error(message: str) -> bool:
+        normalized = message.lower()
+        return any(
+            marker in normalized
+            for marker in (
+                "user not found",
+                "email not found",
+                "not found",
+                "user does not exist",
+                "email address not found",
+            )
+        )
 
     def _issue_fallback_token(self, user_id: str) -> AuthTokenResponse:
         token = secrets.token_urlsafe(24)

@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_anon_key: str = ""
     encryption_key: str = ""
+    password_reset_redirect_url: str = (
+        "https://order-audit-system-neo-brutalism.vercel.app/reset-password"
+    )
+    password_reset_local_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     openai_api_key: str = ""
     openai_base_url: str = ""
@@ -46,6 +52,18 @@ class Settings(BaseSettings):
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def split_allowed_origins(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("["):
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("password_reset_local_origins", mode="before")
+    @classmethod
+    def split_password_reset_local_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             stripped = value.strip()
             if stripped.startswith("["):

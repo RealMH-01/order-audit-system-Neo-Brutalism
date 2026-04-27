@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.db.supabase_client import is_supabase_auth_available
 from app.dependencies import get_auth_service, get_current_user
@@ -9,6 +9,9 @@ from app.models.schemas import (
     AuthTokenResponse,
     CurrentUser,
     FeatureStatus,
+    MessageResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
 )
 from app.services.auth_service import AuthService
 
@@ -65,6 +68,27 @@ async def login(
     service: AuthService = Depends(get_auth_service),
 ) -> AuthTokenResponse:
     return service.login(payload)
+
+
+@router.post("/password-reset/request", response_model=MessageResponse)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    message = service.request_password_reset(
+        payload,
+        request_origin=request.headers.get("origin"),
+    )
+    return MessageResponse(message=message)
+
+
+@router.post("/password-reset/confirm", response_model=MessageResponse)
+async def confirm_password_reset(
+    payload: PasswordResetConfirmRequest,
+    service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    return MessageResponse(message=service.confirm_password_reset(payload))
 
 
 @router.get("/me", response_model=CurrentUser)

@@ -77,6 +77,19 @@ class AuthLoginRequest(BaseModel):
     password: str = Field(min_length=6)
 
 
+class PasswordResetRequest(BaseModel):
+    """Password reset email request."""
+
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    """Password reset confirmation request."""
+
+    access_token: str = Field(min_length=1)
+    password: str = Field(min_length=6)
+
+
 class CurrentUser(BaseModel):
     """Simplified current-user model."""
 
