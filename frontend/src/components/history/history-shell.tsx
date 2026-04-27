@@ -19,10 +19,10 @@ import type {
   HistoryStatusFilter
 } from "@/components/history/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SectionHeading } from "@/components/ui/section-heading";
-import { apiGet, getStoredAccessToken } from "@/lib/api";
+import { Button } from @/components/ui/button;
+import { Card, CardContent, CardHeader, CardTitle } from @/components/ui/card;
+import { SectionHeading } from @/components/ui/section-heading;
+import { apiGet, getStoredAccessToken } from @/lib/api;
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -36,7 +36,7 @@ export function HistoryShell() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<HistoryDetailResponse["item"] | null>(null);
+  const [detail, setDetail] = useState<HistoryDetailResponse[item] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [filter, setFilter] = useState<HistoryStatusFilter>("ALL");
@@ -166,7 +166,7 @@ export function HistoryShell() {
       />
 
       <div className="border-2 border-black bg-emerald-100 px-3 py-2 text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-        审核报告已持久化保存，你可以随时从历史记录中下载。早期未关联报告的记录会显示"不可用"。
+        审核报告已持久化保存，你可以随时从历史记录中下载。早期未关联报告的记录会显示“不可用”。
       </div>
 
       <Card className="bg-secondary">
