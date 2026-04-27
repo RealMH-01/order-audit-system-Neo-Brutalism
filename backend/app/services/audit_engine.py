@@ -705,12 +705,33 @@ Cross-check instructions:
                 field_name=field_name,
             )
             confidence = self._clamp_confidence(raw_issue.get("confidence", 0.5))
-            finding = str(
+            finding_raw = (
                 raw_issue.get("finding")
                 or raw_issue.get("message")
                 or raw_issue.get("issue")
-                or "模型返回了不完整的问题描述。"
-            ).strip()
+                or ""
+            )
+            finding = str(finding_raw).strip()
+
+            if not finding:
+                fallback_parts: list[str] = []
+                if raw_issue.get("field_name"):
+                    fallback_parts.append(f"字段「{raw_issue['field_name']}」")
+                sv = str(raw_issue.get("source_value") or "").strip()
+                yv = str(raw_issue.get("your_value") or "").strip()
+                if sv and yv and sv != yv:
+                    fallback_parts.append(f"基准值为 {sv}，目标值为 {yv}，两者不一致")
+                elif sv:
+                    fallback_parts.append(f"基准值为 {sv}")
+                elif yv:
+                    fallback_parts.append(f"目标值为 {yv}")
+                sug = str(raw_issue.get("suggestion") or raw_issue.get("recommended_action") or "").strip()
+                if sug and not fallback_parts:
+                    fallback_parts.append(sug)
+                if fallback_parts:
+                    finding = "，".join(fallback_parts) + "。"
+                else:
+                    finding = "模型返回了不完整的问题描述。"
             suggestion = str(
                 raw_issue.get("suggestion")
                 or raw_issue.get("recommended_action")
