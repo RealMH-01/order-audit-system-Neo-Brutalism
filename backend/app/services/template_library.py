@@ -80,6 +80,16 @@ SYSTEM_HARD_RULES = SystemHardRulesResponse(
                 "注意：仅在其余部分完全一致且差异极小时才做此判定，避免将两个独立编号误判为录入错误。"
             ),
         ),
+        SystemHardRuleItem(
+            code="invoice_no_equals_contract_no",
+            title="发票号与合同号相同属于正常业务惯例",
+            content=(
+                "在部分业务场景中，Commercial Invoice（CI）和 Packing List（PL）上的发票号"
+                "与 PO/合同中的合同号是同一个编号，这是允许且常见的业务惯例，不属于编号混用或录入错误。"
+                "当目标单据的发票号与 PO 的合同号完全一致时，不应标记为风险问题。"
+                "仅当发票号与合同号存在实际差异（如少字符、多字符、数字不同）时，才应按差异程度标记为 RED 或 YELLOW。"
+            ),
+        ),
     ],
 )
 

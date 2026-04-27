@@ -423,7 +423,8 @@ class AuditOrchestratorService:
             for idx, issue in enumerate(cross_issues, 1):
                 if isinstance(issue, dict):
                     issue["id"] = f"X-{idx:02d}"
-                    issue["source"] = issue.get("source", "多目标文件交叉检查")
+                    issue["source"] = "多目标文件交叉检查"
+                    issue["field_location"] = "多目标文件交叉检查"
             # 追加到 aggregate_result 的 issues 列表
             agg_issues = aggregate_result.get("issues")
             if isinstance(agg_issues, list):
