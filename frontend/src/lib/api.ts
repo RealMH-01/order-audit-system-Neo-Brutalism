@@ -217,6 +217,11 @@ export async function downloadAuditReport(
       }
     }
 
+    // 对常见技术性错误返回友好文案
+    if (response.status === 404) {
+      detail = "报告文件暂不可用，可能已过期或尚未生成，请重新运行审核。";
+    }
+
     const error: ApiError = {
       status: response.status,
       detail
