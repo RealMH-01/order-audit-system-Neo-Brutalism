@@ -226,8 +226,22 @@ class FileParserService:
             raise AppError("当前环境缺少 python-docx，暂时无法解析 Word 文件。", status_code=500)
 
         document = Document(io.BytesIO(file_bytes))
+        parts: list[str] = []
+
         paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
-        text = "\n".join(paragraphs)
+        if paragraphs:
+            parts.append("--- 文档内容 ---")
+            parts.extend(paragraphs)
+
+        if document.tables:
+            for t_idx, table in enumerate(document.tables, start=1):
+                parts.append(f"\n[表格 {t_idx}]")
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    parts.append("| " + " | ".join(cells) + " |")
+
+        text = "\n".join(parts) if parts else ""
+        self._log_diag_text("docx_parse", text, filename=filename)
         return {
             "text": text,
             "page_count": 1,

@@ -284,20 +284,9 @@ class TemplateLibraryService:
         """Resolve the actual audit-rule stack used by an audit run."""
 
         selected_template = self._resolve_template_for_run(current_user.id, template_id)
-        base_package = self._get_rule_package_by_code("base_common_v1")
-        business_package = None
+        sections = [self._format_system_hard_rules()]
+
         if selected_template is not None:
-            business_code = f"{selected_template.business_type}_v1"
-            business_package = self._get_rule_package_by_code(business_code)
-
-        sections = [
-            self._format_system_hard_rules(),
-            self._format_rule_package("基础通用规则", base_package),
-        ]
-
-        if selected_template is not None and business_package is not None:
-            business_label = "内贸" if selected_template.business_type == "domestic" else "外贸"
-            sections.append(self._format_rule_package(f"业务场景规则：{business_label}", business_package))
             if selected_template.supplemental_rules.strip():
                 sections.append(f"【模板补充规则】\n{selected_template.supplemental_rules.strip()}")
 
@@ -317,8 +306,8 @@ class TemplateLibraryService:
             rules_text="\n\n".join(section for section in sections if section.strip()),
             rule_snapshot=self._build_rule_snapshot(
                 selected_template=selected_template,
-                base_package=base_package,
-                business_package=business_package,
+                base_package=None,
+                business_package=None,
                 temporary_rules=clean_temporary_rules,
             ),
         )
@@ -397,11 +386,15 @@ class TemplateLibraryService:
                 "title": "系统硬规则",
                 "rules": [f"{rule.title}：{rule.content}" for rule in SYSTEM_HARD_RULES.rules],
             },
-            {
-                "title": "基础通用规则包",
-                "rules": [rule for rule in base_package.rules if rule.strip()],
-            },
         ]
+
+        if base_package is not None:
+            resolved_sections.append(
+                {
+                    "title": "基础通用规则包",
+                    "rules": [rule for rule in base_package.rules if rule.strip()],
+                }
+            )
 
         if business_package is not None:
             resolved_sections.append(

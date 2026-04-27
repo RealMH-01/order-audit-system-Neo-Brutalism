@@ -32,7 +32,7 @@ from app.models.schemas import (
     CurrentUser,
     FeatureStatus,
 )
-from app.services.audit_engine import AuditEngineService
+from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
 from app.services.file_parser import FileParserService
 from app.services.llm_client import LLMClientService
 from app.services.report_generator import ReportGeneratorService
@@ -372,16 +372,159 @@ class AuditOrchestratorService:
         first_round_results = await asyncio.gather(*[_audit_target(index, item) for index, item in enumerate(targets)])
         self._ensure_not_cancelled(should_cancel)
 
+        # --- 多目标文件交叉一致性检查 ---
+        successful_target_texts = []
+        for item in first_round_results:
+            if not isinstance(item, dict):
+                continue
+            result = item.get("result")
+            if not isinstance(result, dict):
+                continue
+            doc_type = item.get("doc_type", "unknown")
+            target_text = str(result.get("target_text", ""))
+            if not target_text.strip():
+                file_id = item.get("file_id")
+                if not file_id:
+                    continue
+                target_record = self._ensure_runtime_file(str(file_id))
+                target_text = str(target_record.get("text", ""))
+            if target_text.strip():
+                successful_target_texts.append(
+                    {
+                        "type": str(doc_type),
+                        "content": target_text,
+                    }
+                )
+
+        cross_check_result = None
+        if len(successful_target_texts) >= 2:
+            await self._notify_progress(progress_callback, 75, "正在进行多目标文件交叉一致性检查。")
+            self._ensure_not_cancelled(should_cancel)
+            try:
+                cross_check_result = await self._run_cross_file_check(
+                    successful_target_texts=successful_target_texts,
+                    user_id=user_id,
+                    task=task,
+                    selected_model=selected_model,
+                    primary_provider=primary_provider,
+                    should_cancel=should_cancel,
+                )
+            except Exception:
+                logger.warning("Multi-target cross-file check failed, skipping.", exc_info=True)
+                cross_check_result = None
+
         await self._notify_progress(progress_callback, 80, "正在汇总审核结果并生成报告。")
         aggregate_result = self._aggregate_results(first_round_results)
+
+        # 把交叉检查结果追加到 aggregate_result 中（不修改单文件结果）
+        if cross_check_result and isinstance(cross_check_result.get("issues"), list):
+            cross_issues = cross_check_result["issues"]
+            # 给交叉检查 issues 加 X- 前缀编号
+            for idx, issue in enumerate(cross_issues, 1):
+                if isinstance(issue, dict):
+                    issue["id"] = f"X-{idx:02d}"
+                    issue["source"] = issue.get("source", "多目标文件交叉检查")
+            # 追加到 aggregate_result 的 issues 列表
+            agg_issues = aggregate_result.get("issues")
+            if isinstance(agg_issues, list):
+                agg_issues.extend(cross_issues)
+            else:
+                aggregate_result["issues"] = list(cross_issues)
+            # 重新计数 summary
+            aggregate_result["summary"] = self._recount_summary(
+                [i for i in aggregate_result.get("issues", []) if isinstance(i, dict)]
+            )
+
         report_bundle = self.report_generator.generate_report_bundle(task_id, aggregate_result)
 
         return {
             "aggregate_result": aggregate_result,
             "document_results": first_round_results,
+            "cross_check_result": cross_check_result,
             "report_bundle": report_bundle,
             "provider": primary_provider,
         }
+
+    async def _run_cross_file_check(
+        self,
+        *,
+        successful_target_texts: list[dict[str, str]],
+        user_id: str,
+        task: dict[str, Any],
+        selected_model: str,
+        primary_provider: str,
+        should_cancel: Callable[[], bool] | None,
+    ) -> dict[str, Any] | None:
+        """对多个目标文件执行交叉一致性检查。
+
+        只关注多个目标文件之间的字段一致性，不重复单文件审核已发现的问题。
+        """
+        profile = self._get_profile(user_id)
+        user_api_key = self._require_profile_api_key(profile, primary_provider)
+
+        # 构造交叉检查 prompt
+        parts: list[str] = []
+        parts.append("【多目标文件交叉一致性检查】")
+        parts.append(
+            "请检查以下多份目标单据之间，相同字段的数据是否一致。"
+            "只关注跨文件不一致的问题，不要重复报告单文件内部已有的问题。"
+        )
+        for i, target in enumerate(successful_target_texts, 1):
+            doc_type = target.get("type", f"单据{i}")
+            content = target.get("content", "")
+            parts.append(f"\n【目标单据{i}：{doc_type}】\n{content}")
+        parts.append("""
+【交叉检查重点】
+1. 金额、数量、单价、币种是否在多份单据之间一致
+2. 品名、规格、型号是否一致
+3. 箱数、毛重、净重、体积是否一致
+4. 合同号、订单号、发票号、提单号等编号引用是否一致
+5. 收发货人、目的港、运输信息等关键字段是否一致
+
+【严重程度】
+- RED：明确的跨文件数据矛盾
+- YELLOW：可能的不一致，需人工确认
+
+【输出格式——严格按以下JSON格式输出，不要有任何其他文字】
+{
+  "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
+  "issues": [
+    {
+      "id": "X-01",
+      "level": "RED",
+      "field_name": "字段中文名称",
+      "field_location": "涉及的单据名称",
+      "your_value": "单据A上的值",
+      "source_value": "单据B上的值",
+      "source": "多目标文件交叉检查",
+      "suggestion": "中文建议",
+      "confidence": 0.0
+    }
+  ]
+}
+如果所有单据之间数据完全一致，返回 issues 为空列表。""")
+
+        user_content = "\n".join(parts)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_TEXT},
+            {"role": "user", "content": user_content},
+        ]
+
+        self._ensure_not_cancelled(should_cancel)
+        raw_response = await self._await_llm_call(
+            lambda: self.llm_client.call_llm(
+                messages,
+                provider=primary_provider,
+                requested_model=selected_model,
+                api_key=user_api_key,
+                deep_think=False,
+                timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+            ),
+            should_cancel=should_cancel,
+        )
+
+        parsed = self.audit_engine.parse_audit_result(raw_response)
+        return parsed
 
     async def progress_stream(self, current_user: CurrentUser, task_id: str):
         """以 SSE 输出任务进度。"""
@@ -635,6 +778,16 @@ class AuditOrchestratorService:
         ]
         self._log_diag_text("po_text", po_text_context)
         self._log_diag_text("target_text", target_text_context)
+
+        # 把用户自定义规则拼入 audit_rules_text，作为第一轮主 prompt 的一部分
+        clean_custom_rules = [rule.strip() for rule in custom_rules if isinstance(rule, str) and rule.strip()]
+        if clean_custom_rules:
+            custom_rules_block = "【用户自定义审核规则】\n" + "\n".join(f"- {rule}" for rule in clean_custom_rules)
+            if audit_rules_text.strip():
+                audit_rules_text = audit_rules_text + "\n\n" + custom_rules_block
+            else:
+                audit_rules_text = custom_rules_block
+
         evidence_block = self._build_evidence_block(po_text_context, target_text_context)
 
         messages = self.audit_engine.build_audit_prompt(
@@ -679,58 +832,6 @@ class AuditOrchestratorService:
 
         parsed_result = self.audit_engine.parse_audit_result(raw_response)
         parsed_result = self._post_process_force_downgrade(parsed_result, company_affiliates)
-
-        if custom_rules:
-            self._ensure_not_cancelled(should_cancel)
-            custom_messages = self.audit_engine.build_custom_rules_review_prompt(
-                original_result=parsed_result,
-                custom_rules=custom_rules,
-                po_text=po_text_context,
-                target_text=target_text_context,
-                target_type=doc_type,
-            )
-            custom_response = await self._await_llm_call(
-                lambda: self.llm_client.call_llm(
-                    custom_messages,
-                    provider=provider_for_call,
-                    requested_model=model_for_call,
-                    api_key=user_api_key,
-                    deep_think=deep_think,
-                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
-                ),
-                should_cancel=should_cancel,
-            )
-            parsed_result = self._post_process_force_downgrade(
-                self.audit_engine.parse_audit_result(custom_response),
-                company_affiliates,
-            )
-
-        if prev_text or template_text or reference_texts:
-            self._ensure_not_cancelled(should_cancel)
-            cross_check_messages = self.audit_engine.build_cross_check_prompt(
-                po_text=po_text_context,
-                target_text=target_text_context,
-                current_result=parsed_result,
-                prev_ticket_text=prev_text_context,
-                template_text=template_text_context,
-                reference_texts=reference_text_contexts,
-                target_type=doc_type,
-            )
-            cross_response = await self._await_llm_call(
-                lambda: self.llm_client.call_llm(
-                    cross_check_messages,
-                    provider=provider_for_call,
-                    requested_model=model_for_call,
-                    api_key=user_api_key,
-                    deep_think=False,
-                    timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
-                ),
-                should_cancel=should_cancel,
-            )
-            parsed_result = self._post_process_force_downgrade(
-                self.audit_engine.parse_audit_result(cross_response),
-                company_affiliates,
-            )
 
         parsed_result = self._post_process_evidence_and_identifiers(
             parsed_result,
