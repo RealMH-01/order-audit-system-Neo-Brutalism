@@ -1475,16 +1475,20 @@ class AuditOrchestratorService:
             task["progress_percent"] = 100
             task["message"] = "审核任务已完成。"
             task["updated_at"] = datetime.now(timezone.utc)
-            report_paths = self._upload_report_bundle(user_id, task_id, report_bundle)
-            task["report_paths"] = report_paths
-            if report_paths is not None:
-                task["report_bundle"] = None
+            report_paths: dict[str, str] = {}
+            if self.repo is not None and result_bundle.get("report_bundle"):
+                report_paths = self._upload_reports_to_storage(
+                    task_id=task_id,
+                    user_id=user_id,
+                    report_bundle=result_bundle["report_bundle"],
+                )
+                task["report_paths"] = report_paths
 
             history_item = {
                 "id": str(uuid4()),
                 "user_id": user_id,
                 "task_id": task_id,
-                "report_paths": report_paths,
+                "report_paths": report_paths if report_paths else None,
                 "document_count": len(task["target_files"]) + 1,
                 "red_count": aggregate_result["summary"]["red"],
                 "yellow_count": aggregate_result["summary"]["yellow"],
@@ -1779,36 +1783,52 @@ class AuditOrchestratorService:
             raise AppError("未找到指定审核任务。", status_code=404)
         return task
 
-    def _upload_report_bundle(
+    def _upload_reports_to_storage(
         self,
-        user_id: str,
         task_id: str,
-        report_bundle: dict[str, Any] | None,
-    ) -> dict[str, str] | None:
-        if self.repo is None or not isinstance(report_bundle, dict):
-            return None
+        user_id: str,
+        report_bundle: dict[str, Any],
+    ) -> dict[str, str]:
+        """把报告文件上传到 Supabase Storage，返回路径映射。"""
 
-        report_paths: dict[str, str] = {}
-        for report_type, report_meta in _REPORT_DOWNLOADS.items():
-            report_obj = report_bundle.get(str(report_meta["bundle_key"]))
-            report_bytes = self._report_bytes_from_object(report_obj)
-            if not report_bytes:
-                logger.warning("Report bundle is missing %s for task %s; skipping Storage persistence.", report_type, task_id)
-                return None
+        if self.repo is None:
+            return {}
 
-            path = self._build_report_storage_path(user_id, task_id, report_type)
-            uploaded = self.repo.upload_report_file(
-                _AUDIT_REPORT_BUCKET,
-                path,
-                report_bytes,
-                str(report_meta["media_type"]),
-            )
-            if not uploaded:
-                logger.warning("Report upload did not complete for task %s type %s; keeping memory fallback.", task_id, report_type)
-                return None
-            report_paths[report_type] = path
+        paths: dict[str, str] = {}
+        content_types = {
+            "marked": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "detailed": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "zip": "application/zip",
+        }
+        bundle_keys = {
+            "marked": "marked_report",
+            "detailed": "detailed_report",
+            "zip": "report_zip",
+        }
 
-        return report_paths
+        for report_type, bundle_key in bundle_keys.items():
+            file_obj = report_bundle.get(bundle_key)
+            if file_obj is None:
+                continue
+            storage_filename = _REPORT_STORAGE_FILENAMES.get(report_type, f"{report_type}.bin")
+            storage_path = f"{user_id}/{task_id}/{storage_filename}"
+            try:
+                file_bytes = file_obj.getvalue() if hasattr(file_obj, "getvalue") else bytes(file_obj)
+                success = self.repo.upload_report_file(
+                    _AUDIT_REPORT_BUCKET,
+                    storage_path,
+                    file_bytes,
+                    content_types.get(report_type, "application/octet-stream"),
+                )
+                if success:
+                    paths[report_type] = storage_path
+                    logger.info("Report %s uploaded to %s/%s", report_type, _AUDIT_REPORT_BUCKET, storage_path)
+                else:
+                    logger.warning("Report %s upload returned False for task %s", report_type, task_id)
+            except Exception:
+                logger.warning("Failed to upload report %s for task %s", report_type, task_id, exc_info=True)
+
+        return paths
 
     @staticmethod
     def _build_report_storage_path(user_id: str, task_id: str, report_type: str) -> str:
@@ -1867,8 +1887,21 @@ class AuditOrchestratorService:
         return {str(key): str(value) for key, value in report_paths.items() if value}
 
     def _has_persisted_report_bundle(self, user_id: str, task_id: str) -> bool:
-        report_paths = self._get_task_report_paths(user_id, task_id) or self._get_persisted_report_paths(user_id, task_id)
-        return bool(report_paths) and all(report_type in report_paths for report_type in _REPORT_DOWNLOADS)
+        """检查 Supabase Storage / audit_history 中是否有持久化的报告。"""
+
+        if self.repo is None:
+            return False
+        try:
+            history_record = self.repo.get_audit_history_by_task_id(user_id, task_id)
+            if not history_record:
+                return False
+            report_paths = history_record.get("report_paths")
+            if not report_paths or not isinstance(report_paths, dict):
+                return False
+            return bool(report_paths.get("marked") or report_paths.get("detailed") or report_paths.get("zip"))
+        except Exception:
+            logger.warning("Failed to check persisted report bundle for task %s", task_id, exc_info=True)
+            return False
 
     def _get_storage_report_bytes(self, user_id: str, task_id: str, report_type: str) -> bytes | None:
         if self.repo is None:
@@ -1889,24 +1922,41 @@ class AuditOrchestratorService:
         task_id: str,
         report_type: str,
     ) -> tuple[io.BytesIO, str, str]:
-        """优先从内存 report_bundle 读取报告，必要时回退到 Supabase Storage。"""
+        """返回 (file_obj, filename, media_type) 三元组。"""
 
-        report_meta = _REPORT_DOWNLOADS.get(report_type)
-        if report_meta is None:
+        spec = _REPORT_DOWNLOADS.get(report_type)
+        if spec is None:
             raise AppError("不支持的报告类型。", status_code=400)
 
-        report_bytes = self._get_memory_report_bytes(current_user.id, task_id, report_meta)
-        if report_bytes is None:
-            report_bytes = self._get_storage_report_bytes(current_user.id, task_id, report_type)
+        bundle_key = spec["bundle_key"]
+        filename = spec["filename"].format(task_id=task_id)
+        media_type = spec["media_type"]
 
-        if not report_bytes:
-            raise AppError("报告尚未生成或已失效。", status_code=404)
+        task = self.store.audit_tasks.get(task_id)
+        if task and task.get("user_id") == current_user.id:
+            bundle = task.get("report_bundle")
+            if bundle and bundle.get(bundle_key):
+                file_obj = bundle[bundle_key]
+                if hasattr(file_obj, "seek"):
+                    file_obj.seek(0)
+                return file_obj, filename, media_type
 
-        return (
-            io.BytesIO(report_bytes),
-            str(report_meta["filename"]).format(task_id=task_id),
-            str(report_meta["media_type"]),
-        )
+        report_paths = None
+        if task and task.get("user_id") == current_user.id and task.get("report_paths"):
+            report_paths = task["report_paths"]
+        elif self.repo is not None:
+            history_record = self.repo.get_audit_history_by_task_id(current_user.id, task_id)
+            if history_record:
+                report_paths = history_record.get("report_paths")
+
+        if report_paths and self.repo is not None:
+            storage_path = report_paths.get(report_type)
+            if storage_path:
+                file_bytes = self.repo.download_report_file(_AUDIT_REPORT_BUCKET, storage_path)
+                if file_bytes:
+                    return io.BytesIO(file_bytes), filename, media_type
+
+        raise AppError("报告文件暂不可用，可能已过期或尚未生成。请重新运行审核。", status_code=404)
 
     @staticmethod
     def _normalize_affiliate_text(value: str) -> str:
