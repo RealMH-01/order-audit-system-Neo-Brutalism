@@ -581,6 +581,7 @@ class AuditResultResponse(BaseModel):
     summary: dict[str, int]
     issues: list[AuditIssue]
     message: str
+    rule_snapshot: dict[str, Any] | None = None
 
 
 class AuditCancelResponse(BaseModel):

@@ -1,4 +1,5 @@
-import { ChevronDown, Filter, History, ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ClipboardList, Filter, History, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,16 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
+import { Dialog, DialogSection } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip } from "@/components/ui/tooltip";
 
-import type { AuditIssue, AuditResultResponse } from "@/components/audit/types";
+import type {
+  AuditIssue,
+  AuditResultResponse,
+  AuditRuleSnapshot,
+  AuditRuleSnapshotSection
+} from "@/components/audit/types";
 
 type ResultFilter = "ALL" | "RED" | "YELLOW" | "BLUE";
 
@@ -82,6 +90,155 @@ function renderOptionalText(value: unknown) {
 
   const text = String(value).trim();
   return text.length > 0 ? text : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (isRecord(item)) {
+          return String(
+            item.name ?? item.company_name ?? item.title ?? item.display_text ?? item.content ?? ""
+          ).trim();
+        }
+        return String(item ?? "").trim();
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+
+  return [];
+}
+
+function countRules(value: unknown): number {
+  return normalizeTextList(value).length;
+}
+
+function findSnapshotSection(
+  snapshot: AuditRuleSnapshot,
+  keywords: string[]
+): AuditRuleSnapshotSection | null {
+  const sections = Array.isArray(snapshot.resolved_sections)
+    ? snapshot.resolved_sections
+    : [];
+
+  return (
+    sections.find((section) => {
+      const title = String(section.title ?? "").toLowerCase();
+      return keywords.some((keyword) => title.includes(keyword.toLowerCase()));
+    }) ?? null
+  );
+}
+
+function buildRuleSnapshotSummary(snapshot: AuditRuleSnapshot) {
+  const systemSection = findSnapshotSection(snapshot, ["系统", "硬规则", "system"]);
+  const customSection = findSnapshotSection(snapshot, [
+    "临时",
+    "自定义",
+    "supplemental",
+    "temporary",
+    "custom"
+  ]);
+
+  const systemRuleCount =
+    countRules(systemSection?.rules) || countRules(snapshot.system_rules?.rules);
+  const customRules =
+    normalizeTextList(customSection?.rules).length > 0
+      ? normalizeTextList(customSection?.rules)
+      : normalizeTextList(snapshot.temporary_rules ?? snapshot.run_supplemental_rules);
+
+  const templateName =
+    renderOptionalText(snapshot.template?.name) ??
+    renderOptionalText(snapshot.selected_template?.name) ??
+    "未选择";
+  const companyAffiliates = normalizeTextList(snapshot.company_affiliates);
+
+  return {
+    systemRuleCount,
+    templateName,
+    customRules,
+    companyAffiliates
+  };
+}
+
+function RuleSnapshotDialog({
+  open,
+  snapshot,
+  onClose
+}: {
+  open: boolean;
+  snapshot: AuditRuleSnapshot | null;
+  onClose: () => void;
+}) {
+  if (!snapshot) {
+    return null;
+  }
+
+  const summary = buildRuleSnapshotSummary(snapshot);
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="本次审核规则来源"
+      footer={
+        <Button variant="outline" onClick={onClose}>
+          关闭
+        </Button>
+      }
+    >
+      <DialogSection>
+        <div className="grid gap-3 md:grid-cols-2">
+          <DetailTile
+            label="系统基础规则"
+            value={`${summary.systemRuleCount} 条（不可关闭）`}
+          />
+          <DetailTile label="审核模板" value={`「${summary.templateName}」`} />
+          <DetailTile
+            label="自定义规则"
+            value={
+              summary.customRules.length > 0
+                ? `${summary.customRules.length} 条`
+                : "无"
+            }
+          />
+          <DetailTile
+            label="关联公司"
+            value={
+              summary.companyAffiliates.length > 0
+                ? summary.companyAffiliates.join("、")
+                : "无"
+            }
+          />
+        </div>
+        {summary.customRules.length > 0 ? (
+          <details className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
+            <summary className="cursor-pointer text-sm font-black">
+              查看自定义规则摘要
+            </summary>
+            <ul className="mt-3 space-y-2">
+              {summary.customRules.map((rule, index) => (
+                <li key={`${rule.slice(0, 24)}-${index}`} className="text-sm font-bold leading-6">
+                  {rule}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </DialogSection>
+    </Dialog>
+  );
 }
 
 function DetailTile({
@@ -178,6 +335,7 @@ export function ResultsPanel({
   onFilterChange,
   onNavigateHistory
 }: ResultsPanelProps) {
+  const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const groups: Array<{ level: AuditIssue["level"]; title: string }> = [
     { level: "RED", title: "RED 严重问题" },
     { level: "YELLOW", title: "YELLOW 提醒问题" },
@@ -190,15 +348,39 @@ export function ResultsPanel({
   const confidencePercent = result ? resolveConfidencePercent(result.confidence) : null;
   const validNotes = result ? resolveValidNotes(result.notes) : [];
   const hasSummaryExtras = confidencePercent !== null || validNotes.length > 0;
+  const ruleSnapshot =
+    result?.rule_snapshot && Object.keys(result.rule_snapshot).length > 0
+      ? result.rule_snapshot
+      : null;
+  const hasRuleSnapshot = ruleSnapshot !== null;
 
   return (
-    <Card className="bg-paper">
+    <>
+      <Card className="bg-paper">
       <CardHeader>
         <Badge variant="accent">结果区</Badge>
         <CardTitle>审核结果</CardTitle>
         <CardDescription>
           这里会显示汇总、颜色分组和问题列表。当前保持和后端真实返回结构一致，不会把缺失字段伪装成完整数据。
         </CardDescription>
+        <div className="flex flex-wrap gap-3 pt-2">
+          <Tooltip
+            content={hasRuleSnapshot ? "查看本次审核规则" : "当前审核未记录规则快照"}
+          >
+            <span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!hasRuleSnapshot}
+                onClick={() => setRuleDialogOpen(true)}
+                className={!hasRuleSnapshot ? "cursor-not-allowed opacity-60" : ""}
+              >
+                <ClipboardList size={16} strokeWidth={3} />
+                查看本次审核规则
+              </Button>
+            </span>
+          </Tooltip>
+        </div>
         {onNavigateHistory ? (
           <div className="pt-2">
             <Button variant="outline" size="sm" onClick={onNavigateHistory}>
@@ -350,7 +532,13 @@ export function ResultsPanel({
             </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      <RuleSnapshotDialog
+        open={ruleDialogOpen && hasRuleSnapshot}
+        snapshot={ruleSnapshot}
+        onClose={() => setRuleDialogOpen(false)}
+      />
+    </>
   );
 }

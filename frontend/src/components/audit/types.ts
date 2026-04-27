@@ -91,6 +91,37 @@ export type AuditIssue = {
   source_excerpt?: string | null;
 };
 
+export type AuditRuleSnapshotSection = {
+  title?: string;
+  rules?: unknown[] | string | null;
+};
+
+export type AuditRuleSnapshot = {
+  schema_version?: number;
+  resolved_at?: string;
+  resolved_sections?: AuditRuleSnapshotSection[];
+  system_rules?: {
+    title?: string;
+    version?: number;
+    rules?: unknown[];
+  } | null;
+  template?: {
+    id?: string;
+    name?: string;
+    description?: string;
+    business_type?: string;
+    supplemental_rules?: string;
+    is_default_at_run?: boolean;
+  } | null;
+  selected_template?: {
+    id?: string;
+    name?: string;
+  } | null;
+  temporary_rules?: unknown[] | string | null;
+  run_supplemental_rules?: unknown[] | string | null;
+  company_affiliates?: unknown[] | string | null;
+};
+
 export type AuditResultResponse = {
   task_id: string;
   status: string;
@@ -103,6 +134,7 @@ export type AuditResultResponse = {
   message: string;
   confidence?: number;
   notes?: string[];
+  rule_snapshot?: AuditRuleSnapshot | null;
 };
 
 export type AuditCancelResponse = {

@@ -296,6 +296,7 @@ class AuditOrchestratorService:
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
         self._require_profile_api_key(profile, primary_provider)
         custom_rules = list(profile.get("active_custom_rules", []))
+        company_affiliates = list(profile.get("company_affiliates", []))
         resolved_rules = self.template_library.resolve_audit_rules_for_run(
             current_user=current_user,
             template_id=payload.template_id,
@@ -317,6 +318,7 @@ class AuditOrchestratorService:
             "template_id": resolved_rules.template.id if resolved_rules.template else None,
             "reference_file_ids": list(payload.reference_file_ids),
             "custom_rules": custom_rules,
+            "company_affiliates": company_affiliates,
             "audit_rules_text": resolved_rules.rules_text,
             "audit_rule_snapshot": resolved_rules.rule_snapshot,
             "deep_think": payload.deep_think,
@@ -587,14 +589,25 @@ class AuditOrchestratorService:
 
         task = self._get_task(current_user.id, task_id)
         if task["result"] is None:
+            rule_snapshot = self._result_rule_snapshot_from_task(task)
             return AuditResultResponse(
                 task_id=task_id,
                 status=str(task["status"]),
                 summary={"red": 0, "yellow": 0, "blue": 0},
                 issues=[],
+                rule_snapshot=rule_snapshot,
                 message="任务尚未产出最终结果。",
             )
-        return task["result"]
+        result = task["result"]
+        rule_snapshot = self._result_rule_snapshot_from_task(task)
+        if isinstance(result, AuditResultResponse):
+            if result.rule_snapshot is None and rule_snapshot is not None:
+                return result.model_copy(update={"rule_snapshot": rule_snapshot})
+            return result
+        if isinstance(result, dict):
+            result_payload = {**result, "rule_snapshot": result.get("rule_snapshot") or rule_snapshot}
+            return AuditResultResponse(**result_payload)
+        return result
 
     def get_report_placeholder(self, current_user: CurrentUser, task_id: str) -> AuditReportResponse:
         """返回报告状态说明。"""
@@ -1481,7 +1494,11 @@ class AuditOrchestratorService:
             report_bundle = result_bundle["report_bundle"]
             task["full_result"] = aggregate_result
             task["report_bundle"] = report_bundle
-            task["result"] = self._to_api_result(task_id, aggregate_result)
+            task["result"] = self._to_api_result(
+                task_id,
+                aggregate_result,
+                rule_snapshot=self._result_rule_snapshot_from_task(task),
+            )
             task["status"] = "completed"
             task["progress_percent"] = 100
             task["message"] = "审核任务已完成。"
@@ -1533,7 +1550,28 @@ class AuditOrchestratorService:
             task["message"] = _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
             task["updated_at"] = datetime.now(timezone.utc)
 
-    def _to_api_result(self, task_id: str, aggregate_result: dict[str, Any]) -> AuditResultResponse:
+    @staticmethod
+    def _result_rule_snapshot_from_task(task: dict[str, Any]) -> dict[str, Any] | None:
+        snapshot = task.get("audit_rule_snapshot")
+        if not isinstance(snapshot, dict):
+            return None
+
+        company_affiliates = task.get("company_affiliates")
+        if "company_affiliates" in snapshot or not isinstance(company_affiliates, list):
+            return snapshot
+
+        return {
+            **snapshot,
+            "company_affiliates": [str(item) for item in company_affiliates if str(item).strip()],
+        }
+
+    def _to_api_result(
+        self,
+        task_id: str,
+        aggregate_result: dict[str, Any],
+        *,
+        rule_snapshot: dict[str, Any] | None = None,
+    ) -> AuditResultResponse:
         """把完整审核结果收敛成当前 API 响应模型。"""
 
         def optional_issue_text(issue: dict[str, Any], key: str) -> str | None:
@@ -1575,6 +1613,7 @@ class AuditOrchestratorService:
                 "blue": int(aggregate_result.get("summary", {}).get("blue", 0)),
             },
             issues=api_issues,
+            rule_snapshot=rule_snapshot,
             message="审核结果已生成，完整结构已进入后续报告与历史流水线。",
         )
 
