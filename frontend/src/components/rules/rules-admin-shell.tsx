@@ -2,35 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, FolderKanban, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
+import { ArrowRight, FolderKanban, Library, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { BuiltinRulesPanel } from "@/components/rules/builtin-rules-panel";
-import { TemplateEditorPanel } from "@/components/rules/template-editor-panel";
-import { TemplateListPanel } from "@/components/rules/template-list-panel";
 import type {
   BuiltinRuleFull,
   BuiltinRulePublic,
-  BuiltinRuleUpdatePayload,
-  MessageResponse,
-  TemplateDraft,
-  TemplateItem,
-  TemplateListResponse,
-  TemplateLoadResponse
+  BuiltinRuleUpdatePayload
 } from "@/components/rules/types";
-import {
-  createEmptyTemplateDraft,
-  normalizeError,
-  parseAffiliateLines,
-  resolveTemplateMode,
-  sortTemplates,
-  toTemplateDraft
-} from "@/components/rules/rules-utils";
+import { normalizeError } from "@/components/rules/rules-utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { apiDelete, apiGet, apiPost, apiPut, getStoredAccessToken } from "@/lib/api";
 import type { WizardProfile } from "@/components/wizard/types";
+import { apiGet, apiPut, getStoredAccessToken } from "@/lib/api";
 
 export function RulesAdminShell() {
   const router = useRouter();
@@ -47,17 +33,6 @@ export function RulesAdminShell() {
   const [builtinLoading, setBuiltinLoading] = useState(true);
   const [builtinError, setBuiltinError] = useState<string | null>(null);
   const [builtinSaving, setBuiltinSaving] = useState(false);
-
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(true);
-  const [templatesError, setTemplatesError] = useState<string | null>(null);
-  const [creatingTemplate, setCreatingTemplate] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [templateDraft, setTemplateDraft] = useState<TemplateDraft>(createEmptyTemplateDraft());
-  const [templateSaving, setTemplateSaving] = useState(false);
-  const [templateDeleting, setTemplateDeleting] = useState(false);
-  const [templateActionId, setTemplateActionId] = useState<string | null>(null);
-  const [templateMutationError, setTemplateMutationError] = useState<string | null>(null);
 
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(
     null
@@ -110,37 +85,6 @@ export function RulesAdminShell() {
     }
   }, []);
 
-  const loadTemplates = useCallback(
-    async (accessToken: string) => {
-      setTemplatesLoading(true);
-      setTemplatesError(null);
-
-      try {
-        const { data } = await apiGet<TemplateListResponse>("/rules/templates", {
-          token: accessToken
-        });
-
-        const sortedTemplates = sortTemplates(data.templates);
-        setTemplates(sortedTemplates);
-
-        if (!creatingTemplate) {
-          setSelectedTemplateId((current) => {
-            if (current && sortedTemplates.some((template) => template.id === current)) {
-              return current;
-            }
-
-            return sortedTemplates[0]?.id ?? null;
-          });
-        }
-      } catch (error) {
-        setTemplatesError(normalizeError(error, "读取模板列表失败，请稍后重试。"));
-      } finally {
-        setTemplatesLoading(false);
-      }
-    },
-    [creatingTemplate]
-  );
-
   useEffect(() => {
     const accessToken = getStoredAccessToken();
     setToken(accessToken);
@@ -148,7 +92,6 @@ export function RulesAdminShell() {
     if (!accessToken) {
       setProfileLoading(false);
       setBuiltinLoading(false);
-      setTemplatesLoading(false);
       return;
     }
 
@@ -156,37 +99,12 @@ export function RulesAdminShell() {
       const currentProfile = await loadProfile(accessToken);
       if (!currentProfile) {
         setBuiltinLoading(false);
-        setTemplatesLoading(false);
         return;
       }
 
-      await Promise.all([
-        loadBuiltin(accessToken, currentProfile.role),
-        loadTemplates(accessToken)
-      ]);
+      await loadBuiltin(accessToken, currentProfile.role);
     })();
-  }, [loadBuiltin, loadProfile, loadTemplates]);
-
-  const selectedTemplate = useMemo(
-    () => templates.find((template) => template.id === selectedTemplateId) ?? null,
-    [selectedTemplateId, templates]
-  );
-
-  const templateMode = useMemo(
-    () => resolveTemplateMode(selectedTemplate, profile?.role ?? null, profile?.id ?? null),
-    [profile?.id, profile?.role, selectedTemplate]
-  );
-
-  useEffect(() => {
-    if (creatingTemplate) {
-      return;
-    }
-
-    if (selectedTemplate) {
-      setTemplateDraft(toTemplateDraft(selectedTemplate));
-      setTemplateMutationError(null);
-    }
-  }, [creatingTemplate, selectedTemplate]);
+  }, [loadBuiltin, loadProfile]);
 
   const builtinDirty = useMemo(() => {
     if (profile?.role !== "admin" || !builtinFull) {
@@ -197,30 +115,6 @@ export function RulesAdminShell() {
       builtinDisplayText !== builtinFull.display_text || builtinPromptText !== builtinFull.prompt_text
     );
   }, [builtinDisplayText, builtinFull, builtinPromptText, profile?.role]);
-
-  const handleSelectTemplate = useCallback((templateId: string) => {
-    setCreatingTemplate(false);
-    setSelectedTemplateId(templateId);
-    setTemplateMutationError(null);
-  }, []);
-
-  const handleCreateTemplate = useCallback(() => {
-    setCreatingTemplate(true);
-    setSelectedTemplateId(null);
-    setTemplateDraft(createEmptyTemplateDraft());
-    setTemplateMutationError(null);
-    setFeedback(null);
-  }, []);
-
-  const handleResetTemplate = useCallback(() => {
-    if (creatingTemplate || !selectedTemplate) {
-      setTemplateDraft(createEmptyTemplateDraft());
-      return;
-    }
-
-    setTemplateDraft(toTemplateDraft(selectedTemplate));
-    setTemplateMutationError(null);
-  }, [creatingTemplate, selectedTemplate]);
 
   const handleSaveBuiltin = useCallback(async () => {
     if (!token || profile?.role !== "admin") {
@@ -251,129 +145,16 @@ export function RulesAdminShell() {
       setBuiltinPublic(data);
       setBuiltinDisplayText(data.display_text);
       setBuiltinPromptText(data.prompt_text);
-      setFeedback({ tone: "success", message: "系统规则已保存，当前管理员修改已经写回后端接口。" });
+      setFeedback({
+        tone: "success",
+        message: "系统规则已保存。"
+      });
     } catch (error) {
       setFeedback({ tone: "error", message: normalizeError(error, "保存系统规则失败，请稍后重试。") });
     } finally {
       setBuiltinSaving(false);
     }
   }, [builtinDisplayText, builtinPromptText, profile?.role, token]);
-
-  const handleSaveTemplate = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-
-    if (!templateDraft.name.trim() || !templateDraft.rulesText.trim()) {
-      setTemplateMutationError("模板名称和规则内容不能为空。");
-      return;
-    }
-
-    setTemplateSaving(true);
-    setTemplateMutationError(null);
-    setFeedback(null);
-
-    const payload = {
-      name: templateDraft.name.trim(),
-      description: templateDraft.description.trim(),
-      rules_text: templateDraft.rulesText.trim(),
-      company_affiliates: parseAffiliateLines(templateDraft.companyAffiliatesText)
-    };
-
-    try {
-      if (creatingTemplate) {
-        const { data } = await apiPost<TemplateItem>("/rules/templates", payload, {
-          token
-        });
-        await loadTemplates(token);
-        setCreatingTemplate(false);
-        setSelectedTemplateId(data.id);
-        setFeedback({ tone: "success", message: "用户模板创建成功，已加入模板列表。" });
-        return;
-      }
-
-      if (!selectedTemplate) {
-        setTemplateMutationError("当前没有选中的模板，无法保存。");
-        return;
-      }
-
-      const { data } = await apiPut<TemplateItem>(
-        `/rules/templates/${selectedTemplate.id}`,
-        payload,
-        { token }
-      );
-      await loadTemplates(token);
-      setSelectedTemplateId(data.id);
-      setFeedback({
-        tone: "success",
-        message: data.is_system ? "系统模板已更新。" : "模板修改已保存。"
-      });
-    } catch (error) {
-      setTemplateMutationError(normalizeError(error, "保存模板失败，请稍后重试。"));
-    } finally {
-      setTemplateSaving(false);
-    }
-  }, [creatingTemplate, loadTemplates, selectedTemplate, templateDraft, token]);
-
-  const handleDeleteTemplate = useCallback(async () => {
-    if (!token || !selectedTemplate) {
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(`确认删除模板“${selectedTemplate.name}”吗？`);
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    setTemplateDeleting(true);
-    setTemplateMutationError(null);
-    setFeedback(null);
-
-    try {
-      const { data } = await apiDelete<MessageResponse>(`/rules/templates/${selectedTemplate.id}`, {
-        token
-      });
-      await loadTemplates(token);
-      setCreatingTemplate(false);
-      setSelectedTemplateId(null);
-      setTemplateDraft(createEmptyTemplateDraft());
-      setFeedback({ tone: "success", message: data.message || "模板已删除。" });
-    } catch (error) {
-      setTemplateMutationError(normalizeError(error, "删除模板失败，请稍后重试。"));
-    } finally {
-      setTemplateDeleting(false);
-    }
-  }, [loadTemplates, selectedTemplate, token]);
-
-  const handleLoadTemplate = useCallback(
-    async (templateId: string) => {
-      if (!token) {
-        return;
-      }
-
-      setTemplateActionId(templateId);
-      setFeedback(null);
-
-      try {
-        const { data } = await apiPost<TemplateLoadResponse>(
-          `/rules/templates/${templateId}/load`,
-          undefined,
-          { token }
-        );
-        setFeedback({
-          tone: "success",
-          message: `${data.message} 你现在可以前往 /settings 查看当前自定义规则。`
-        });
-      } catch (error) {
-        setFeedback({ tone: "error", message: normalizeError(error, "加载模板失败，请稍后重试。") });
-      } finally {
-        setTemplateActionId(null);
-      }
-    },
-    [token]
-  );
 
   if (profileLoading) {
     return (
@@ -382,7 +163,7 @@ export function RulesAdminShell() {
           <CardContent className="flex items-center gap-3 py-10">
             <Loader2 className="animate-spin" size={20} strokeWidth={3} />
             <p className="text-sm font-bold uppercase tracking-[0.14em]">
-              正在读取规则管理页所需配置
+              正在读取规则管理配置
             </p>
           </CardContent>
         </Card>
@@ -395,7 +176,7 @@ export function RulesAdminShell() {
       <section className="space-y-6">
         <SectionHeading
           title="规则管理"
-          description="规则管理页依赖当前登录态。请先完成登录或向导配置，再回来查看系统规则和模板。"
+          description="规则管理页依赖当前登录态。请先完成登录或向导配置，再回来查看系统规则。"
           icon={FolderKanban}
         />
         <Card className="bg-paper">
@@ -403,7 +184,7 @@ export function RulesAdminShell() {
             <Badge variant="accent">未登录</Badge>
             <CardTitle>请先进入向导或完成登录</CardTitle>
             <CardDescription>
-              `/admin/rules` 会读取当前账号的角色、系统规则和模板权限边界，没有 token 时不会继续请求规则接口。
+              `/admin/rules` 会读取当前账号的角色和系统规则权限边界，没有 token 时不会请求规则接口。
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
@@ -424,7 +205,7 @@ export function RulesAdminShell() {
     <section className="space-y-6">
       <SectionHeading
         title="规则管理"
-        description="这里用于查看通用系统规则、维护可编辑的 built-in 规则，以及管理系统模板和当前用户模板。页面会严格遵守现有读写权限边界。"
+        description="这里用于查看通用系统规则，并在管理员权限下维护 built-in 规则。旧规则模板体系已下线；审核模板请使用模板库。"
         icon={FolderKanban}
       />
 
@@ -448,19 +229,21 @@ export function RulesAdminShell() {
                 <Badge variant="inverse">
                   当前角色：{profile?.role === "admin" ? "管理员" : "普通用户"}
                 </Badge>
-                <Badge variant="secondary">
-                  当前可见模板：系统模板 + {profile?.role === "admin" ? "当前管理员自己的模板" : "当前用户自己的模板"}
-                </Badge>
+                <Badge variant="secondary">旧规则模板接口已下线</Badge>
               </div>
               <p className="max-w-3xl text-sm font-bold leading-6">
-                普通用户可查看系统规则和系统模板，只能维护自己的模板；管理员可修改 built-in 系统规则，并可按当前 API 能力维护系统模板，但不会默认拥有其他用户模板的编辑权。
+                旧的规则模板接口不再作为产品功能提供，也不会再把模板内容写入当前自定义规则。
+                审核工作台使用的模板来自模板库，并通过 `template_id` 参与最终审核。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Button variant="outline" onClick={() => router.push("/settings")}>
                 前往当前规则配置
               </Button>
-              <Button onClick={() => router.push("/wizard")}>返回向导入口</Button>
+              <Button onClick={() => router.push("/templates")}>
+                <Library size={18} strokeWidth={3} />
+                打开模板库
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -489,12 +272,12 @@ export function RulesAdminShell() {
             </div>
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
               <p className="text-sm font-bold leading-6">
-                系统模板：所有登录用户可查看和加载；只有管理员可修改或删除系统模板。
+                用户自定义规则仍在设置页和向导链路中维护，不受旧模板下线影响。
               </p>
             </div>
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
               <p className="text-sm font-bold leading-6">
-                用户模板：当前页面只展示你自己创建的模板，因此无论普通用户还是管理员，都不会默认获得其他用户模板的编辑权。
+                审核模板请在模板库维护。审核工作台选择模板后，模板的补充规则会进入最终审核。
               </p>
             </div>
           </CardContent>
@@ -536,47 +319,10 @@ export function RulesAdminShell() {
       {builtinDirty && profile?.role === "admin" ? (
         <div className="issue-yellow p-4">
           <p className="text-sm font-bold leading-6">
-            系统规则存在未保存修改。点击“保存系统规则”后才会真正写回 `/api/rules/builtin`。
+            系统规则存在未保存修改。点击“保存系统规则”后才会写回 `/api/rules/builtin`。
           </p>
         </div>
       ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <TemplateListPanel
-          role={profile?.role ?? null}
-          currentUserId={profile?.id ?? null}
-          templates={templates}
-          loading={templatesLoading}
-          error={templatesError}
-          activeId={creatingTemplate ? null : selectedTemplateId}
-          actionTemplateId={templateActionId}
-          onSelect={handleSelectTemplate}
-          onCreate={handleCreateTemplate}
-          onLoad={(templateId) => void handleLoadTemplate(templateId)}
-          onRetry={() => {
-            if (!token) {
-              return;
-            }
-
-            void loadTemplates(token);
-          }}
-        />
-
-        <TemplateEditorPanel
-          role={profile?.role ?? null}
-          currentUserId={profile?.id ?? null}
-          mode={creatingTemplate ? "create" : templateMode}
-          template={creatingTemplate ? null : selectedTemplate}
-          draft={templateDraft}
-          saving={templateSaving}
-          deleting={templateDeleting}
-          mutationError={templateMutationError}
-          onChange={setTemplateDraft}
-          onSave={() => void handleSaveTemplate()}
-          onDelete={() => void handleDeleteTemplate()}
-          onReset={handleResetTemplate}
-        />
-      </div>
     </section>
   );
 }

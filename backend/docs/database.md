@@ -4,7 +4,7 @@
 
 This callback aligns the Supabase data layer more closely to the original round-3 design:
 - profiles
-- industry_templates
+- industry_templates (legacy table retained for compatibility; no active product API)
 - audit_history
 - system_rules
 
@@ -43,10 +43,12 @@ Key fields:
 Implementation note:
 - API key fields keep the original database names, but the stored values should be encrypted before write
 
-### industry_templates
+### industry_templates (legacy)
 
 Purpose:
-- store both system templates and user-defined templates
+- retained as an existing database table for compatibility only
+- the legacy rules template product surface is offline
+- active audit templates now live in `audit_templates` and are served by the `/templates` API
 
 Key fields:
 - `name`
@@ -57,8 +59,8 @@ Key fields:
 - `company_affiliates`
 
 Design note:
-- system templates use `is_system=true` and `user_id=null`
-- user templates use `is_system=false` and `user_id=auth.uid()`
+- application bootstrap no longer seeds this table
+- `/api/rules/templates` returns 410 Gone; it must not write to `profiles.active_custom_rules`
 
 ### audit_history
 
@@ -99,10 +101,8 @@ Key fields:
 - custom rules stored in `active_custom_rules` therefore remain self-owned through profile ownership
 
 ### industry_templates
-- all authenticated users can read system templates
-- users can read/write/delete only their own non-system templates
-- admins may maintain system templates
-- admins do not automatically gain write access to other users' non-system templates
+- legacy RLS policies remain part of the existing schema
+- product code no longer exposes create/update/delete/load operations for this table
 
 ### audit_history
 - users can only read and write their own history rows
@@ -117,11 +117,7 @@ Key fields:
 
 1. Check whether a `system_rules.key` already exists
 2. Insert the default rule only when missing
-3. Check whether a system template already exists by matching:
-   - `is_system=true`
-   - `rules_text`
-   - `company_affiliates`
-4. Insert missing system templates only once
+3. Skip legacy `industry_templates` initialization
 
 Repeated execution will skip existing records instead of duplicating them.
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_current_user, get_rules_config_service
 from app.models.schemas import (
@@ -8,17 +8,13 @@ from app.models.schemas import (
     CurrentUser,
     CustomRulesResponse,
     CustomRulesUpdateRequest,
-    MessageResponse,
     RulesCapability,
-    TemplateCreateRequest,
-    TemplateListResponse,
-    TemplateLoadResponse,
-    TemplateResponse,
-    TemplateUpdateRequest,
 )
 from app.services.rules_config import RulesConfigService
 
 router = APIRouter()
+
+LEGACY_TEMPLATE_GONE_MESSAGE = "旧规则模板体系已下线，请使用审核模板功能。"
 
 
 @router.get("/capabilities", response_model=RulesCapability, summary="规则能力说明")
@@ -70,47 +66,46 @@ async def update_custom_rules(
     return service.update_custom_rules(current_user, payload)
 
 
-@router.get("/templates", response_model=TemplateListResponse)
-async def list_templates(
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> TemplateListResponse:
-    return service.list_templates(current_user)
+def _raise_legacy_template_gone() -> None:
+    raise HTTPException(status_code=410, detail=LEGACY_TEMPLATE_GONE_MESSAGE)
 
 
-@router.post("/templates", response_model=TemplateResponse)
-async def create_template(
-    payload: TemplateCreateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> TemplateResponse:
-    return service.create_template(current_user, payload)
+@router.get("/templates", summary="旧规则模板体系已下线")
+async def list_legacy_templates(
+    _: CurrentUser = Depends(get_current_user),
+) -> None:
+    _raise_legacy_template_gone()
 
 
-@router.put("/templates/{template_id}", response_model=TemplateResponse)
-async def update_template(
+@router.post("/templates", summary="旧规则模板体系已下线")
+async def create_legacy_template(
+    _: CurrentUser = Depends(get_current_user),
+) -> None:
+    _raise_legacy_template_gone()
+
+
+@router.put("/templates/{template_id}", summary="旧规则模板体系已下线")
+async def update_legacy_template(
     template_id: str,
-    payload: TemplateUpdateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> TemplateResponse:
-    return service.update_template(current_user, template_id, payload)
+    _: CurrentUser = Depends(get_current_user),
+) -> None:
+    del template_id
+    _raise_legacy_template_gone()
 
 
-@router.delete("/templates/{template_id}", response_model=MessageResponse)
-async def delete_template(
+@router.delete("/templates/{template_id}", summary="旧规则模板体系已下线")
+async def delete_legacy_template(
     template_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> MessageResponse:
-    service.delete_template(current_user, template_id)
-    return MessageResponse(message="模板已删除。")
+    _: CurrentUser = Depends(get_current_user),
+) -> None:
+    del template_id
+    _raise_legacy_template_gone()
 
 
-@router.post("/templates/{template_id}/load", response_model=TemplateLoadResponse)
-async def load_template(
+@router.post("/templates/{template_id}/load", summary="旧规则模板体系已下线")
+async def load_legacy_template(
     template_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> TemplateLoadResponse:
-    return service.load_template(current_user, template_id)
+    _: CurrentUser = Depends(get_current_user),
+) -> None:
+    del template_id
+    _raise_legacy_template_gone()
