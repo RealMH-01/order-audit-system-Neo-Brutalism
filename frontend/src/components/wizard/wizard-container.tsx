@@ -12,6 +12,7 @@ import {
   clearStoredAccessToken,
   getStoredAccessToken
 } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -460,10 +461,7 @@ export function WizardContainer() {
     } catch (error) {
       setTestStatus({
         success: false,
-        message:
-          typeof error === "object" && error && "detail" in error
-            ? String(error.detail)
-            : "连接测试失败，请稍后再试。"
+        message: normalizeApiErrorDetail(error, "连接测试失败，请稍后再试。")
       });
     } finally {
       setTestingProvider(null);
@@ -506,9 +504,7 @@ export function WizardContainer() {
       }));
     } catch (error) {
       setChatError(
-        typeof error === "object" && error && "detail" in error
-          ? String(error.detail)
-          : "启动 AI 引导失败，请稍后重试。"
+        normalizeApiErrorDetail(error, "启动 AI 引导失败，请稍后重试。")
       );
     } finally {
       setChatLoading(false);
@@ -564,9 +560,7 @@ export function WizardContainer() {
         });
       } catch (error) {
         setChatError(
-          typeof error === "object" && error && "detail" in error
-            ? String(error.detail)
-            : "与 AI 对话失败，请稍后再试。"
+          normalizeApiErrorDetail(error, "与 AI 对话失败，请稍后再试。")
         );
       } finally {
         setChatLoading(false);
@@ -732,9 +726,7 @@ export function WizardContainer() {
         router.push("/audit");
       } catch (error) {
         setSubmitError(
-          typeof error === "object" && error && "detail" in error
-            ? String(error.detail)
-            : "保存当前向导配置失败，请稍后重试。"
+          normalizeApiErrorDetail(error, "保存当前向导配置失败，请稍后重试。")
         );
       } finally {
         setSubmitLoading(false);

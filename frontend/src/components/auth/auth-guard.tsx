@@ -27,10 +27,11 @@ function toAuthUser(payload: {
 export function AuthGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { state, dispatch, signOut } = useAuth();
+  const { dispatch, signOut } = useAuth();
   const [ready, setReady] = useState(false);
-  const hasAuthenticatedContext =
-    state.status === "authenticated" && state.user !== null;
+  const loginHref = pathname
+    ? `/login?redirect=${encodeURIComponent(pathname)}`
+    : "/login";
 
   useEffect(() => {
     const token = getStoredAccessToken();
@@ -38,12 +39,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     if (!token) {
       clearStoredAccessToken();
       signOut();
-      router.replace("/login");
-      return;
-    }
-
-    if (hasAuthenticatedContext) {
-      setReady(true);
+      router.replace(loginHref);
       return;
     }
 
@@ -75,18 +71,18 @@ export function AuthGuard({ children }: { children: ReactNode }) {
         if (typeof error === "object" && error && "status" in error) {
           const status = Number(error.status);
           if (status === 401 || status === 403) {
-            router.replace("/login");
+            router.replace(loginHref);
             return;
           }
         }
 
-        router.replace("/login");
+        router.replace(loginHref);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [dispatch, hasAuthenticatedContext, router, signOut]);
+  }, [dispatch, loginHref, router, signOut]);
 
   if (ready) {
     return <>{children}</>;

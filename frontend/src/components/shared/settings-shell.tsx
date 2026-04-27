@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { apiGet, apiPost, apiPut, getStoredAccessToken } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -205,9 +206,7 @@ export function SettingsShell() {
       });
     } catch (loadError) {
       setError(
-        typeof loadError === "object" && loadError && "detail" in loadError
-          ? String(loadError.detail)
-          : "读取当前设置失败，请稍后重试。"
+        normalizeApiErrorDetail(loadError, "读取当前设置失败，请稍后重试。")
       );
     } finally {
       setLoading(false);
@@ -286,10 +285,7 @@ export function SettingsShell() {
     } catch (testError) {
       setTestStatus({
         success: false,
-        message:
-          typeof testError === "object" && testError && "detail" in testError
-            ? String(testError.detail)
-            : "连接测试失败，请稍后再试。"
+        message: normalizeApiErrorDetail(testError, "连接测试失败，请稍后再试。")
       });
     } finally {
       setTestingProvider(null);
@@ -357,9 +353,7 @@ export function SettingsShell() {
       await loadProfile(token);
     } catch (saveError) {
       setError(
-        typeof saveError === "object" && saveError && "detail" in saveError
-          ? String(saveError.detail)
-          : "保存设置失败，请稍后重试。"
+        normalizeApiErrorDetail(saveError, "保存设置失败，请稍后重试。")
       );
     } finally {
       setSaving(false);

@@ -24,6 +24,7 @@ import {
   getStoredAccessToken,
   streamJsonEvents
 } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 import { useAuth } from "@/lib/auth-context";
 import { FileBucket } from "@/components/audit/file-bucket";
 import { ProgressPanel } from "@/components/audit/progress-panel";
@@ -117,10 +118,7 @@ function resolveEffectiveModelLabel(
 }
 
 function normalizeError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "detail" in error) {
-    return String(error.detail);
-  }
-  return fallback;
+  return normalizeApiErrorDetail(error, fallback);
 }
 
 function getErrorStatus(error: unknown) {

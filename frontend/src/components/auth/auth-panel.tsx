@@ -16,8 +16,10 @@ import {
   apiPost,
   clearStoredAccessToken,
   getStoredAccessToken,
+  popStoredAuthNotice,
   setStoredAccessToken
 } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 type AuthPanelProps = {
   mode: "login" | "register";
@@ -43,10 +45,7 @@ const REGISTER_EMAIL_HELPER_TEXT =
   "请使用可以正常接收邮件的邮箱注册。后续找回或重置密码时，需要通过该邮箱接收重置链接完成验证。";
 
 function normalizeError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "detail" in error) {
-    return String(error.detail);
-  }
-  return fallback;
+  return normalizeApiErrorDetail(error, fallback);
 }
 
 function validateEmail(email: string) {
@@ -175,6 +174,9 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
   useEffect(() => {
     const token = getStoredAccessToken();
     if (!token) {
+      if (!isRegister) {
+        setError(popStoredAuthNotice());
+      }
       setCheckingSession(false);
       return;
     }
@@ -185,11 +187,14 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
         router.replace(destination);
       } catch {
         clearStoredAccessToken();
+        if (!isRegister) {
+          setError(popStoredAuthNotice());
+        }
       } finally {
         setCheckingSession(false);
       }
     })();
-  }, [router]);
+  }, [isRegister, router]);
 
   if (checkingSession) {
     return (

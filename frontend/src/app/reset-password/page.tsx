@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/ui/status-pill";
 import { apiPost, clearStoredAccessToken } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import type { MessageResponse } from "@/types";
 
@@ -17,20 +18,11 @@ const RESET_SUCCESS_MESSAGE = "密码已重置，请使用新密码重新登录�
 
 type ResetLinkState = "checking" | "ready" | "invalid" | "success";
 
-function isTechnicalErrorMessage(message: string) {
-  return /supabase|postgrest|traceback|user not found|email not found|relation|jwt|gotrue/i.test(
-    message
-  );
-}
-
 function normalizeResetError(error: unknown) {
-  if (typeof error === "object" && error && "detail" in error) {
-    const detail = String(error.detail);
-    if (detail && !isTechnicalErrorMessage(detail)) {
-      return detail;
-    }
-  }
-  return "密码重置失败或链接已过期，请重新发起密码重置。";
+  return normalizeApiErrorDetail(
+    error,
+    "密码重置失败或链接已过期，请重新发起密码重置。"
+  );
 }
 
 function clearResetUrl() {

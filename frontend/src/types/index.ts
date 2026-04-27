@@ -7,6 +7,7 @@ export type ApiSuccess<T> = {
 export type ApiError = {
   status: number;
   detail: string;
+  message?: string;
 };
 
 export type MessageResponse = {

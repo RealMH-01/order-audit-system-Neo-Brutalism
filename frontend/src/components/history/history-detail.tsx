@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { downloadAuditReport } from "@/lib/api";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 type HistoryReportType = "marked" | "detailed" | "zip";
 
@@ -61,18 +62,7 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 }
 
 function normalizeDownloadError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "detail" in error) {
-    const detail = (error as { detail?: unknown }).detail;
-    if (typeof detail === "string" && detail.length > 0) {
-      return detail;
-    }
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return fallback;
+  return normalizeApiErrorDetail(error, fallback);
 }
 
 function HistoryReportSection({

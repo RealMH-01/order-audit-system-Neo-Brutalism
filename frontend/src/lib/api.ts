@@ -1,8 +1,13 @@
 import type { ApiError, ApiSuccess } from "@/types";
+import {
+  LOGIN_EXPIRED_MESSAGE,
+  normalizeApiErrorDetail
+} from "@/lib/api-error";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 const ACCESS_TOKEN_KEY = "order-audit-access-token";
+const AUTH_NOTICE_KEY = "order_audit_auth_notice";
 let isRedirecting = false;
 
 type RequestOptions = {
@@ -31,11 +36,57 @@ type DownloadAuditReportResult = {
   filename: string;
 };
 
-async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
+function isAuthStatus(status: number) {
+  return status === 401 || status === 403;
+}
+
+function isPublicAuthPage() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return ["/login", "/register", "/reset-password"].includes(
+    window.location.pathname
+  );
+}
+
+function isPublicAuthRequest(path?: string) {
+  return Boolean(
+    path &&
+      [
+        "/auth/login",
+        "/auth/register",
+        "/auth/password-reset/request",
+        "/auth/password-reset/confirm"
+      ].some((authPath) => path.startsWith(authPath))
+  );
+}
+
+function buildLoginHref() {
+  if (typeof window === "undefined") {
+    return "/login";
+  }
+
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  if (
+    window.location.pathname === "/login" ||
+    window.location.pathname === "/register" ||
+    window.location.pathname === "/reset-password"
+  ) {
+    return "/login";
+  }
+
+  return `/login?redirect=${encodeURIComponent(currentPath)}`;
+}
+
+async function parseResponse<T>(
+  response: Response,
+  path?: string
+): Promise<ApiSuccess<T>> {
   const responseText = await response.text();
 
   if (!response.ok) {
-    handleUnauthorizedResponse(response.status);
+    handleUnauthorizedResponse(response.status, path);
 
     let detail = "请求失败，请稍后重试。";
 
@@ -50,9 +101,14 @@ async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
       }
     }
 
+    const normalizedDetail =
+      isAuthStatus(response.status) && !isPublicAuthRequest(path)
+        ? LOGIN_EXPIRED_MESSAGE
+        : normalizeApiErrorDetail(detail);
     const error: ApiError = {
       status: response.status,
-      detail
+      detail: normalizedDetail,
+      message: normalizedDetail
     };
     throw error;
   }
@@ -61,18 +117,31 @@ async function parseResponse<T>(response: Response): Promise<ApiSuccess<T>> {
   return { data };
 }
 
-function handleUnauthorizedResponse(status: number) {
-  if (status !== 401 && status !== 403) {
+function handleUnauthorizedResponse(status: number, path?: string) {
+  if (!isAuthStatus(status)) {
+    return;
+  }
+
+  if (isPublicAuthRequest(path)) {
     return;
   }
 
   clearStoredAccessToken();
-  if (typeof window === "undefined" || isRedirecting) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const publicAuthPage = isPublicAuthPage();
+  if (!publicAuthPage || path === "/auth/me") {
+    setStoredAuthNotice(LOGIN_EXPIRED_MESSAGE);
+  }
+
+  if (publicAuthPage || isRedirecting) {
     return;
   }
 
   isRedirecting = true;
-  window.location.href = "/login";
+  window.location.href = buildLoginHref();
 }
 
 function buildHeaders(token?: string | null, hasBody = false): HeadersInit {
@@ -120,7 +189,7 @@ async function request<T>(
     body: hasBody ? JSON.stringify(options.body) : undefined
   });
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, path);
 }
 
 export async function apiGet<T>(
@@ -177,7 +246,7 @@ export async function apiUploadFile<T>(
     signal: options.signal
   });
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, path);
 }
 
 export async function downloadAuditReport(
@@ -201,7 +270,8 @@ export async function downloadAuditReport(
   );
 
   if (!response.ok) {
-    handleUnauthorizedResponse(response.status);
+    const path = `/audit/tasks/${taskId}/reports/${reportType}`;
+    handleUnauthorizedResponse(response.status, path);
 
     let detail = "报告下载失败，请稍后重试。";
 
@@ -222,9 +292,13 @@ export async function downloadAuditReport(
       detail = "报告文件暂不可用，可能已过期或尚未生成，请重新运行审核。";
     }
 
+    const normalizedDetail = isAuthStatus(response.status)
+      ? LOGIN_EXPIRED_MESSAGE
+      : normalizeApiErrorDetail(detail, "报告下载失败，请稍后重试。");
     const error: ApiError = {
       status: response.status,
-      detail
+      detail: normalizedDetail,
+      message: normalizedDetail
     };
     throw error;
   }
@@ -265,7 +339,7 @@ export async function streamJsonEvents<T>(
   });
 
   if (!response.ok) {
-    await parseResponse<never>(response);
+    await parseResponse<never>(response, path);
     return;
   }
 
@@ -273,7 +347,8 @@ export async function streamJsonEvents<T>(
   if (!reader) {
     const error: ApiError = {
       status: 500,
-      detail: "进度流建立失败，请稍后重试。"
+      detail: "进度流建立失败，请稍后重试。",
+      message: "进度流建立失败，请稍后重试。"
     };
     throw error;
   }
@@ -322,4 +397,21 @@ export function clearStoredAccessToken() {
     return;
   }
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+}
+
+export function setStoredAuthNotice(message: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.setItem(AUTH_NOTICE_KEY, message);
+}
+
+export function popStoredAuthNotice() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const message = window.sessionStorage.getItem(AUTH_NOTICE_KEY);
+  window.sessionStorage.removeItem(AUTH_NOTICE_KEY);
+  return message;
 }

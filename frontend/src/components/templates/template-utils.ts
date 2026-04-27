@@ -4,9 +4,7 @@ import type {
   AuditTemplateDraft,
   TemplateBusinessType
 } from "@/components/templates/types";
-
-const TECHNICAL_ERROR_PATTERN =
-  /token|profile|endpoint|api|debug|settings|traceback|supabase|fastapi|raw response|\/api/i;
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 export function createTemplateDraft(): AuditTemplateDraft {
   return {
@@ -97,23 +95,5 @@ export function summarizeSupplementalRules(rules: string) {
 }
 
 export function normalizeTemplateError(error: unknown, fallback: string) {
-  if (typeof error !== "object" || !error) {
-    return fallback;
-  }
-
-  if ("status" in error) {
-    const status = Number(error.status);
-    if (status === 401 || status === 403) {
-      return "登录状态已失效，请重新登录。";
-    }
-  }
-
-  if ("detail" in error) {
-    const detail = error.detail;
-    if (typeof detail === "string" && detail && !TECHNICAL_ERROR_PATTERN.test(detail)) {
-      return detail;
-    }
-  }
-
-  return fallback;
+  return normalizeApiErrorDetail(error, fallback);
 }

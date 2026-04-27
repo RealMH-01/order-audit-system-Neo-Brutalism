@@ -1,11 +1,8 @@
 import type { RulesRole, TemplateDraft, TemplateItem, TemplateMode } from "@/components/rules/types";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 export function normalizeError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "detail" in error) {
-    return String(error.detail);
-  }
-
-  return fallback;
+  return normalizeApiErrorDetail(error, fallback);
 }
 
 export function formatRulesDate(value: string | null) {
