@@ -892,7 +892,21 @@ export function AuditWorkspace() {
       setProgressMessage(data.message);
       setWorkspaceMessage(data.message);
     } catch (error) {
-      setWorkspaceError(normalizeError(error, "启动审核失败，请稍后重试。"));
+      const status = getErrorStatus(error);
+      const detail = normalizeError(error, "启动审核失败，请稍后重试。");
+
+      if (status === 404 && detail.includes("未找到指定文件")) {
+        setPoFile(null);
+        setTargetFiles([]);
+        setPrevTicketFiles([]);
+        setTemplateFile(null);
+        setReferenceFiles([]);
+        setWorkspaceError(
+          "文件已失效（服务端可能已重启），所有暂存文件已清空，请重新上传后再启动审核。"
+        );
+      } else {
+        setWorkspaceError(detail);
+      }
     } finally {
       setStartLoading(false);
     }
