@@ -19,10 +19,10 @@ import type {
   HistoryStatusFilter
 } from "@/components/history/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from @/components/ui/button;
-import { Card, CardContent, CardHeader, CardTitle } from @/components/ui/card;
-import { SectionHeading } from @/components/ui/section-heading;
-import { apiGet, getStoredAccessToken } from @/lib/api;
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { apiGet, getStoredAccessToken } from "@/lib/api";
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -36,7 +36,7 @@ export function HistoryShell() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<HistoryDetailResponse[item] | null>(null);
+  const [detail, setDetail] = useState<HistoryDetailResponse["item"] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [filter, setFilter] = useState<HistoryStatusFilter>("ALL");
