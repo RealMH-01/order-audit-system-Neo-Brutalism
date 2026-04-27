@@ -92,7 +92,7 @@ export function TemplateEditorPanel({
             value={draft.name}
             onChange={(event) => onChange({ ...draft, name: event.target.value })}
             disabled={readOnly || saving || deleting}
-            placeholder="例如：通用外贸发票核对模板"
+            placeholder="例如：通用订单发票核对模板"
           />
         </label>
 

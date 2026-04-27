@@ -142,7 +142,7 @@ export function StepRulesConfig({
                     <Textarea
                       value={chatInput}
                       onChange={(event) => onChatInputChange(event.target.value)}
-                      placeholder="例如：我们主要审商业发票和装箱单，最怕数量、收货人和贸易术语出错。"
+                      placeholder="例如：我们主要审订单、发票和交付资料，最怕数量、金额和交付日期出错。"
                     />
                     <div className="flex flex-wrap gap-3">
                       <Button onClick={onSendChat} disabled={chatLoading || !chatInput.trim()}>
@@ -271,6 +271,9 @@ export function StepRulesConfig({
                   onChange={onImportTextFile}
                 />
               </label>
+              <div className="border-2 border-ink bg-sky px-3 py-2 text-xs font-black leading-5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                支持格式：UTF-8 .txt 文本；单文件 20MB 以内；每次导入 1 个文件，导入后会覆盖当前手写规则草稿。
+              </div>
               {rulesImportError ? (
                 <div className="issue-red p-4">
                   <p className="text-sm font-bold leading-6">{rulesImportError}</p>

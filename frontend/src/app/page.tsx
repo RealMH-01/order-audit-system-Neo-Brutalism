@@ -13,7 +13,7 @@ const capabilityCards = [
   {
     title: "单据一致性审核",
     description:
-      "围绕 PO、商业发票、装箱单、托书等外贸跟单资料，快速发现字段不一致、缺失和潜在风险。",
+      "围绕 PO、订单、发票、装箱单、交付资料等业务文件，快速发现字段不一致、缺失和潜在风险。",
     tone: "mint" as const,
     icon: FileSearch
   },
@@ -33,7 +33,7 @@ const capabilityCards = [
   }
 ];
 
-const workflowSteps = ["上传 PO 与待审单据", "启动智能审核", "查看风险分层结果", "下载审核报告"];
+const workflowSteps = ["上传订单与待审文件", "启动智能审核", "查看风险分层结果", "下载审核报告"];
 
 export default function HomePage() {
   return (
@@ -43,14 +43,14 @@ export default function HomePage() {
           <div className="space-y-6">
             <p className="inline-flex w-fit -rotate-1 items-center gap-2 border-4 border-ink bg-sky px-4 py-2 text-sm font-black uppercase tracking-[0.18em] shadow-neo-sm">
               <Sparkles size={18} strokeWidth={3} />
-              外贸单据智能审核
+              AI 订单审核系统
             </p>
             <div className="space-y-4">
               <h1 className="max-w-4xl text-4xl font-black uppercase leading-none tracking-tight md:text-6xl">
-                让跟单审核从反复核对，变成清晰可追踪的风险判断。
+                让订单审核从反复核对，变成清晰可追踪的风险判断。
               </h1>
               <p className="max-w-2xl text-base font-bold leading-7 md:text-lg">
-                Order Audit System 面向外贸跟单场景，帮助团队把多份单据中的关键字段、业务规则和风险等级集中到一个可执行的审核流程里。
+                Order Audit System 面向采购、销售、履约、外贸等场景，帮助团队把订单文件、业务规则和风险等级集中到一个可执行的审核流程里。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -104,7 +104,7 @@ export default function HomePage() {
         <div className="border-4 border-ink bg-secondary p-6 shadow-neo-md">
           <p className="text-sm font-black uppercase tracking-[0.18em]">For Teams</p>
           <h2 className="mt-3 text-3xl font-black uppercase leading-none md:text-4xl">
-            更适合多人协作的单据审核入口
+            更适合多人协作的多行业订单审核入口
           </h2>
         </div>
         <div className="border-4 border-ink bg-paper p-6 shadow-neo-md">

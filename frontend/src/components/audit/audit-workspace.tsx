@@ -68,6 +68,10 @@ const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const MAX_PROGRESS_EVENTS = 24;
 const PROGRESS_CONNECTION_INTERRUPTED_MESSAGE =
   "审核进度连接中断，请刷新页面查看结果或重新发起审核。";
+const AUDIT_UPLOAD_FORMAT_HINT =
+  "支持格式：PDF、DOCX、XLSX、PNG、JPG/JPEG、TXT；单文件 20MB 以内。";
+const AUDIT_SINGLE_UPLOAD_LIMIT_HINT = `${AUDIT_UPLOAD_FORMAT_HINT} 当前入口保留 1 个文件，可重新上传替换；所有上传区合计最多暂存 10 个文件。`;
+const AUDIT_MULTI_UPLOAD_LIMIT_HINT = `${AUDIT_UPLOAD_FORMAT_HINT} 可一次选择多个文件，重复文件名会自动替换；所有上传区合计最多暂存 10 个文件。`;
 
 type BucketKey = "po" | "target" | "prev" | "template" | "reference";
 type ResultFilter = "ALL" | "RED" | "YELLOW" | "BLUE";
@@ -1326,6 +1330,7 @@ export function AuditWorkspace() {
               badgeLabel="1. PO 基准区"
               files={poFile ? [poFile] : []}
               emptyHint="请先上传 1 个 PO 基准文件。"
+              limitHint={AUDIT_SINGLE_UPLOAD_LIMIT_HINT}
               uploading={uploadingKey === "po"}
               disabled={workspaceDisabled}
               disableHint={bucketDisableHint}
@@ -1341,6 +1346,7 @@ export function AuditWorkspace() {
               badgeLabel="3A. 模板文件"
               files={templateFile ? [templateFile] : []}
               emptyHint="模板文件是可选项，不上传也可以启动审核。"
+              limitHint={AUDIT_SINGLE_UPLOAD_LIMIT_HINT}
               uploading={uploadingKey === "template"}
               disabled={workspaceDisabled}
               disableHint={bucketDisableHint}
@@ -1360,6 +1366,7 @@ export function AuditWorkspace() {
               badgeLabel="3B. 参考文件"
               files={referenceFiles}
               emptyHint="参考文件是可选项，你可以稍后再补。"
+              limitHint={AUDIT_MULTI_UPLOAD_LIMIT_HINT}
               multiple
               uploading={uploadingKey === "reference"}
               disabled={workspaceDisabled}
@@ -1386,6 +1393,7 @@ export function AuditWorkspace() {
               badgeLabel="2. 待审核文件"
               files={targetFiles}
               emptyHint="请至少上传 1 个待审核文件，才能启动审核。"
+              limitHint={`${AUDIT_MULTI_UPLOAD_LIMIT_HINT} 启动审核前至少需要 1 个待审核文件。`}
               multiple
               allowDocumentType
               uploading={uploadingKey === "target"}
@@ -1414,6 +1422,7 @@ export function AuditWorkspace() {
               badgeLabel="3C. 上一票文件"
               files={prevTicketFiles}
               emptyHint="上一票文件是可选项，用于补充交叉比对上下文。"
+              limitHint={AUDIT_MULTI_UPLOAD_LIMIT_HINT}
               multiple
               allowDocumentType
               uploading={uploadingKey === "prev"}

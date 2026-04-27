@@ -9,7 +9,11 @@ export type WizardProvider = "openai" | "deepseek" | "zhipuai";
 export type WizardRuleMode = "ai" | "manual";
 export type WizardAuthMode = "login" | "register";
 export type WizardCompanyMode = "single" | "group";
-export type WizardTemplateOptionId = "generic-trade" | "chemical" | "blank";
+export type WizardTemplateOptionId =
+  | "generic-order"
+  | "generic-trade"
+  | "chemical"
+  | "blank";
 
 export type WizardTemplateOption = {
   id: WizardTemplateOptionId;

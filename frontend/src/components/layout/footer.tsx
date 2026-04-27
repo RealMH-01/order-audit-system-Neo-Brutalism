@@ -15,7 +15,7 @@ export function Footer() {
         <div className="space-y-3">
           <Badge variant="inverse">Order Audit System</Badge>
           <p className="max-w-2xl text-sm font-bold leading-6 text-ink">
-            用于辅助外贸单据审核、问题追踪与报告沉淀。审核结果仅供参考，请结合人工复核后使用。
+            用于辅助企业订单审核、问题追踪与报告沉淀，适用于采购、销售、履约、外贸等业务场景。审核结果仅供参考，请结合人工复核后使用。
           </p>
         </div>
         <nav className="flex flex-wrap gap-3">

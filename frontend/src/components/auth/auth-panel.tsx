@@ -251,7 +251,7 @@ export function AuthPanel({ mode, title, description }: AuthPanelProps) {
                 <Input
                   value={form.displayName}
                   onChange={(event) => updateField("displayName", event.target.value)}
-                  placeholder="例如：外贸审核组 / 张三 / 单证审核团队"
+                  placeholder="例如：订单审核组 / 张三 / 业务审核团队"
                   disabled={submitting}
                 />
                 <p className="text-xs font-bold leading-5">

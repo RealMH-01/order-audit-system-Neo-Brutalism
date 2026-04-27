@@ -31,6 +31,7 @@ type FileBucketProps = {
   badgeLabel: string;
   files: AuditBucketFile[];
   emptyHint: string;
+  limitHint?: string;
   multiple?: boolean;
   uploading?: boolean;
   disabled?: boolean;
@@ -49,6 +50,7 @@ export function FileBucket({
   badgeLabel,
   files,
   emptyHint,
+  limitHint,
   multiple = false,
   uploading = false,
   disabled = false,
@@ -138,6 +140,12 @@ export function FileBucket({
         <div className="border-2 border-black bg-amber-100 px-3 py-2 text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
           已上传的文件仅在当前会话中有效，系统维护更新后需重新上传。
         </div>
+
+        {limitHint ? (
+          <div className="border-2 border-ink bg-sky px-3 py-2 text-xs font-black leading-5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            {limitHint}
+          </div>
+        ) : null}
 
         {disabled && disableHint ? (
           <div className="issue-yellow p-4">

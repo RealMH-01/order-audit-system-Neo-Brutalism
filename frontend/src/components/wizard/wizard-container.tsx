@@ -52,9 +52,17 @@ const steps: Array<{ key: WizardStepKey; label: string }> = [
 
 const templateOptions: WizardTemplateOption[] = [
   {
+    id: "generic-order",
+    label: "通用订单审核",
+    description: "适合采购、销售、履约、外贸等多行业订单审核场景，重点核对关键字段和业务一致性。",
+    rulesText:
+      "优先核对订单号、合同号、主体名称、品名规格、数量、金额、交付日期、收发货信息和履约要求；任何关键字段缺失、冲突或数字歧义都必须重点提示。",
+    companyAffiliates: []
+  },
+  {
     id: "generic-trade",
     label: "通用外贸",
-    description: "适合标准外贸跟单场景，重点核对 PO、单据关键信息和一致性。",
+    description: "适合标准外贸跟单场景，重点核对 PO、贸易单据关键信息和一致性。",
     rulesText:
       "优先核对抬头、PO 号、合同号、数量、金额、贸易术语、买方、收货人与发货信息；任何数字歧义都必须重点提示。",
     companyAffiliates: []
@@ -97,7 +105,7 @@ const initialFormState: WizardFormState = {
   hasDeepseekKey: false,
   hasZhipuKey: false,
   hasZhipuOcrKey: false,
-  selectedTemplateId: "generic-trade",
+  selectedTemplateId: "generic-order",
   ruleMode: "ai",
   manualRulesText: "",
   sessionId: null,
