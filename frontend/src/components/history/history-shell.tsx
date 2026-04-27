@@ -165,6 +165,10 @@ export function HistoryShell() {
         icon={History}
       />
 
+      <div className="border-2 border-black bg-emerald-100 px-3 py-2 text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+        审核报告已持久化保存，你可以随时从历史记录中下载。早期未关联报告的记录会显示"不可用"。
+      </div>
+
       <Card className="bg-secondary">
         <CardContent className="py-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">

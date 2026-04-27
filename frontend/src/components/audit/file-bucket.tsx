@@ -135,6 +135,10 @@ export function FileBucket({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="border-2 border-black bg-amber-100 px-3 py-2 text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+          已上传的文件仅在当前会话中有效，系统维护更新后需重新上传。
+        </div>
+
         {disabled && disableHint ? (
           <div className="issue-yellow p-4">
             <p className="text-sm font-bold leading-6">{disableHint}</p>
