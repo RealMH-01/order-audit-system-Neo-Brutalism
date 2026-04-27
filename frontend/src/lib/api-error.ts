@@ -7,7 +7,7 @@ const AUTH_ERROR_PATTERN =
   /登录已过期|token expired|expired token|jwt expired|invalid token|invalid jwt|登录态.*失效/i;
 
 const TECHNICAL_ERROR_PATTERN =
-  /supabase|postgrest|postgresql|postgres|database|relation|traceback|keyerror|stack trace|sql|syntax error|typeerror|referenceerror|duplicate key|foreign key|violates constraint|null value|pgrst|python|exception|column|table|schema|fastapi|raw response|internal server error|response body|doctype|<html/i;
+  /supabase|postgrest|postgresql|postgres|database|relation|traceback|keyerror|stack|stack trace|sql|syntax error|typeerror|referenceerror|validationerror|validation error|pydantic|duplicate key|foreign key|violates constraint|null value|pgrst|python|exception|column|table|schema|fastapi|raw response|internal server error|response body|doctype|<html/i;
 
 const UNREADABLE_ERROR_PATTERN = /\[object Object\]|^\s*\{[\s\S]*\}\s*$|^\s*\[[\s\S]*\]\s*$/;
 

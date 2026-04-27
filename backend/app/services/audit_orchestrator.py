@@ -42,6 +42,15 @@ from app.services.token_utils import TokenUtilityService
 
 logger = logging.getLogger(__name__)
 
+_USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE = "审核过程中出现系统异常，请稍后重试。如果问题持续，请联系管理员。"
+_TECHNICAL_TASK_MESSAGE_PATTERN = re.compile(
+    r"supabase|postgrest|postgresql|postgres|database|relation|traceback|keyerror|stack|sql|"
+    r"syntax error|typeerror|referenceerror|validationerror|validation error|pydantic|pgrst|"
+    r"python|exception|column|table|schema|fastapi|raw response|internal server error|"
+    r"response body|doctype|<html",
+    re.IGNORECASE,
+)
+
 _DOC_TYPE_HINTS = {
     "invoice": {"invoice", "commercial_invoice", "inv"},
     "packing_list": {"packing_list", "packing", "plist"},
@@ -158,6 +167,17 @@ _REPORT_STORAGE_FILENAMES = {
     "detailed": "detailed.xlsx",
     "zip": "reports.zip",
 }
+
+
+def _safe_user_facing_task_message(message: str) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
+    if text == "[object Object]" or _TECHNICAL_TASK_MESSAGE_PATTERN.search(text):
+        return _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
+    if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+        return _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
+    return text
 
 
 class AuditOrchestratorService:
@@ -1514,11 +1534,12 @@ class AuditOrchestratorService:
             await self._finalize_cancel(task)
         except AppError as exc:
             task["status"] = "failed"
-            task["message"] = exc.message
+            task["message"] = _safe_user_facing_task_message(exc.message)
             task["updated_at"] = datetime.now(timezone.utc)
         except Exception as exc:  # pragma: no cover
+            logger.exception("Audit task %s failed with an unexpected exception.", task_id)
             task["status"] = "failed"
-            task["message"] = f"审核任务执行失败：{exc}"
+            task["message"] = _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
             task["updated_at"] = datetime.now(timezone.utc)
 
     def _to_api_result(self, task_id: str, aggregate_result: dict[str, Any]) -> AuditResultResponse:

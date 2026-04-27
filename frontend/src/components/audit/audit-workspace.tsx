@@ -64,7 +64,10 @@ import type {
 import type { WizardProfile } from "@/components/wizard/types";
 
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "cancelling"]);
+const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const MAX_PROGRESS_EVENTS = 24;
+const PROGRESS_CONNECTION_INTERRUPTED_MESSAGE =
+  "审核进度连接中断，请刷新页面查看结果或重新发起审核。";
 
 type BucketKey = "po" | "target" | "prev" | "template" | "reference";
 type ResultFilter = "ALL" | "RED" | "YELLOW" | "BLUE";
@@ -340,6 +343,8 @@ export function AuditWorkspace() {
   const router = useRouter();
   const { state: authState } = useAuth();
   const progressAbortRef = useRef<AbortController | null>(null);
+  const latestTaskIdRef = useRef<string | null>(null);
+  const latestTaskStatusRef = useRef("idle");
 
   const [token, setToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<WizardProfile | null>(null);
@@ -428,6 +433,14 @@ export function AuditWorkspace() {
     () => auditTemplates.find((template) => template.id === selectedTemplateId) ?? null,
     [auditTemplates, selectedTemplateId]
   );
+
+  useEffect(() => {
+    latestTaskIdRef.current = taskId;
+  }, [taskId]);
+
+  useEffect(() => {
+    latestTaskStatusRef.current = taskStatus;
+  }, [taskStatus]);
 
   const clearRunState = useCallback((nextMessage?: string) => {
     progressAbortRef.current?.abort();
@@ -544,68 +557,245 @@ export function AuditWorkspace() {
     void fetchAuditTemplates(accessToken);
   }, [fetchAuditTemplates, fetchProfile, fetchResidualFiles]);
 
+  const fetchFinishedTaskArtifacts = useCallback(
+    async (finishedTaskId: string, accessToken: string) => {
+      const [resultOutcome, reportOutcome] = await Promise.allSettled([
+        apiGet<AuditResultResponse>(`/audit/result/${finishedTaskId}`, {
+          token: accessToken
+        }),
+        apiGet<AuditReportResponse>(`/audit/report/${finishedTaskId}`, {
+          token: accessToken
+        })
+      ] as const);
+
+      if (latestTaskIdRef.current !== finishedTaskId) {
+        return;
+      }
+
+      if (resultOutcome.status === "fulfilled") {
+        setResult(resultOutcome.value.data);
+      } else if (
+        getErrorStatus(resultOutcome.reason) === 401 ||
+        getErrorStatus(resultOutcome.reason) === 403
+      ) {
+        throw resultOutcome.reason;
+      }
+
+      if (reportOutcome.status === "fulfilled") {
+        const reportMessage = normalizeError(
+          reportOutcome.value.data.message,
+          "读取报告状态失败，请稍后重试。"
+        );
+        setReportMessage(reportMessage);
+        setReportInfo({
+          ...reportOutcome.value.data,
+          message: reportMessage
+        });
+      } else if (
+        getErrorStatus(reportOutcome.reason) === 401 ||
+        getErrorStatus(reportOutcome.reason) === 403
+      ) {
+        throw reportOutcome.reason;
+      }
+    },
+    []
+  );
+
+  const confirmAuditTerminalState = useCallback(
+    async (interruptedTaskId: string, accessToken: string) => {
+      const [resultOutcome, reportOutcome] = await Promise.allSettled([
+        apiGet<AuditResultResponse>(`/audit/result/${interruptedTaskId}`, {
+          token: accessToken
+        }),
+        apiGet<AuditReportResponse>(`/audit/report/${interruptedTaskId}`, {
+          token: accessToken
+        })
+      ] as const);
+
+      if (latestTaskIdRef.current !== interruptedTaskId) {
+        return true;
+      }
+
+      if (resultOutcome.status === "rejected") {
+        const resultStatus = getErrorStatus(resultOutcome.reason);
+        if (resultStatus === 401 || resultStatus === 403) {
+          throw resultOutcome.reason;
+        }
+      }
+
+      if (reportOutcome.status === "rejected") {
+        const reportStatus = getErrorStatus(reportOutcome.reason);
+        if (reportStatus === 401 || reportStatus === 403) {
+          throw reportOutcome.reason;
+        }
+      }
+
+      const resultData =
+        resultOutcome.status === "fulfilled" ? resultOutcome.value.data : null;
+      const reportData =
+        reportOutcome.status === "fulfilled" ? reportOutcome.value.data : null;
+
+      if (resultData && TERMINAL_TASK_STATUSES.has(resultData.status)) {
+        const friendlyMessage =
+          resultData.status === "failed"
+            ? "审核任务失败，请稍后重试或重新发起审核。"
+            : normalizeError(resultData.message, PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
+
+        setTaskStatus(resultData.status);
+        if (resultData.status === "completed") {
+          setProgressPercent(100);
+        }
+        setProgressMessage(friendlyMessage);
+        setResult(resultData);
+
+        if (resultData.status === "failed") {
+          setWorkspaceError(friendlyMessage);
+        } else {
+          setWorkspaceMessage(friendlyMessage);
+        }
+
+        await fetchFinishedTaskArtifacts(interruptedTaskId, accessToken);
+        return true;
+      }
+
+      if (!reportData) {
+        return false;
+      }
+
+      const reportMessage = normalizeError(reportData.message, "读取报告状态失败，请稍后重试。");
+      if (reportData.available || reportData.status === "ready") {
+        setReportMessage(reportMessage);
+        setReportInfo({ ...reportData, message: reportMessage });
+        setTaskStatus("completed");
+        setProgressPercent(100);
+        setProgressMessage(reportMessage);
+        if (resultData) {
+          setResult(resultData);
+        }
+        setWorkspaceMessage(reportMessage);
+        return true;
+      }
+
+      if (reportData.status === "failed") {
+        setReportMessage(reportMessage);
+        setReportInfo({ ...reportData, message: reportMessage });
+        setTaskStatus("failed");
+        setProgressMessage(reportMessage);
+        if (resultData) {
+          setResult(resultData);
+        }
+        setWorkspaceError(reportMessage);
+        return true;
+      }
+
+      return false;
+    },
+    [fetchFinishedTaskArtifacts]
+  );
+
   useEffect(() => {
     if (!taskId || !token) {
       return;
     }
 
     const controller = new AbortController();
+    let closed = false;
+    let receivedTerminalEvent = false;
     progressAbortRef.current = controller;
+
+    const handleProgressStreamInterrupted = async (error?: unknown) => {
+      if (
+        closed ||
+        controller.signal.aborted ||
+        receivedTerminalEvent ||
+        latestTaskIdRef.current !== taskId ||
+        !ACTIVE_TASK_STATUSES.has(latestTaskStatusRef.current)
+      ) {
+        return;
+      }
+
+      const status = getErrorStatus(error);
+      if (status === 401 || status === 403) {
+        setWorkspaceError(
+          normalizeError(error, "登录已过期，请重新登录后继续。")
+        );
+        return;
+      }
+
+      try {
+        const confirmed = await confirmAuditTerminalState(taskId, token);
+        if (confirmed || latestTaskIdRef.current !== taskId) {
+          return;
+        }
+      } catch (confirmError) {
+        const confirmStatus = getErrorStatus(confirmError);
+        if (confirmStatus === 401 || confirmStatus === 403) {
+          setWorkspaceError(
+            normalizeError(confirmError, "登录已过期，请重新登录后继续。")
+          );
+          return;
+        }
+      }
+
+      if (
+        closed ||
+        controller.signal.aborted ||
+        latestTaskIdRef.current !== taskId ||
+        !ACTIVE_TASK_STATUSES.has(latestTaskStatusRef.current)
+      ) {
+        return;
+      }
+
+      setTaskStatus("failed");
+      setProgressMessage(PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
+      setWorkspaceError(PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
+    };
 
     void streamJsonEvents<AuditProgressPayload>(`/audit/progress/${taskId}`, {
       token,
       signal: controller.signal,
       onMessage: (payload) => {
+        if (closed || latestTaskIdRef.current !== taskId) {
+          return;
+        }
+
         setTaskStatus(payload.status);
         setProgressPercent(payload.progress_percent);
-        setProgressMessage(payload.message);
-        setProgressEvents((previous) => mergeProgressEvents(previous, payload));
+        const safeMessage = normalizeError(payload.message, "审核进度更新失败，请稍后刷新查看。");
+        setProgressMessage(safeMessage);
+        setProgressEvents((previous) =>
+          mergeProgressEvents(previous, { ...payload, message: safeMessage })
+        );
 
         if (
           payload.status === "completed" ||
           payload.status === "failed" ||
           payload.status === "cancelled"
         ) {
-          void apiGet<AuditResultResponse>(`/audit/result/${taskId}`, {
-            token
-          })
-            .then(({ data }) => {
-              setResult(data);
-            })
-            .catch((error) => {
-              setWorkspaceError(
-                normalizeError(error, "读取审核结果失败，请稍后重试。")
-              );
-            });
-
-          void apiGet<AuditReportResponse>(`/audit/report/${taskId}`, {
-            token
-          })
-            .then(({ data }) => {
-              setReportMessage(data.message);
-              setReportInfo(data);
-            })
-            .catch((error) => {
-              setWorkspaceError(
-                normalizeError(error, "读取报告状态失败，请稍后重试。")
-              );
-            });
+          receivedTerminalEvent = true;
+          void fetchFinishedTaskArtifacts(taskId, token).catch((error) => {
+            if (closed || latestTaskIdRef.current !== taskId) {
+              return;
+            }
+            setWorkspaceError(
+              normalizeError(error, "读取审核结果失败，请稍后重试。")
+            );
+          });
         }
       }
-    }).catch((error) => {
-      if (controller.signal.aborted) {
-        return;
-      }
-
-      setWorkspaceError(
-        normalizeError(error, "建立审核进度连接失败，请稍后重试。")
-      );
-    });
+    })
+      .then(() => {
+        void handleProgressStreamInterrupted();
+      })
+      .catch((error) => {
+        void handleProgressStreamInterrupted(error);
+      });
 
     return () => {
+      closed = true;
       controller.abort();
     };
-  }, [taskId, token]);
+  }, [confirmAuditTerminalState, fetchFinishedTaskArtifacts, taskId, token]);
 
   const deleteFilesSilently = useCallback(
     async (fileIds: string[]) => {

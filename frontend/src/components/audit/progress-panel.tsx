@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 import type { AuditProgressPayload } from "@/components/audit/types";
 
@@ -168,6 +169,14 @@ export function ProgressPanel({
   }, [events, status]);
 
   const canCancel = active;
+  const displayedMessage = useMemo(
+    () =>
+      normalizeApiErrorDetail(
+        message,
+        "启动审核后，这里会显示当前阶段消息。"
+      ),
+    [message]
+  );
 
   return (
     <Card className="bg-secondary">
@@ -193,7 +202,7 @@ export function ProgressPanel({
           </div>
           <Progress value={progressPercent} className="mt-4" />
           <p className="mt-4 text-sm font-bold leading-6">
-            {message || "启动审核后，这里会显示当前阶段消息。"}
+            {displayedMessage}
           </p>
           <p className="mt-2 text-sm font-bold leading-6">
             {resolveStageHint(status, isStalled)}
@@ -262,7 +271,10 @@ export function ProgressPanel({
                       </span>
                     </div>
                     <p className="mt-2 text-sm font-bold leading-6">
-                      {event.message}
+                      {normalizeApiErrorDetail(
+                        event.message,
+                        "进度消息暂不可读，请刷新页面查看结果或重新发起审核。"
+                      )}
                     </p>
                   </div>
                 ))
