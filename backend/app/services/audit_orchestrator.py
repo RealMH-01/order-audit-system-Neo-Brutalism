@@ -425,6 +425,7 @@ class AuditOrchestratorService:
                     issue["id"] = f"X-{idx:02d}"
                     issue["source"] = "多目标文件交叉检查"
                     issue["field_location"] = "多目标文件交叉检查"
+                    issue["document_label"] = "多目标文件交叉检查"
             # 追加到 aggregate_result 的 issues 列表
             agg_issues = aggregate_result.get("issues")
             if isinstance(agg_issues, list):
