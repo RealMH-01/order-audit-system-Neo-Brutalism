@@ -76,6 +76,11 @@ const templateOptions: WizardTemplateOption[] = [
   }
 ];
 
+const RULES_IMPORT_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const RULES_IMPORT_MAX_FILE_SIZE_LABEL = "20MB";
+const RULES_IMPORT_EXTENSIONS = new Set(["txt"]);
+const RULES_IMPORT_MIME_TYPES = new Set(["text/plain"]);
+
 const initialFormState: WizardFormState = {
   token: null,
   authMode: "login",
@@ -115,6 +120,46 @@ function resolveProviderFromModel(model: string) {
     return "zhipuai" as const;
   }
   return "openai" as const;
+}
+
+function getFileExtension(filename: string) {
+  const dotIndex = filename.lastIndexOf(".");
+  return dotIndex > 0 ? filename.slice(dotIndex + 1).toLowerCase() : "";
+}
+
+function validateRulesImportFile(file: File) {
+  const extension = getFileExtension(file.name);
+  const hasSupportedExtension = RULES_IMPORT_EXTENSIONS.has(extension);
+  const hasSupportedMimeTypeWithoutExtension =
+    !extension && RULES_IMPORT_MIME_TYPES.has(file.type);
+
+  if (!hasSupportedExtension && !hasSupportedMimeTypeWithoutExtension) {
+    return "文件格式不支持，请上传 .txt 文本文件。";
+  }
+
+  if (file.size === 0) {
+    return "文件为空，请重新选择有效文件。";
+  }
+
+  if (file.size > RULES_IMPORT_MAX_FILE_SIZE_BYTES) {
+    return `文件过大，请压缩后重试或更换文件。当前支持 ${RULES_IMPORT_MAX_FILE_SIZE_LABEL} 以内的 .txt 文件。`;
+  }
+
+  return null;
+}
+
+function isUnreadableRulesText(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  const replacementChars = trimmed.match(/\uFFFD/g)?.length ?? 0;
+  if (replacementChars >= 2 || replacementChars / trimmed.length > 0.05) {
+    return true;
+  }
+
+  return /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(trimmed);
 }
 
 const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
@@ -197,6 +242,7 @@ export function WizardContainer() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [rulesImportError, setRulesImportError] = useState<string | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
@@ -603,15 +649,37 @@ export function WizardContainer() {
   const handleImportRules = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
+      setRulesImportError("请先选择要导入的 .txt 文本文件。");
+      event.target.value = "";
+      return;
+    }
+
+    const validationMessage = validateRulesImportFile(file);
+    if (validationMessage) {
+      setRulesImportError(validationMessage);
+      event.target.value = "";
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
+      const text = String(reader.result || "");
+      if (isUnreadableRulesText(text)) {
+        setRulesImportError("文件内容无法识别，请重新选择 UTF-8 文本文件。");
+        event.target.value = "";
+        return;
+      }
+
+      setRulesImportError(null);
       setForm((previous) => ({
         ...previous,
-        manualRulesText: String(reader.result || "")
+        manualRulesText: text
       }));
+      event.target.value = "";
+    };
+    reader.onerror = () => {
+      setRulesImportError("文件读取失败，请重新选择有效的 .txt 文本文件。");
+      event.target.value = "";
     };
     reader.readAsText(file, "utf-8");
   }, []);
@@ -785,9 +853,13 @@ export function WizardContainer() {
             aiRulesConfirmed={form.aiRulesConfirmed}
             chatLoading={chatLoading}
             chatError={chatError}
+            rulesImportError={rulesImportError}
             canStartAi={Boolean(form.token)}
             onRuleModeChange={(mode) => updateField("ruleMode", mode)}
-            onManualRulesChange={(value) => updateField("manualRulesText", value)}
+            onManualRulesChange={(value) => {
+              setRulesImportError(null);
+              updateField("manualRulesText", value);
+            }}
             onChatInputChange={(value) => updateField("chatInput", value)}
             onStartAi={handleStartAi}
             onSendChat={handleSendChat}
@@ -952,7 +1024,7 @@ export function WizardContainer() {
                   AI 引导向导
                 </h1>
                 <p className="max-w-3xl text-sm font-bold leading-6 md:text-base">
-                  这一轮重点收口向导数据流、路径切换规则、模板切换确认和最终一次性提交，不会把每一步都写库。
+                  跟着步骤完成模型、行业模板、审核规则和公司架构设置，之后就可以进入订单审核。
                 </p>
               </div>
             </div>
@@ -1065,7 +1137,7 @@ export function WizardContainer() {
       >
         <DialogSection>
           <p className="text-sm font-bold leading-6">
-            这不会自动加载模板到规则库，而是直接把当前页面收集到的模型、规则和公司架构写入当前 profile。
+            这不会自动导入新的模板规则，只会保存当前页面收集到的模型、规则和公司架构。
           </p>
         </DialogSection>
       </Dialog>

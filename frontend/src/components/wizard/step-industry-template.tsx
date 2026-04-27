@@ -30,7 +30,7 @@ export function StepIndustryTemplate({
           <Badge variant="accent">步骤 2</Badge>
           <CardTitle>选择行业模板</CardTitle>
           <CardDescription>
-            模板选择只保留在前端 state 中，不会直接写库。它只作为步骤 3 的规则预填与 AI 上下文来源。
+            模板会预填常见审核关注点，你也可以选择空白模板从零开始。
           </CardDescription>
         </CardHeader>
       </Card>

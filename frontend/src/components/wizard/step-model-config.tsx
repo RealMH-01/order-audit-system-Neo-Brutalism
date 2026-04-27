@@ -80,8 +80,7 @@ export function StepModelConfig({
         <Badge variant="inverse">模型与密钥</Badge>
         <CardTitle>选择 provider、模型和 API Key</CardTitle>
         <CardDescription>
-          这一页的值只暂存在前端 state，最终会在步骤 5 一次性写入
-          `settings/profile`。
+          选择本次审核使用的模型，并填写对应的 API Key。已有保存的密钥可以继续沿用。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

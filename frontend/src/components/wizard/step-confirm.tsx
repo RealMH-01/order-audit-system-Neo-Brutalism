@@ -55,19 +55,7 @@ export function StepConfirm({
           <Badge variant="accent">步骤 5</Badge>
           <CardTitle>确认总结</CardTitle>
           <CardDescription>
-            最后一步只做确认。点击“完成设置”后，前端会一次性写入
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              /api/settings/profile
-            </code>
-            ，然后再调用
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              /api/wizard/complete
-            </code>
-            或
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              /api/wizard/skip
-            </code>
-            。
+            最后一步只做确认。点击“完成设置”后，系统会保存当前模型、规则和公司架构。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -118,11 +106,7 @@ export function StepConfirm({
               <Badge variant="accent">审核规则</Badge>
               <CardTitle>{ruleMode === "ai" ? "AI 引导生成" : "手动编写"}</CardTitle>
               <CardDescription>
-                最终会写入当前用户的
-                <code className="mx-1 rounded-none border-2 border-ink bg-paper px-2 py-1">
-                  active_custom_rules
-                </code>
-                。
+                这些规则会作为后续订单审核的判断依据。
               </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(2)}>
@@ -156,15 +140,7 @@ export function StepConfirm({
               <Badge variant="muted">公司架构</Badge>
               <CardTitle>{companyMode === "single" ? "独立公司" : "集团公司"}</CardTitle>
               <CardDescription>
-                最终会写回
-                <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-                  company_affiliates
-                </code>
-                和
-                <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-                  company_affiliates_roles
-                </code>
-                。
+                系统会按这里的主体关系辅助识别关联公司和分工。
               </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => onJumpToStep(3)}>

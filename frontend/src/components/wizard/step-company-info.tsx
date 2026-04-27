@@ -48,15 +48,7 @@ export function StepCompanyInfo({
           <Badge variant="accent">步骤 4</Badge>
           <CardTitle>公司架构信息</CardTitle>
           <CardDescription>
-            这里直接对齐后端字段
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              company_affiliates
-            </code>
-            和
-            <code className="mx-1 rounded-none border-2 border-ink bg-secondary px-2 py-1">
-              company_affiliates_roles
-            </code>
-            ，不会再引入额外字段。
+            说明你的公司是否存在关联主体，系统会在审核时参考这些关系。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">

@@ -26,6 +26,7 @@ type StepRulesConfigProps = {
   aiRulesConfirmed: boolean;
   chatLoading: boolean;
   chatError: string | null;
+  rulesImportError: string | null;
   canStartAi: boolean;
   onRuleModeChange: (mode: WizardRuleMode) => void;
   onManualRulesChange: (value: string) => void;
@@ -50,6 +51,7 @@ export function StepRulesConfig({
   aiRulesConfirmed,
   chatLoading,
   chatError,
+  rulesImportError,
   canStartAi,
   onRuleModeChange,
   onManualRulesChange,
@@ -98,10 +100,9 @@ export function StepRulesConfig({
           <Card className="bg-muted">
             <CardHeader>
               <Badge variant="inverse">AI 引导对话</Badge>
-              <CardTitle>start / chat 最小联调</CardTitle>
+              <CardTitle>让 AI 帮你梳理规则</CardTitle>
               <CardDescription>
-                这里直接联后端 `/api/wizard/start` 和 `/api/wizard/chat`。如果 AI
-                迟迟没有结束，你可以强制让它现在总结。
+                AI 会根据当前模板、模型配置和你的规则草稿继续追问。信息足够后，可以让它直接总结。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -270,6 +271,11 @@ export function StepRulesConfig({
                   onChange={onImportTextFile}
                 />
               </label>
+              {rulesImportError ? (
+                <div className="issue-red p-4">
+                  <p className="text-sm font-bold leading-6">{rulesImportError}</p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -290,8 +296,7 @@ export function StepRulesConfig({
               </div>
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <p className="text-sm font-bold leading-6">
-                  如果你稍后切回 AI 模式，我会把这些手写规则作为“已有草稿”传给
-                  `/api/wizard/start`。
+                  如果你稍后切回 AI 模式，我会把这些手写规则作为已有草稿继续整理。
                 </p>
               </div>
             </CardContent>
