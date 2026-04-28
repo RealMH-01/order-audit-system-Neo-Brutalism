@@ -7,6 +7,7 @@ import {
   ArrowUp,
   FilePlus2,
   Loader2,
+  Megaphone,
   PenLine,
   Power,
   PowerOff,
@@ -15,6 +16,7 @@ import {
   ShieldAlert
 } from "lucide-react";
 
+import { AnnouncementEditorDialog } from "@/components/admin/announcement-editor-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -153,6 +155,7 @@ export function SystemRulesAdminShell() {
   const [draft, setDraft] = useState<RuleDraft>(emptyDraft);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [announcementEditorOpen, setAnnouncementEditorOpen] = useState(false);
 
   const [toggleDraft, setToggleDraft] = useState<ToggleDraft | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
@@ -240,6 +243,11 @@ export function SystemRulesAdminShell() {
     setFormError(null);
     setFeedback(null);
     setEditorOpen(true);
+  };
+
+  const openAnnouncementDialog = () => {
+    setFeedback(null);
+    setAnnouncementEditorOpen(true);
   };
 
   const openEditDialog = (rule: SystemRuleAdminItem) => {
@@ -465,10 +473,16 @@ export function SystemRulesAdminShell() {
     <section className="space-y-8">
       <HeaderBlock
         action={
-          <Button onClick={openCreateDialog}>
-            <FilePlus2 size={18} strokeWidth={3} />
-            新增系统规则
-          </Button>
+          <>
+            <Button variant="outline" onClick={openAnnouncementDialog}>
+              <Megaphone size={18} strokeWidth={3} />
+              发布更新公告
+            </Button>
+            <Button onClick={openCreateDialog}>
+              <FilePlus2 size={18} strokeWidth={3} />
+              新增系统规则
+            </Button>
+          </>
         }
       />
 
@@ -551,6 +565,16 @@ export function SystemRulesAdminShell() {
         }}
         onChange={setDraft}
         onSave={() => void saveRule()}
+      />
+
+      <AnnouncementEditorDialog
+        open={announcementEditorOpen}
+        token={token}
+        onClose={() => setAnnouncementEditorOpen(false)}
+        onSuccess={(message) => {
+          setFeedback({ tone: "success", message });
+          setAnnouncementEditorOpen(false);
+        }}
       />
 
       <ToggleRuleDialog

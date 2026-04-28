@@ -15,6 +15,7 @@ const navItems = [
   { href: "/templates", label: "自定义规则集" },
   { href: "/wizard", label: "引导" },
   { href: "/history", label: "历史" },
+  { href: "/updates", label: "平台更新" },
   { href: "/settings", label: "设置" },
   { href: "/admin/system-rules", label: "系统硬规则", requireRole: "admin" }
 ];
