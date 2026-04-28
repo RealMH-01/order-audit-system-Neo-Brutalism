@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   Copy,
@@ -18,7 +19,6 @@ import type {
   AuditTemplateListResponse,
   MessageResponse
 } from "@/components/templates/types";
-import { SystemRulesReadonlyPanel } from "@/components/templates/system-rules-readonly-panel";
 import {
   createTemplateDraft,
   formatTemplateDate,
@@ -338,7 +338,15 @@ export function TemplateLibraryShell() {
 
       {feedback ? <Notice tone={feedback.tone} message={feedback.message} /> : null}
 
-      <SystemRulesReadonlyPanel token={token} />
+      <div className="flex flex-wrap items-center gap-2 text-sm font-bold leading-6 md:text-base">
+        <span>审核时还会同时应用平台通用规则。</span>
+        <Link
+          href="/platform-rules"
+          className="border-b-4 border-ink font-black hover:bg-acid"
+        >
+          查看平台规则
+        </Link>
+      </div>
 
       <section className="space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
