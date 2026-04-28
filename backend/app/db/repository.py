@@ -292,6 +292,72 @@ class SupabaseRepository:
             build_query,
         )
 
+    def list_published_announcements(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._select_many(
+            "system_announcements",
+            "list published announcements",
+            lambda table: table.select(
+                "id,title,content,category,published_at,created_at,updated_at"
+            )
+            .eq("is_published", True)
+            .order("published_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(limit),
+        )
+
+    def list_admin_announcements(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        return self._select_many(
+            "system_announcements",
+            "list admin announcements",
+            lambda table: table.select("*")
+            .order("updated_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(limit),
+        )
+
+    def get_announcement(self, announcement_id: str) -> dict[str, Any] | None:
+        return self._select_one(
+            "system_announcements",
+            "read announcement",
+            lambda table: table.select("*").eq("id", announcement_id).limit(1),
+        )
+
+    def create_announcement(self, data: dict[str, Any]) -> dict[str, Any]:
+        announcement_id = str(data.get("id") or uuid4())
+        payload = self._encode({"id": announcement_id, **data})
+        rows = self._execute(
+            "create announcement",
+            lambda: self.client.table("system_announcements").insert(payload).execute(),
+        )
+        if rows:
+            return rows[0]
+        announcement = self.get_announcement(announcement_id)
+        if announcement is None:
+            raise AppError("Announcement creation succeeded but no record was returned.", status_code=500)
+        return announcement
+
+    def update_announcement(self, announcement_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        if self.get_announcement(announcement_id) is None:
+            raise AppError("Announcement not found.", status_code=404)
+
+        payload = self._encode(
+            data,
+            exclude_fields={"id", "created_at", "created_by"},
+        )
+        if payload:
+            self._execute(
+                "update announcement",
+                lambda: self.client.table("system_announcements")
+                .update(payload)
+                .eq("id", announcement_id)
+                .execute(),
+            )
+
+        announcement = self.get_announcement(announcement_id)
+        if announcement is None:
+            raise AppError("Announcement update succeeded but no record was returned.", status_code=500)
+        return announcement
+
     def list_audit_templates(self, user_id: str) -> list[dict[str, Any]]:
         return self._select_many(
             "audit_templates",

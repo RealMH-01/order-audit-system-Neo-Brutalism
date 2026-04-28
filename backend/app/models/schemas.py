@@ -256,6 +256,13 @@ class TemplateListResponse(BaseModel):
 
 
 BusinessType = Literal["domestic", "foreign"]
+AnnouncementCategory = Literal[
+    "platform_rule",
+    "feature",
+    "important",
+    "maintenance",
+    "other",
+]
 
 
 class SystemHardRuleItem(BaseModel):
@@ -334,6 +341,51 @@ class SystemRuleChangeLogResponse(BaseModel):
     changed_by: str
     changed_by_email: str | None = None
     changed_at: datetime | None = None
+
+
+class AnnouncementPublicResponse(BaseModel):
+    """Published announcement visible to signed-in users."""
+
+    id: str
+    title: str
+    content: str
+    category: AnnouncementCategory
+    published_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AnnouncementAdminResponse(BaseModel):
+    """Admin-facing announcement response including draft metadata."""
+
+    id: str
+    title: str
+    content: str
+    category: AnnouncementCategory
+    is_published: bool
+    published_at: datetime | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AnnouncementCreateRequest(BaseModel):
+    """Admin request for creating a system announcement."""
+
+    title: Any
+    content: Any
+    category: Any
+    is_published: Any
+
+
+class AnnouncementUpdateRequest(BaseModel):
+    """Admin request for updating a system announcement."""
+
+    title: Any = None
+    content: Any = None
+    category: Any = None
+    is_published: Any = None
 
 
 class AuditTemplateRecord(BaseModel):

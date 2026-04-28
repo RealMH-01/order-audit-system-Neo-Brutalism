@@ -8,6 +8,7 @@ from app.db.repository import SupabaseRepository, get_data_store
 from app.db.supabase_client import ApiKeyCipher, get_api_key_cipher, is_supabase_configured
 from app.errors import AppError
 from app.models.schemas import CurrentUser
+from app.services.announcements import AnnouncementService
 from app.services.audit_orchestrator import AuditOrchestratorService
 from app.services.auth_service import AuthService
 from app.services.file_parser import FileParserService
@@ -128,6 +129,12 @@ def get_system_rules_service(
     repo: SupabaseRepository | None = Depends(get_repository),
 ) -> SystemRulesAdminService:
     return SystemRulesAdminService(repo=repo)
+
+
+def get_announcements_service(
+    repo: SupabaseRepository | None = Depends(get_repository),
+) -> AnnouncementService:
+    return AnnouncementService(repo=repo)
 
 
 def get_audit_orchestrator_service(
