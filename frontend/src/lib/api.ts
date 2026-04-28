@@ -13,6 +13,7 @@ let isRedirecting = false;
 type RequestOptions = {
   token?: string | null;
   body?: unknown;
+  redirectOnAuthError?: boolean;
 };
 
 type UploadOptions = {
@@ -81,12 +82,15 @@ function buildLoginHref() {
 
 async function parseResponse<T>(
   response: Response,
-  path?: string
+  path?: string,
+  redirectOnAuthError = true
 ): Promise<ApiSuccess<T>> {
   const responseText = await response.text();
 
   if (!response.ok) {
-    handleUnauthorizedResponse(response.status, path);
+    if (redirectOnAuthError) {
+      handleUnauthorizedResponse(response.status, path);
+    }
 
     let detail = "请求失败，请稍后重试。";
 
@@ -102,7 +106,7 @@ async function parseResponse<T>(
     }
 
     const normalizedDetail =
-      isAuthStatus(response.status) && !isPublicAuthRequest(path)
+      redirectOnAuthError && isAuthStatus(response.status) && !isPublicAuthRequest(path)
         ? LOGIN_EXPIRED_MESSAGE
         : normalizeApiErrorDetail(detail);
     const error: ApiError = {
@@ -189,7 +193,7 @@ async function request<T>(
     body: hasBody ? JSON.stringify(options.body) : undefined
   });
 
-  return parseResponse<T>(response, path);
+  return parseResponse<T>(response, path, options.redirectOnAuthError);
 }
 
 export async function apiGet<T>(

@@ -16,7 +16,8 @@ const navItems = [
   { href: "/wizard", label: "引导" },
   { href: "/history", label: "历史" },
   { href: "/settings", label: "设置" },
-  { href: "/admin/rules", label: "规则", requireRole: "admin" }
+  { href: "/admin/rules", label: "规则", requireRole: "admin" },
+  { href: "/admin/system-rules", label: "系统硬规则", requireRole: "admin" }
 ];
 
 const guestNavItems = [
