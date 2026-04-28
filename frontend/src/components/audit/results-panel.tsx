@@ -121,15 +121,27 @@ function normalizeTextList(value: unknown): string[] {
   return [];
 }
 
+function normalizeRuleText(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-•\s]*/, "").trim())
+    .filter(Boolean);
+}
+
 function normalizeRuleLines(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .map((item) => {
+      .flatMap((item) => {
         if (typeof item === "string") {
-          return item.trim();
+          return normalizeRuleText(item);
         }
         if (isRecord(item)) {
-          return String(item.title ?? item.content ?? item.name ?? "").trim();
+          const title = String(item.title ?? item.name ?? "").trim();
+          const content = String(item.content ?? item.display_text ?? "").trim();
+          if (title && content) {
+            return `${title}：${content}`;
+          }
+          return String(title || content).trim();
         }
         return String(item ?? "").trim();
       })
@@ -140,53 +152,77 @@ function normalizeRuleLines(value: unknown): string[] {
     return [];
   }
 
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.replace(/^[-•\s]*/, "").trim())
-    .filter(Boolean);
+  return normalizeRuleText(value);
 }
 
-function countRules(value: unknown): number {
-  return normalizeRuleLines(value).length;
+function appendUniqueRules(target: string[], seen: Set<string>, value: unknown) {
+  for (const rule of normalizeRuleLines(value)) {
+    if (!seen.has(rule)) {
+      seen.add(rule);
+      target.push(rule);
+    }
+  }
 }
 
-function findSnapshotSection(
-  snapshot: AuditRuleSnapshot,
-  keywords: string[]
-): AuditRuleSnapshotSection | null {
-  const sections = Array.isArray(snapshot.resolved_sections)
-    ? snapshot.resolved_sections
-    : [];
+function resolveSnapshotSectionTitle(section: AuditRuleSnapshotSection) {
+  const record = section as Record<string, unknown>;
+  return String(
+    record.title ?? record.label ?? record.type ?? record.key ?? record.name ?? ""
+  ).trim();
+}
 
+function resolveSnapshotSectionRules(section: AuditRuleSnapshotSection) {
+  const record = section as Record<string, unknown>;
+  return record.rules ?? record.items ?? record.content ?? record.text ?? record.body ?? [];
+}
+
+function isSystemRuleSection(section: AuditRuleSnapshotSection) {
+  const title = resolveSnapshotSectionTitle(section).toLowerCase();
+  return title.includes("系统") || title.includes("system") || title.includes("hard");
+}
+
+function resolveRuleSetName(snapshot: AuditRuleSnapshot) {
   return (
-    sections.find((section) => {
-      const title = String(section.title ?? "").toLowerCase();
-      return keywords.some((keyword) => title.includes(keyword.toLowerCase()));
-    }) ?? null
+    renderOptionalText(snapshot.template?.name) ??
+    renderOptionalText(snapshot.selected_template?.name) ??
+    "未选择规则集"
   );
 }
 
 function buildRuleSnapshotSummary(snapshot: AuditRuleSnapshot) {
-  const systemSection = findSnapshotSection(snapshot, ["系统", "硬规则", "system"]);
+  const systemRules: string[] = [];
+  const customRuleSetRules: string[] = [];
+  const seenSystemRules = new Set<string>();
+  const seenCustomRuleSetRules = new Set<string>();
+  const sections = Array.isArray(snapshot.resolved_sections)
+    ? snapshot.resolved_sections
+    : [];
 
-  const systemRuleCount =
-    countRules(systemSection?.rules) || countRules(snapshot.system_rules?.rules);
-  const templateRuleCount = countRules(snapshot.template?.supplemental_rules);
-  const temporaryRules = normalizeRuleLines(
+  for (const section of sections) {
+    if (isSystemRuleSection(section)) {
+      appendUniqueRules(systemRules, seenSystemRules, resolveSnapshotSectionRules(section));
+    } else {
+      appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, resolveSnapshotSectionRules(section));
+    }
+  }
+
+  appendUniqueRules(systemRules, seenSystemRules, snapshot.system_rules?.rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.template?.supplemental_rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.template_rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.supplemental_rules);
+  appendUniqueRules(
+    customRuleSetRules,
+    seenCustomRuleSetRules,
     snapshot.temporary_rules ?? snapshot.run_supplemental_rules
   );
 
-  const templateName =
-    renderOptionalText(snapshot.template?.name) ??
-    renderOptionalText(snapshot.selected_template?.name) ??
-    "未选择";
+  const templateName = resolveRuleSetName(snapshot);
   const companyAffiliates = normalizeTextList(snapshot.company_affiliates);
 
   return {
-    systemRuleCount,
-    templateRuleCount,
+    systemRules,
+    customRuleSetRules,
     templateName,
-    temporaryRules,
     companyAffiliates
   };
 }
@@ -221,13 +257,13 @@ function RuleSnapshotDialog({
         <div className="grid gap-3 md:grid-cols-2">
           <DetailTile
             label="系统硬约束规则"
-            value={`${summary.systemRuleCount} 条（不可关闭）`}
+            value={`${summary.systemRules.length} 条（不可关闭）`}
           />
           <DetailTile
             label="本次选择的自定义规则集"
             value={`「${summary.templateName}」${
-              summary.templateRuleCount > 0
-                ? `；自定义规则：${summary.templateRuleCount} 条`
+              summary.customRuleSetRules.length > 0
+                ? `；${summary.customRuleSetRules.length} 条`
                 : ""
             }`}
           />
@@ -239,29 +275,50 @@ function RuleSnapshotDialog({
                 : "无"
             }
           />
-          {summary.temporaryRules.length > 0 ? (
-            <DetailTile
-              label="临时补充规则"
-              value={`${summary.temporaryRules.length} 条`}
-            />
-          ) : null}
         </div>
-        {summary.temporaryRules.length > 0 ? (
-          <details className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
-            <summary className="cursor-pointer text-sm font-black">
-              查看临时补充规则
-            </summary>
-            <ul className="mt-3 space-y-2">
-              {summary.temporaryRules.map((rule, index) => (
-                <li key={`${rule.slice(0, 24)}-${index}`} className="text-sm font-bold leading-6">
-                  {rule}
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
+        <div className="space-y-3">
+          <RuleSnapshotSection
+            title="系统硬约束规则"
+            rules={summary.systemRules}
+            emptyText="本次快照未保存系统硬约束规则明细。"
+          />
+          <RuleSnapshotSection
+            title={`自定义规则集：${summary.templateName}`}
+            rules={summary.customRuleSetRules}
+            emptyText="本次未保存自定义规则集明细。"
+          />
+        </div>
       </DialogSection>
     </Dialog>
+  );
+}
+
+function RuleSnapshotSection({
+  title,
+  rules,
+  emptyText
+}: {
+  title: string;
+  rules: string[];
+  emptyText: string;
+}) {
+  return (
+    <details className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
+      <summary className="cursor-pointer text-sm font-black">
+        {title}（{rules.length} 条）
+      </summary>
+      {rules.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {rules.map((rule, index) => (
+            <li key={`${rule.slice(0, 24)}-${index}`} className="text-sm font-bold leading-6">
+              {rule}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm font-bold leading-6">{emptyText}</p>
+      )}
+    </details>
   );
 }
 

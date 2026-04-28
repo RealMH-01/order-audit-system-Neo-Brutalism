@@ -93,6 +93,10 @@ export type AuditIssue = {
 
 export type AuditRuleSnapshotSection = {
   title?: string;
+  label?: string;
+  type?: string;
+  key?: string;
+  name?: string;
   rules?: unknown[] | string | null;
 };
 
@@ -117,6 +121,8 @@ export type AuditRuleSnapshot = {
     id?: string;
     name?: string;
   } | null;
+  template_rules?: unknown[] | string | null;
+  supplemental_rules?: unknown[] | string | null;
   temporary_rules?: unknown[] | string | null;
   run_supplemental_rules?: unknown[] | string | null;
   company_affiliates?: unknown[] | string | null;

@@ -235,7 +235,7 @@ class TemplateLibraryService:
 
         if resolved_template is not None:
             if resolved_template.supplemental_rules.strip():
-                sections.append(f"【模板补充规则】\n{resolved_template.supplemental_rules.strip()}")
+                sections.append(f"【自定义规则集】\n{resolved_template.supplemental_rules.strip()}")
 
         clean_temporary_rules = [
             rule.strip()
@@ -302,7 +302,7 @@ class TemplateLibraryService:
             f"- {rule.title}：{rule.content}"
             for rule in SYSTEM_HARD_RULES.rules
         ]
-        return "【系统硬规则】\n" + "\n".join(lines)
+        return "【系统硬约束规则】\n" + "\n".join(lines)
 
     def _build_rule_snapshot(
         self,
@@ -312,7 +312,7 @@ class TemplateLibraryService:
     ) -> dict[str, Any]:
         resolved_sections = [
             {
-                "title": "系统硬规则",
+                "title": "系统硬约束规则",
                 "rules": [f"{rule.title}：{rule.content}" for rule in SYSTEM_HARD_RULES.rules],
             },
         ]
@@ -320,7 +320,7 @@ class TemplateLibraryService:
         if resolved_template is not None and resolved_template.supplemental_rules.strip():
             resolved_sections.append(
                 {
-                    "title": "模板补充规则",
+                    "title": "自定义规则集",
                     "rules": [resolved_template.supplemental_rules.strip()],
                 }
             )
@@ -336,7 +336,7 @@ class TemplateLibraryService:
             "schema_version": 1,
             "resolved_at": datetime.now(timezone.utc).isoformat(),
             "system_rules": {
-                "title": SYSTEM_HARD_RULES.title,
+                "title": "系统硬约束规则",
                 "version": SYSTEM_HARD_RULES.version,
                 "rules": [rule.model_dump(mode="json") for rule in SYSTEM_HARD_RULES.rules],
             },

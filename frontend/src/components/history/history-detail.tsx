@@ -247,22 +247,28 @@ function resolveBusinessTypeLabel(type?: string | null) {
   return "未保存";
 }
 
-function countSystemRules(snapshot: HistoryRuleSnapshot) {
-  return snapshot.system_rules?.rules?.length ?? 0;
+function normalizeRuleText(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-•]\s*/, "").trim())
+    .filter(Boolean);
 }
 
 function normalizeRuleLines(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .map((item) => {
+      .flatMap((item) => {
         if (typeof item === "string") {
-          return item.trim();
+          return normalizeRuleText(item);
         }
         if (item && typeof item === "object") {
           const record = item as Record<string, unknown>;
-          return String(
-            record.title ?? record.content ?? record.name ?? record.company ?? ""
-          ).trim();
+          const title = String(record.title ?? record.name ?? record.company ?? "").trim();
+          const content = String(record.content ?? record.display_text ?? "").trim();
+          if (title && content) {
+            return `${title}：${content}`;
+          }
+          return String(title || content).trim();
         }
         return String(item ?? "").trim();
       })
@@ -273,10 +279,81 @@ function normalizeRuleLines(value: unknown): string[] {
     return [];
   }
 
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.replace(/^[-•]\s*/, "").trim())
-    .filter(Boolean);
+  return normalizeRuleText(value);
+}
+
+function appendUniqueRules(target: string[], seen: Set<string>, value: unknown) {
+  for (const rule of normalizeRuleLines(value)) {
+    if (!seen.has(rule)) {
+      seen.add(rule);
+      target.push(rule);
+    }
+  }
+}
+
+function resolveSnapshotSectionTitle(section: HistoryRuleSnapshotSection) {
+  const record = section as Record<string, unknown>;
+  return String(
+    record.title ?? record.label ?? record.type ?? record.key ?? record.name ?? ""
+  ).trim();
+}
+
+function resolveSnapshotSectionRules(section: HistoryRuleSnapshotSection) {
+  const record = section as Record<string, unknown>;
+  return record.rules ?? record.items ?? record.content ?? record.text ?? record.body ?? [];
+}
+
+function isSystemRuleSection(section: HistoryRuleSnapshotSection) {
+  const title = resolveSnapshotSectionTitle(section).toLowerCase();
+  return title.includes("系统") || title.includes("system") || title.includes("hard");
+}
+
+function resolveRuleSetName(snapshot: HistoryRuleSnapshot) {
+  const templateName = snapshot.template?.name?.trim();
+  if (templateName) {
+    return templateName;
+  }
+
+  const selectedTemplateName = snapshot.selected_template?.name?.trim();
+  if (selectedTemplateName) {
+    return selectedTemplateName;
+  }
+
+  return "未选择规则集";
+}
+
+function normalizeRuleSnapshotView(snapshot: HistoryRuleSnapshot) {
+  const systemRules: string[] = [];
+  const customRuleSetRules: string[] = [];
+  const seenSystemRules = new Set<string>();
+  const seenCustomRuleSetRules = new Set<string>();
+  const resolvedSections = Array.isArray(snapshot.resolved_sections)
+    ? snapshot.resolved_sections
+    : [];
+
+  for (const section of resolvedSections) {
+    if (isSystemRuleSection(section)) {
+      appendUniqueRules(systemRules, seenSystemRules, resolveSnapshotSectionRules(section));
+    } else {
+      appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, resolveSnapshotSectionRules(section));
+    }
+  }
+
+  appendUniqueRules(systemRules, seenSystemRules, snapshot.system_rules?.rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.template?.supplemental_rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.template_rules);
+  appendUniqueRules(customRuleSetRules, seenCustomRuleSetRules, snapshot.supplemental_rules);
+  appendUniqueRules(
+    customRuleSetRules,
+    seenCustomRuleSetRules,
+    snapshot.temporary_rules ?? snapshot.run_supplemental_rules
+  );
+
+  return {
+    systemRules,
+    customRuleSetName: resolveRuleSetName(snapshot),
+    customRuleSetRules
+  };
 }
 
 function normalizeSnapshotCompanies(value: unknown): string[] {
@@ -330,18 +407,20 @@ function RuleList({
   );
 }
 
-function SnapshotResolvedSection({
-  section
+function SnapshotRuleSection({
+  title,
+  rules,
+  emptyText
 }: {
-  section: HistoryRuleSnapshotSection;
+  title: string;
+  rules: string[];
+  emptyText: string;
 }) {
-  const rules = normalizeRuleLines(section.rules);
-
   return (
     <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="inverse">{section.title || "未命名规则组"}</Badge>
+          <Badge variant="inverse">{title}</Badge>
           <Badge variant="muted">{rules.length} 条</Badge>
         </div>
         <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
@@ -354,7 +433,7 @@ function SnapshotResolvedSection({
         </span>
       </summary>
       <div className="mt-4">
-        <RuleList rules={rules} emptyText="该规则组未保存具体规则。" />
+        <RuleList rules={rules} emptyText={emptyText} />
       </div>
     </details>
   );
@@ -362,15 +441,11 @@ function SnapshotResolvedSection({
 
 function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot | null | undefined }) {
   const template = snapshot?.template ?? null;
-  const templateSupplementalRules = normalizeRuleLines(template?.supplemental_rules);
-  const temporarySupplementalRules = normalizeRuleLines(
-    snapshot?.temporary_rules ?? snapshot?.run_supplemental_rules
-  );
-  const resolvedSections = snapshot?.resolved_sections ?? [];
   const businessType = template?.business_type ?? null;
   const companyAffiliates = normalizeSnapshotCompanies(snapshot?.company_affiliates);
-  const hasRuleDetails =
-    templateSupplementalRules.length > 0 || temporarySupplementalRules.length > 0;
+  const normalizedSnapshot = snapshot ? normalizeRuleSnapshotView(snapshot) : null;
+  const customRuleSetName = normalizedSnapshot?.customRuleSetName ?? "未选择规则集";
+  const customRuleSetTitle = `自定义规则集：${customRuleSetName}`;
 
   return (
     <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -400,14 +475,15 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               <p className="text-xs font-black uppercase tracking-[0.14em]">系统硬规则</p>
               <p className="mt-2 text-sm font-bold leading-6">
                 固定启用，v{snapshot.system_rules?.version ?? 1}
+                {normalizedSnapshot ? `；${normalizedSnapshot.systemRules.length} 条` : ""}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
               <p className="text-xs font-black uppercase tracking-[0.14em]">本次选择的自定义规则集</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                {template?.name || "未使用规则集"}
-                {templateSupplementalRules.length > 0
-                  ? `；自定义规则：${templateSupplementalRules.length} 条`
+                {customRuleSetName}
+                {normalizedSnapshot && normalizedSnapshot.customRuleSetRules.length > 0
+                  ? `；${normalizedSnapshot.customRuleSetRules.length} 条`
                   : ""}
               </p>
             </div>
@@ -425,64 +501,17 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
             </div>
           </div>
 
-          {hasRuleDetails ? (
-          <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="inverse">规则原文</Badge>
-                <Badge variant="muted">
-                  {templateSupplementalRules.length + temporarySupplementalRules.length} 条
-                </Badge>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
-                展开查看
-                <ChevronDown
-                  size={16}
-                  strokeWidth={3}
-                  className="transition-transform duration-100 ease-linear group-open:rotate-180"
-                />
-              </span>
-            </summary>
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              {templateSupplementalRules.length > 0 ? (
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.14em]">规则集内自定义规则</p>
-                  <div className="mt-3">
-                    <RuleList
-                      rules={templateSupplementalRules}
-                      emptyText="本次使用的规则集没有自定义规则。"
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {temporarySupplementalRules.length > 0 ? (
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.14em]">临时补充规则</p>
-                  <div className="mt-3">
-                    <RuleList
-                      rules={temporarySupplementalRules}
-                      emptyText="本轮未填写临时补充规则。"
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </details>
-          ) : null}
-
           <div className="space-y-3">
-            {resolvedSections.length > 0 ? (
-              resolvedSections.map((section, index) => (
-                <SnapshotResolvedSection
-                  key={`${section.title || "rule-section"}-${index}`}
-                  section={section}
-                />
-              ))
-            ) : (
-              <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-                <p className="text-sm font-bold leading-6">该快照未保存展开后的规则分组。</p>
-              </div>
-            )}
+            <SnapshotRuleSection
+              title="系统硬约束规则"
+              rules={normalizedSnapshot?.systemRules ?? []}
+              emptyText="该快照未保存系统硬约束规则明细。"
+            />
+            <SnapshotRuleSection
+              title={customRuleSetTitle}
+              rules={normalizedSnapshot?.customRuleSetRules ?? []}
+              emptyText="本次未保存自定义规则集明细。"
+            />
           </div>
         </div>
       )}

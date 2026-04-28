@@ -66,7 +66,11 @@ export type HistoryAuditResult = {
 
 export type HistoryRuleSnapshotSection = {
   title?: string;
-  rules?: string[];
+  label?: string;
+  type?: string;
+  key?: string;
+  name?: string;
+  rules?: unknown[] | string | null;
 };
 
 export type HistoryTemplateSnapshot = {
@@ -91,6 +95,12 @@ export type HistoryRuleSnapshot = {
     }>;
   };
   template?: HistoryTemplateSnapshot | null;
+  selected_template?: {
+    id?: string;
+    name?: string;
+  } | null;
+  template_rules?: unknown[] | string | null;
+  supplemental_rules?: unknown[] | string | null;
   temporary_rules?: string[] | string | null;
   run_supplemental_rules?: string[] | string | null;
   company_affiliates?: unknown[] | string | null;
