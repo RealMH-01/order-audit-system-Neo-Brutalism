@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,8 @@ from app.models.schemas import (
 from app.services.llm_client import LLMClientService
 from app.services.runtime_store import RuntimeStore
 from app.services.template_library import TemplateLibraryService
+
+logger = logging.getLogger(__name__)
 
 WIZARD_SESSION_TIMEOUT = timedelta(minutes=30)
 WIZARD_MAX_MESSAGE_LENGTH = 5000  # 单条消息最大字符数
@@ -417,16 +420,20 @@ class WizardEngineService:
 
         created_at_label = datetime.now().strftime("%Y-%m-%d %H:%M")
         template_service = TemplateLibraryService(store=self.store, repo=self.repo)
-        template_service.create_template(
-            current_user,
-            AuditTemplateCreateRequest(
-                name=f"{name_prefix} - {created_at_label}",
-                description=description,
-                business_type="domestic",
-                supplemental_rules="\n".join(clean_rules),
-                is_default=True,
-            ),
-        )
+        try:
+            template_service.create_template(
+                current_user,
+                AuditTemplateCreateRequest(
+                    name=f"{name_prefix} - {created_at_label}",
+                    description=description,
+                    business_type="domestic",
+                    supplemental_rules="\n".join(clean_rules),
+                    is_default=True,
+                ),
+            )
+        except Exception as exc:
+            logger.exception("Failed to create wizard audit template for user %s.", current_user.id)
+            raise AppError("Rule set save failed. Please try again later.", status_code=500) from exc
 
     def _resolve_api_key(self, profile: dict[str, object], provider: str) -> str | None:
         """根据 provider 读取并尽量解密 API key。"""

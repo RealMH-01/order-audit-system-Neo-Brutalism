@@ -252,7 +252,7 @@ export function WizardContainer() {
         deepThinkEnabled: data.deep_think_enabled,
         manualRulesText: "",
         generatedRules: [],
-        generatedAffiliates: data.company_affiliates,
+        generatedAffiliates: [],
         hasOpenaiKey: data.has_openai_key,
         hasDeepseekKey: data.has_deepseek_key,
         hasZhipuKey: data.has_zhipu_key,

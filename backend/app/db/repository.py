@@ -80,11 +80,11 @@ class SupabaseRepository:
         return profile
 
     def mark_wizard_completed(self, user_id: str, custom_rules: list[str]) -> dict[str, Any]:
+        _ = custom_rules
         return self.update_profile(
             user_id,
             {
                 "wizard_completed": True,
-                "active_custom_rules": list(custom_rules),
                 "updated_at": datetime.now(timezone.utc),
             },
         )
@@ -208,13 +208,23 @@ class SupabaseRepository:
             lambda: self.client.table("audit_templates").delete().eq("id", template_id).eq("user_id", user_id).execute(),
         )
 
-    def clear_default_audit_templates(self, user_id: str) -> None:
+    def clear_default_audit_templates(self, user_id: str, exclude_template_id: str | None = None) -> None:
+        payload = self._encode({"is_default": False, "updated_at": datetime.now(timezone.utc)})
+
+        def build_query() -> Any:
+            query = (
+                self.client.table("audit_templates")
+                .update(payload)
+                .eq("user_id", user_id)
+                .eq("is_default", True)
+            )
+            if exclude_template_id:
+                query = query.neq("id", exclude_template_id)
+            return query.execute()
+
         self._execute(
             "clear default audit templates",
-            lambda: self.client.table("audit_templates")
-            .update({"is_default": False, "updated_at": datetime.now(timezone.utc)})
-            .eq("user_id", user_id)
-            .execute(),
+            build_query,
         )
 
     def create_audit_history(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:

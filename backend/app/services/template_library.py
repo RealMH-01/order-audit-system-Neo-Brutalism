@@ -173,7 +173,7 @@ class TemplateLibraryService:
             return self._to_template_response(existing)
 
         if updates.get("is_default") is True:
-            self._clear_default_templates(current_user.id)
+            self._clear_default_templates(current_user.id, exclude_template_id=template_id)
 
         updates["updated_at"] = datetime.now(timezone.utc)
         if self.repo is not None:
@@ -212,7 +212,7 @@ class TemplateLibraryService:
 
     def set_default_template(self, current_user: CurrentUser, template_id: str) -> AuditTemplateResponse:
         self._get_owned_template(current_user.id, template_id)
-        self._clear_default_templates(current_user.id)
+        self._clear_default_templates(current_user.id, exclude_template_id=template_id)
         updates = {"is_default": True, "updated_at": datetime.now(timezone.utc)}
         if self.repo is not None:
             updated = self.repo.update_audit_template(template_id, current_user.id, updates)
@@ -358,13 +358,15 @@ class TemplateLibraryService:
             "is_default_at_run": template.is_default,
         }
 
-    def _clear_default_templates(self, user_id: str) -> None:
+    def _clear_default_templates(self, user_id: str, exclude_template_id: str | None = None) -> None:
         if self.repo is not None:
-            self.repo.clear_default_audit_templates(user_id)
+            self.repo.clear_default_audit_templates(user_id, exclude_template_id=exclude_template_id)
             return
         now = datetime.now(timezone.utc)
         for template in self.store.audit_templates.values():
-            if str(template.get("user_id")) == user_id:
+            if str(template.get("user_id")) == user_id and bool(template.get("is_default", False)):
+                if exclude_template_id and str(template.get("id")) == exclude_template_id:
+                    continue
                 template["is_default"] = False
                 template["updated_at"] = now
 

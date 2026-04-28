@@ -136,6 +136,10 @@ class RestSupabaseTable:
         self.params[column] = f"eq.{self._format_filter_value(value)}"
         return self
 
+    def neq(self, column: str, value: Any) -> "RestSupabaseTable":
+        self.params[column] = f"neq.{self._format_filter_value(value)}"
+        return self
+
     def limit(self, value: int) -> "RestSupabaseTable":
         self.params["limit"] = str(value)
         return self
