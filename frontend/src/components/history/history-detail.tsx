@@ -340,7 +340,7 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
             <p className="text-sm font-black uppercase tracking-[0.14em]">本次使用规则</p>
           </div>
           <p className="mt-3 text-sm font-bold leading-6">
-            以下为本次审核开始时保存的规则快照，后续修改模板不会影响这条历史记录。
+            以下为本次审核开始时保存的规则快照，后续修改规则集不会影响这条历史记录。
           </p>
         </div>
         {snapshot?.resolved_at ? (
@@ -362,9 +362,9 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">使用模板</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em]">使用规则集</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                {template?.name || "未使用模板"}
+                {template?.name || "未使用规则集"}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
@@ -376,7 +376,7 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
               <p className="text-xs font-black uppercase tracking-[0.14em]">规则数量</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                系统 {countSystemRules(snapshot)} 条 / 模板补充 {templateSupplementalRules.length} 条 / 本轮补充 {runSupplementalRules.length} 条
+                系统 {countSystemRules(snapshot)} 条 / 自定义规则 {templateSupplementalRules.length} 条 / 本轮额外规则 {runSupplementalRules.length} 条
               </p>
             </div>
           </div>
@@ -384,7 +384,7 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
           <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="inverse">补充规则原文</Badge>
+                <Badge variant="inverse">自定义规则原文</Badge>
                 <Badge variant="muted">
                   {templateSupplementalRules.length + runSupplementalRules.length} 条
                 </Badge>
@@ -400,18 +400,18 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
             </summary>
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em]">模板补充规则</p>
+                <p className="text-xs font-black uppercase tracking-[0.14em]">规则集内自定义规则</p>
                 <div className="mt-3">
                   <RuleList
                     rules={templateSupplementalRules}
-                    emptyText="本次使用的模板没有补充规则。"
+                    emptyText="本次使用的规则集没有自定义规则。"
                   />
                 </div>
               </div>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em]">本轮额外补充规则</p>
+                <p className="text-xs font-black uppercase tracking-[0.14em]">本轮额外自定义规则</p>
                 <div className="mt-3">
-                  <RuleList rules={runSupplementalRules} emptyText="本轮未填写临时补充规则。" />
+                  <RuleList rules={runSupplementalRules} emptyText="本轮未填写额外自定义规则。" />
                 </div>
               </div>
             </div>

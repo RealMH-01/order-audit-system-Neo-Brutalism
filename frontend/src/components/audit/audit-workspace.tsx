@@ -577,7 +577,7 @@ export function AuditWorkspace() {
         return defaultTemplate?.id ?? templates[0]?.id ?? "";
       });
     } catch (error) {
-      setTemplatesError(normalizeError(error, "读取审核模板失败，请稍后重试。"));
+      setTemplatesError(normalizeError(error, "读取自定义规则集失败，请稍后重试。"));
     } finally {
       setTemplatesLoading(false);
     }
@@ -1538,11 +1538,11 @@ export function AuditWorkspace() {
                     <div className="flex flex-wrap items-center gap-2">
                       <BookOpenCheck size={18} strokeWidth={3} />
                       <p className="text-xs font-black uppercase tracking-[0.14em]">
-                        本轮审核模板
+                        选择规则集
                       </p>
                     </div>
                     <p className="text-sm font-bold leading-6">
-                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、模板补充规则和公司信息。
+                      选择本次审核要使用的一套自定义规则集。系统会自动组合系统硬约束规则、当前规则集和公司信息。
                     </p>
                   </div>
                   <Button
@@ -1550,7 +1550,7 @@ export function AuditWorkspace() {
                     size="sm"
                     onClick={() => router.push("/templates")}
                   >
-                    去模板库
+                    去规则模板
                   </Button>
                 </div>
 
@@ -1560,16 +1560,16 @@ export function AuditWorkspace() {
                     disabled={templatesLoading || auditTemplates.length === 0 || workspaceDisabled}
                     onChange={(event) => {
                       setSelectedTemplateId(event.target.value);
-                      invalidateFinishedRun("本轮审核模板已调整，请重新启动审核。");
+                      invalidateFinishedRun("本轮自定义规则集已调整，请重新启动审核。");
                     }}
                   >
                     <option value="">
-                      {auditTemplates.length > 0 ? "请选择审核模板" : "暂无可选模板"}
+                      {auditTemplates.length > 0 ? "请选择规则集" : "暂无可选规则集"}
                     </option>
                     {auditTemplates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
-                        {template.is_default ? " · 默认模板" : ""}
+                        {template.is_default ? " · 默认规则集" : ""}
                         {" · "}
                         {resolveBusinessTypeLabel(template.business_type)}
                       </option>
@@ -1577,13 +1577,13 @@ export function AuditWorkspace() {
                   </Select>
                   {selectedTemplate ? (
                     <Badge variant="inverse">
-                      {selectedTemplate.is_default ? "默认模板" : resolveBusinessTypeLabel(selectedTemplate.business_type)}
+                      {selectedTemplate.is_default ? "默认规则集" : resolveBusinessTypeLabel(selectedTemplate.business_type)}
                     </Badge>
                   ) : null}
                 </div>
 
                 {templatesLoading ? (
-                  <p className="mt-3 text-sm font-bold leading-6">正在读取审核模板。</p>
+                  <p className="mt-3 text-sm font-bold leading-6">正在读取自定义规则集。</p>
                 ) : null}
                 {templatesError ? (
                   <div className="issue-red mt-3 p-4">
@@ -1593,7 +1593,7 @@ export function AuditWorkspace() {
                 {!templatesLoading && auditTemplates.length === 0 ? (
                   <div className="issue-yellow mt-3 p-4">
                     <p className="text-sm font-bold leading-6">
-                      还没有自定义模板，可先前往模板库创建。未选择模板时，将按默认审核规则执行。
+                      还没有自定义规则集，可先前往规则模板页创建。未选择规则集时，将仅使用系统硬约束规则和公司信息。
                     </p>
                   </div>
                 ) : null}

@@ -205,7 +205,7 @@ export function RulesAdminShell() {
     <section className="space-y-6">
       <SectionHeading
         title="规则管理"
-        description="这里用于查看通用系统规则，并在管理员权限下维护 built-in 规则。旧规则模板体系已下线；审核模板请使用模板库。"
+        description="这里用于查看通用系统规则，并在管理员权限下维护 built-in 规则。多套自定义规则集请使用规则模板页。"
         icon={FolderKanban}
       />
 
@@ -229,11 +229,11 @@ export function RulesAdminShell() {
                 <Badge variant="inverse">
                   当前角色：{profile?.role === "admin" ? "管理员" : "普通用户"}
                 </Badge>
-                <Badge variant="secondary">旧规则模板接口已下线</Badge>
+                <Badge variant="secondary">旧规则接口已下线</Badge>
               </div>
               <p className="max-w-3xl text-sm font-bold leading-6">
-                旧的规则模板接口不再作为产品功能提供，也不会再把模板内容写入当前自定义规则。
-                审核工作台使用的模板来自模板库，并通过 `template_id` 参与最终审核。
+                旧的规则接口不再作为产品功能提供，也不会再把历史内容写入当前自定义规则。
+                审核工作台使用的自定义规则集来自规则模板页，并通过 `template_id` 参与最终审核。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -242,7 +242,7 @@ export function RulesAdminShell() {
               </Button>
               <Button onClick={() => router.push("/templates")}>
                 <Library size={18} strokeWidth={3} />
-                打开模板库
+                打开规则模板
               </Button>
             </div>
           </div>
@@ -272,12 +272,12 @@ export function RulesAdminShell() {
             </div>
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
               <p className="text-sm font-bold leading-6">
-                用户自定义规则仍在设置页和向导链路中维护，不受旧模板下线影响。
+                用户自定义规则仍在设置页和向导链路中维护，不受旧规则接口下线影响。
               </p>
             </div>
             <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
               <p className="text-sm font-bold leading-6">
-                审核模板请在模板库维护。审核工作台选择模板后，模板的补充规则会进入最终审核。
+                自定义规则集请在规则模板页维护。审核工作台选择规则集后，其中的自定义规则会进入最终审核。
               </p>
             </div>
           </CardContent>

@@ -99,7 +99,7 @@ export function TemplateLibraryShell() {
         setSystemRules(systemResult.data);
         setTemplates(sortTemplates(templateResult.data.templates));
       } catch (error) {
-        setLoadError(normalizeTemplateError(error, "模板资料读取失败，请稍后重试。"));
+        setLoadError(normalizeTemplateError(error, "规则集资料读取失败，请稍后重试。"));
       } finally {
         setLoading(false);
       }
@@ -113,7 +113,7 @@ export function TemplateLibraryShell() {
 
     if (!accessToken) {
       setLoading(false);
-      setLoadError("请先登录后再管理单据审核模板。");
+      setLoadError("请先登录后再管理自定义规则集。");
       return;
     }
 
@@ -131,7 +131,7 @@ export function TemplateLibraryShell() {
 
   const openEditDialog = async (template: AuditTemplate) => {
     if (!token) {
-      setFeedback({ tone: "error", message: "请先登录后再编辑模板。" });
+      setFeedback({ tone: "error", message: "请先登录后再编辑规则集。" });
       return;
     }
 
@@ -150,7 +150,7 @@ export function TemplateLibraryShell() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: normalizeTemplateError(error, "模板详情读取失败，请稍后重试。")
+        message: normalizeTemplateError(error, "规则集详情读取失败，请稍后重试。")
       });
     } finally {
       setOpeningTemplateId(null);
@@ -159,12 +159,12 @@ export function TemplateLibraryShell() {
 
   const saveTemplate = async () => {
     if (!token) {
-      setFormError("请先登录后再保存模板。");
+      setFormError("请先登录后再保存规则集。");
       return;
     }
 
     if (!draft.name.trim()) {
-      setFormError("模板名称不能为空。");
+      setFormError("规则集名称不能为空。");
       return;
     }
 
@@ -182,18 +182,18 @@ export function TemplateLibraryShell() {
     try {
       if (editorMode === "create") {
         await apiPost<AuditTemplate>("/templates", payload, { token });
-        setFeedback({ tone: "success", message: "模板已创建。" });
+        setFeedback({ tone: "success", message: "规则集已创建。" });
       } else if (editingTemplateId) {
         await apiPatch<AuditTemplate>(`/templates/${editingTemplateId}`, payload, {
           token
         });
-        setFeedback({ tone: "success", message: "模板修改已保存。" });
+        setFeedback({ tone: "success", message: "规则集修改已保存。" });
       }
 
       await loadTemplates(token);
       setDialogOpen(false);
     } catch (error) {
-      setFormError(normalizeTemplateError(error, "保存模板失败，请稍后重试。"));
+      setFormError(normalizeTemplateError(error, "保存规则集失败，请稍后重试。"));
     } finally {
       setSaving(false);
     }
@@ -201,7 +201,7 @@ export function TemplateLibraryShell() {
 
   const duplicateTemplate = async (template: AuditTemplate) => {
     if (!token) {
-      setFeedback({ tone: "error", message: "请先登录后再复制模板。" });
+      setFeedback({ tone: "error", message: "请先登录后再复制规则集。" });
       return;
     }
 
@@ -213,11 +213,11 @@ export function TemplateLibraryShell() {
         token
       });
       await loadTemplates(token);
-      setFeedback({ tone: "success", message: "模板已复制。" });
+      setFeedback({ tone: "success", message: "规则集已复制。" });
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: normalizeTemplateError(error, "复制模板失败，请稍后重试。")
+        message: normalizeTemplateError(error, "复制规则集失败，请稍后重试。")
       });
     } finally {
       setDuplicatingTemplateId(null);
@@ -226,13 +226,13 @@ export function TemplateLibraryShell() {
 
   const deleteTemplate = async (template: AuditTemplate) => {
     if (!token) {
-      setFeedback({ tone: "error", message: "请先登录后再删除模板。" });
+      setFeedback({ tone: "error", message: "请先登录后再删除规则集。" });
       return;
     }
 
     const confirmed =
       typeof window === "undefined" ||
-      window.confirm(`确认删除模板“${template.name}”吗？删除后无法恢复。`);
+      window.confirm(`确认删除规则集“${template.name}”吗？删除后无法恢复。`);
 
     if (!confirmed) {
       return;
@@ -246,11 +246,11 @@ export function TemplateLibraryShell() {
         token
       });
       setTemplates((current) => current.filter((item) => item.id !== template.id));
-      setFeedback({ tone: "success", message: data.message || "模板已删除。" });
+      setFeedback({ tone: "success", message: data.message || "规则集已删除。" });
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: normalizeTemplateError(error, "删除模板失败，请稍后重试。")
+        message: normalizeTemplateError(error, "删除规则集失败，请稍后重试。")
       });
     } finally {
       setDeletingTemplateId(null);
@@ -259,7 +259,7 @@ export function TemplateLibraryShell() {
 
   const setDefaultTemplate = async (template: AuditTemplate) => {
     if (!token) {
-      setFeedback({ tone: "error", message: "请先登录后再设置默认模板。" });
+      setFeedback({ tone: "error", message: "请先登录后再设置默认规则集。" });
       return;
     }
 
@@ -281,11 +281,11 @@ export function TemplateLibraryShell() {
           }))
         )
       );
-      setFeedback({ tone: "success", message: "默认模板已更新。" });
+      setFeedback({ tone: "success", message: "默认规则集已更新。" });
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: normalizeTemplateError(error, "设置默认模板失败，请稍后重试。")
+        message: normalizeTemplateError(error, "设置默认规则集失败，请稍后重试。")
       });
     } finally {
       setDefaultingTemplateId(null);
@@ -299,7 +299,7 @@ export function TemplateLibraryShell() {
           <CardContent className="flex items-center gap-3 py-10">
             <Loader2 className="animate-spin" size={22} strokeWidth={3} />
             <p className="text-sm font-black uppercase tracking-[0.14em]">
-              正在读取模板资料
+              正在读取规则集资料
             </p>
           </CardContent>
         </Card>
@@ -313,25 +313,25 @@ export function TemplateLibraryShell() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
             <Badge variant="secondary" className="-rotate-1">
-              模板库
+              规则模板
             </Badge>
             <div className="space-y-3">
               <h1 className="max-w-4xl text-4xl font-black uppercase leading-none tracking-tight md:text-6xl">
-                单据审核模板
+                自定义规则集
               </h1>
               <p className="max-w-3xl text-base font-bold leading-7 md:text-lg">
-                管理不同业务场景下的审核模板，后续审核时可选择本轮使用的模板。
+                管理不同业务场景下的自定义规则集，审核时选择一套使用。
               </p>
             </div>
           </div>
           <Button onClick={openCreateDialog} className="w-fit">
             <FilePlus2 size={18} strokeWidth={3} />
-            新建模板
+            新建规则集
           </Button>
         </div>
         <div className="mt-6 border-4 border-ink bg-acid p-4 shadow-neo-sm">
           <p className="text-sm font-black leading-6 md:text-base">
-            系统硬规则 + 模板补充规则 + 本轮临时补充规则 = 本轮审核规则
+            系统硬约束规则 + 当前选择的一套自定义规则集 = 本轮审核规则
           </p>
         </div>
       </header>
@@ -347,8 +347,8 @@ export function TemplateLibraryShell() {
       <section className="space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <SectionTitle
-            title="我的模板"
-            description="为客户、行业、公司或单据类型补充专属审核要求。"
+            title="我的规则集"
+            description="为客户、行业、公司或单据类型维护一套专属审核要求。"
           />
           <div className="flex flex-wrap gap-3">
             <Button
@@ -360,11 +360,11 @@ export function TemplateLibraryShell() {
               }}
             >
               <RefreshCcw size={18} strokeWidth={3} />
-              刷新模板
+              刷新规则集
             </Button>
             <Button onClick={openCreateDialog}>
               <FilePlus2 size={18} strokeWidth={3} />
-              新建模板
+              新建规则集
             </Button>
           </div>
         </div>
@@ -373,7 +373,7 @@ export function TemplateLibraryShell() {
           <Card className="bg-muted">
             <CardContent className="py-8">
               <p className="text-base font-black leading-7">
-                还没有自定义模板，可以先创建一个通用单据审核模板。
+                还没有自定义规则集，可以先创建一个通用规则集。
               </p>
             </CardContent>
           </Card>
@@ -521,7 +521,7 @@ function TemplateCard({
           {template.is_default ? (
             <Badge variant="inverse">
               <Star size={14} strokeWidth={3} />
-              默认模板
+              默认规则集
             </Badge>
           ) : null}
         </div>
@@ -529,10 +529,10 @@ function TemplateCard({
       </CardHeader>
       <CardContent>
         <p className="min-h-[3rem] text-sm font-bold leading-6">
-          {template.description || "暂无模板说明。"}
+          {template.description || "暂无规则集描述。"}
         </p>
         <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-          <p className="text-xs font-black uppercase tracking-[0.14em]">我的补充规则</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em]">自定义规则</p>
           <p className="mt-2 text-sm font-bold leading-6">
             {summarizeSupplementalRules(template.supplemental_rules)}
           </p>
@@ -595,13 +595,13 @@ function TemplateEditorDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={mode === "create" ? "新建模板" : "编辑模板"}
-      description="填写该客户、行业、公司或单据类型的专属审核要求。"
+      title={mode === "create" ? "新建规则集" : "编辑规则集"}
+      description="填写这套规则集面向的客户、行业、公司或单据类型的专属审核要求。"
       footer={
         <>
           <Button onClick={onSave} disabled={saving}>
             <ShieldCheck size={18} strokeWidth={3} />
-            {saving ? "保存中..." : "保存模板"}
+            {saving ? "保存中..." : "保存规则集"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             取消
@@ -613,13 +613,13 @@ function TemplateEditorDialog({
 
       <DialogSection>
         <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="template-name">
-          模板名称
+          规则集名称
         </label>
         <Input
           id="template-name"
           value={draft.name}
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
-          placeholder="通用单据审核模板"
+          placeholder="通用单据审核规则集"
         />
       </DialogSection>
 
@@ -628,13 +628,13 @@ function TemplateEditorDialog({
           className="text-sm font-black uppercase tracking-[0.14em]"
           htmlFor="template-description"
         >
-          模板说明
+          规则集描述
         </label>
         <Input
           id="template-description"
           value={draft.description}
           onChange={(event) => onChange({ ...draft, description: event.target.value })}
-          placeholder="说明这套模板适合哪些客户、行业或单据类型"
+          placeholder="说明这套规则集适合哪些客户、行业或单据类型"
         />
       </DialogSection>
 
@@ -643,7 +643,7 @@ function TemplateEditorDialog({
           className="text-sm font-black uppercase tracking-[0.14em]"
           htmlFor="template-business-type"
         >
-          这套模板主要用于内贸还是外贸？
+          这套规则集主要用于内贸还是外贸？
         </label>
         <Select
           id="template-business-type"
@@ -665,7 +665,7 @@ function TemplateEditorDialog({
           className="text-sm font-black uppercase tracking-[0.14em]"
           htmlFor="template-supplemental-rules"
         >
-          我的补充规则
+          自定义规则
         </label>
         <Textarea
           id="template-supplemental-rules"

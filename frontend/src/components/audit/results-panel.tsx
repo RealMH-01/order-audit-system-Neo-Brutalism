@@ -201,10 +201,10 @@ function RuleSnapshotDialog({
       <DialogSection>
         <div className="grid gap-3 md:grid-cols-2">
           <DetailTile
-            label="系统基础规则"
+            label="系统硬约束规则"
             value={`${summary.systemRuleCount} 条（不可关闭）`}
           />
-          <DetailTile label="审核模板" value={`「${summary.templateName}」`} />
+          <DetailTile label="自定义规则集" value={`「${summary.templateName}」`} />
           <DetailTile
             label="自定义规则"
             value={

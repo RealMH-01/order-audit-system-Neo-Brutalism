@@ -7,7 +7,7 @@ import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 export function createTemplateDraft(): AuditTemplateDraft {
   return {
-    name: "通用单据审核模板",
+    name: "通用单据审核规则集",
     description: "",
     business_type: "domestic",
     supplemental_rules: ""
@@ -73,7 +73,7 @@ export function formatTemplateDate(value: string | null) {
 export function summarizeSupplementalRules(rules: string) {
   const normalized = rules.trim();
   if (!normalized) {
-    return "暂未填写补充规则。";
+    return "暂未填写自定义规则。";
   }
 
   const firstLines = normalized

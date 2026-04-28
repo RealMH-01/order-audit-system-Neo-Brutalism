@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/audit", label: "审核" },
-  { href: "/templates", label: "模板库" },
+  { href: "/templates", label: "规则模板" },
   { href: "/wizard", label: "引导" },
   { href: "/history", label: "历史" },
   { href: "/settings", label: "设置" },
