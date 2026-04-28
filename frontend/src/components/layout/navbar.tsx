@@ -89,8 +89,8 @@ export function Navbar() {
 
   return (
     <header className="relative z-20 border-b-4 border-ink bg-canvas">
-      <div className="mx-auto flex max-w-[92rem] items-center justify-between gap-5 px-4 py-4 md:px-8">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex max-w-[92rem] items-center justify-between gap-4 px-4 py-4 md:px-8 lg:grid lg:grid-cols-[minmax(13rem,18rem)_1fr_minmax(13rem,18rem)] lg:gap-5">
+        <div className="flex shrink-0 items-center gap-3 lg:w-full">
           <Link
             href="/"
             className="inline-flex -rotate-1 items-center gap-3 border-4 border-ink bg-acid px-4 py-3 font-black uppercase tracking-[0.18em] shadow-neo-md transition-transform duration-100 ease-linear hover:-translate-y-0.5"
@@ -103,7 +103,7 @@ export function Navbar() {
           </Badge>
         </div>
 
-        <nav className="hidden items-center gap-3 lg:flex">
+        <nav className="hidden min-w-0 items-center justify-center gap-2 lg:flex xl:gap-3">
           {visibleNavItems.map((item) => (
             <Link
               key={item.href}
@@ -116,18 +116,18 @@ export function Navbar() {
               <NavItemLabel item={item} />
             </Link>
           ))}
+        </nav>
+
+        <div className="flex shrink-0 items-center justify-end gap-3 lg:w-full">
           {isAuthenticated ? (
-            <>
+            <div className="hidden shrink-0 items-center justify-end gap-3 lg:flex">
               <Badge variant="muted">当前账号：{accountDisplayName}</Badge>
               <Button variant="outline" onClick={handleLogout}>
                 <LogOut size={18} strokeWidth={3} />
                 退出登录
               </Button>
-            </>
+            </div>
           ) : null}
-        </nav>
-
-        <div className="flex items-center gap-3">
           <Button
             variant="outline"
             size="sm"
