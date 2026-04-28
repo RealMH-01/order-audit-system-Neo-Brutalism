@@ -695,25 +695,6 @@ function RuleCard({
         <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
           <p className="whitespace-pre-wrap break-words text-sm font-bold leading-6">{rule.content}</p>
         </div>
-        <details className="mt-4 border-4 border-ink bg-paper p-3 shadow-neo-sm">
-          <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em]">
-            技术详情
-          </summary>
-          <dl className="mt-3 space-y-2 break-words text-xs font-bold leading-5">
-            <div>
-              <dt className="font-black">code</dt>
-              <dd className="font-mono">{rule.code}</dd>
-            </div>
-            <div>
-              <dt className="font-black">id</dt>
-              <dd className="font-mono">{rule.id}</dd>
-            </div>
-            <div>
-              <dt className="font-black">sort_order</dt>
-              <dd className="font-mono">{rule.sort_order}</dd>
-            </div>
-          </dl>
-        </details>
       </CardContent>
     </Card>
   );
