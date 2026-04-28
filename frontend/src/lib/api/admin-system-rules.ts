@@ -31,6 +31,7 @@ export type SystemRuleChangeLog = {
   reason: string;
   summary?: string | null;
   changed_by: string;
+  changed_by_email?: string | null;
   changed_at?: string | null;
 };
 

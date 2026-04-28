@@ -313,14 +313,14 @@ export function TemplateLibraryShell() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
             <Badge variant="secondary" className="-rotate-1">
-              规则模板
+              自定义规则集
             </Badge>
             <div className="space-y-3">
               <h1 className="max-w-4xl text-4xl font-black uppercase leading-none tracking-tight md:text-6xl">
                 自定义规则集
               </h1>
               <p className="max-w-3xl text-base font-bold leading-7 md:text-lg">
-                管理不同业务场景下的自定义规则集，审核时选择一套使用。
+                管理你自己的审核规则集。审核时可以选择其中一套作为本次自定义规则。
               </p>
             </div>
           </div>

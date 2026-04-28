@@ -6,6 +6,7 @@ serves the management/read-only HTTP APIs for ``system_hard_rules``.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -23,6 +24,7 @@ from app.models.schemas import (
 RULE_SNAPSHOT_FIELDS = ("code", "title", "content", "is_enabled", "sort_order")
 UPDATE_FIELDS = ("title", "content", "is_enabled", "sort_order")
 LAST_ENABLED_RULE_MESSAGE = "至少需要保留一条启用的系统硬约束规则。"
+logger = logging.getLogger(__name__)
 
 
 class SystemRulesAdminService:
@@ -151,7 +153,20 @@ class SystemRulesAdminService:
         repo = self._require_repo()
         safe_limit = max(1, min(int(limit), 200))
         rows = repo.list_system_rule_change_logs(limit=safe_limit, rule_id=rule_id)
-        return [self._to_change_log_response(row) for row in rows]
+        email_by_user_id: dict[str, str] = {}
+        try:
+            email_by_user_id = repo.list_user_emails_by_ids(
+                [str(row["changed_by"]) for row in rows if row.get("changed_by")]
+            )
+        except Exception:
+            logger.warning("Failed to enrich system rule change log actors.", exc_info=True)
+        return [
+            self._to_change_log_response(
+                row,
+                changed_by_email=email_by_user_id.get(str(row.get("changed_by"))),
+            )
+            for row in rows
+        ]
 
     def _generate_unique_code(self, title: str) -> str:
         repo = self._require_repo()
@@ -257,7 +272,11 @@ class SystemRulesAdminService:
         )
 
     @staticmethod
-    def _to_change_log_response(row: dict[str, Any]) -> SystemRuleChangeLogResponse:
+    def _to_change_log_response(
+        row: dict[str, Any],
+        *,
+        changed_by_email: str | None = None,
+    ) -> SystemRuleChangeLogResponse:
         return SystemRuleChangeLogResponse(
             id=str(row["id"]),
             rule_id=str(row["rule_id"]) if row.get("rule_id") else None,
@@ -268,5 +287,6 @@ class SystemRulesAdminService:
             reason=str(row["reason"]),
             summary=row.get("summary"),
             changed_by=str(row["changed_by"]),
+            changed_by_email=changed_by_email,
             changed_at=row.get("changed_at"),
         )

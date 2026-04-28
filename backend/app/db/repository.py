@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
@@ -79,6 +80,45 @@ class SupabaseRepository:
         if profile is None:
             raise AppError("Profile update succeeded but no record was returned.", status_code=500)
         return profile
+
+    def list_user_emails_by_ids(self, user_ids: list[str]) -> dict[str, str]:
+        """Best-effort lookup of Supabase Auth user emails for admin logs."""
+
+        unique_ids = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
+        if not unique_ids:
+            return {}
+
+        email_by_id: dict[str, str] = {}
+        auth_admin = getattr(getattr(self.client, "auth", None), "admin", None)
+        get_user_by_id = getattr(auth_admin, "get_user_by_id", None)
+
+        if callable(get_user_by_id):
+            for user_id in unique_ids:
+                try:
+                    response = get_user_by_id(user_id)
+                    user = getattr(response, "user", response)
+                    email = getattr(user, "email", None)
+                    if email:
+                        email_by_id[user_id] = str(email)
+                except Exception:
+                    logger.warning("Supabase auth email lookup failed for user %s.", user_id, exc_info=True)
+            return email_by_id
+
+        request = getattr(self.client, "request", None)
+        if callable(request):
+            for user_id in unique_ids:
+                try:
+                    payload = request("GET", f"/auth/v1/admin/users/{quote(user_id, safe='')}")
+                except Exception:
+                    logger.warning("Supabase auth email lookup failed for user %s.", user_id, exc_info=True)
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                email = payload.get("email")
+                if email:
+                    email_by_id[user_id] = str(email)
+
+        return email_by_id
 
     def mark_wizard_completed(self, user_id: str, custom_rules: list[str]) -> dict[str, Any]:
         _ = custom_rules

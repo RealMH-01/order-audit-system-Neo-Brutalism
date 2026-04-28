@@ -332,6 +332,7 @@ class SystemRuleChangeLogResponse(BaseModel):
     reason: str
     summary: str | None = None
     changed_by: str
+    changed_by_email: str | None = None
     changed_at: datetime | None = None
 
 

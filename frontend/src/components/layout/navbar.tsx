@@ -12,11 +12,10 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/audit", label: "审核" },
-  { href: "/templates", label: "规则模板" },
+  { href: "/templates", label: "自定义规则集" },
   { href: "/wizard", label: "引导" },
   { href: "/history", label: "历史" },
   { href: "/settings", label: "设置" },
-  { href: "/admin/rules", label: "规则", requireRole: "admin" },
   { href: "/admin/system-rules", label: "系统硬规则", requireRole: "admin" }
 ];
 

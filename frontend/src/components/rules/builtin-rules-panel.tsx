@@ -1,3 +1,5 @@
+// DEPRECATED: 自 Task 4.1 起不再被 /admin/rules 页面引用，旧 built-in 规则页面不再作为当前规则维护入口。后续清理轮次再物理删除。
+
 import { AlertCircle, Loader2, RefreshCcw, Save, ShieldCheck, ShieldOff } from "lucide-react";
 
 import type { BuiltinRuleFull, BuiltinRulePublic, RulesRole } from "@/components/rules/types";

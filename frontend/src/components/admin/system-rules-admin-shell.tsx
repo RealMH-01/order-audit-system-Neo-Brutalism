@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   FilePlus2,
-  History,
   Loader2,
   PenLine,
   Power,
@@ -51,7 +52,6 @@ type EditorMode = "create" | "edit";
 type RuleDraft = {
   title: string;
   content: string;
-  sortOrder: string;
   isEnabled: boolean;
   reason: string;
 };
@@ -62,21 +62,18 @@ type ToggleDraft = {
   reason: string;
 };
 
+type ReorderDraft = {
+  rule: SystemRuleAdminItem;
+  targetRule: SystemRuleAdminItem;
+  direction: "up" | "down";
+  reason: string;
+};
+
 const emptyDraft: RuleDraft = {
   title: "",
   content: "",
-  sortOrder: "",
   isEnabled: true,
   reason: ""
-};
-
-const ACTION_LABELS: Record<SystemRuleChangeLog["action"], string> = {
-  create: "新增",
-  update: "编辑",
-  enable: "启用",
-  disable: "停用",
-  reorder: "排序",
-  restore: "恢复"
 };
 
 function getErrorStatus(error: unknown) {
@@ -120,20 +117,6 @@ function formatDate(value?: string | null) {
   }).format(date);
 }
 
-function parseSortOrder(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return { ok: true as const, value: undefined };
-  }
-
-  const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed)) {
-    return { ok: false as const, error: "sort_order 必须是整数，或留空交给后端处理。" };
-  }
-
-  return { ok: true as const, value: parsed };
-}
-
 function validateReason(reason: string) {
   if (!reason.trim()) {
     return "reason 不能为空。";
@@ -148,7 +131,6 @@ function toDraft(rule: SystemRuleAdminItem): RuleDraft {
   return {
     title: rule.title,
     content: rule.content,
-    sortOrder: String(rule.sort_order),
     isEnabled: rule.is_enabled,
     reason: ""
   };
@@ -176,7 +158,12 @@ export function SystemRulesAdminShell() {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [toggleSaving, setToggleSaving] = useState(false);
 
+  const [reorderDraft, setReorderDraft] = useState<ReorderDraft | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  const [reorderSaving, setReorderSaving] = useState(false);
+
   const isAdmin = authState.user?.role === "admin";
+  const currentUserId = authState.user?.id ?? null;
 
   const sortedRules = useMemo(
     () => [...rules].sort((first, second) => first.sort_order - second.sort_order),
@@ -271,23 +258,17 @@ export function SystemRulesAdminShell() {
     }
 
     if (!draft.title.trim()) {
-      setFormError("title 不能为空。");
+      setFormError("标题不能为空。");
       return;
     }
     if (!draft.content.trim()) {
-      setFormError("content 不能为空。");
+      setFormError("规则正文不能为空。");
       return;
     }
 
     const reasonError = validateReason(draft.reason);
     if (reasonError) {
       setFormError(reasonError);
-      return;
-    }
-
-    const sortOrder = parseSortOrder(draft.sortOrder);
-    if (!sortOrder.ok) {
-      setFormError(sortOrder.error);
       return;
     }
 
@@ -301,8 +282,7 @@ export function SystemRulesAdminShell() {
           title: draft.title.trim(),
           content: draft.content.trim(),
           is_enabled: draft.isEnabled,
-          reason: draft.reason.trim(),
-          ...(sortOrder.value === undefined ? {} : { sort_order: sortOrder.value })
+          reason: draft.reason.trim()
         };
         await createAdminSystemRule(token, payload);
         setFeedback({ tone: "success", message: "系统规则已新增。" });
@@ -310,8 +290,7 @@ export function SystemRulesAdminShell() {
         const payload: UpdateSystemRulePayload = {
           title: draft.title.trim(),
           content: draft.content.trim(),
-          reason: draft.reason.trim(),
-          ...(sortOrder.value === undefined ? {} : { sort_order: sortOrder.value })
+          reason: draft.reason.trim()
         };
         await updateAdminSystemRule(token, editingRule.id, payload);
         setFeedback({ tone: "success", message: "系统规则已保存。" });
@@ -366,6 +345,76 @@ export function SystemRulesAdminShell() {
       setToggleError(normalizeAdminError(error, "操作失败，请稍后重试。"));
     } finally {
       setToggleSaving(false);
+    }
+  };
+
+  const openReorderDialog = (rule: SystemRuleAdminItem, index: number, direction: "up" | "down") => {
+    const targetRule = sortedRules[direction === "up" ? index - 1 : index + 1];
+    if (!targetRule) {
+      return;
+    }
+
+    setReorderDraft({
+      rule,
+      targetRule,
+      direction,
+      reason: ""
+    });
+    setReorderError(null);
+    setFeedback(null);
+  };
+
+  const saveReorder = async () => {
+    if (!token || !reorderDraft) {
+      return;
+    }
+
+    const reasonError = validateReason(reorderDraft.reason);
+    if (reasonError) {
+      setReorderError(reasonError);
+      return;
+    }
+
+    const sourceOrder = reorderDraft.rule.sort_order;
+    const targetOrder = reorderDraft.targetRule.sort_order;
+    const directionLabel = reorderDraft.direction === "up" ? "上一条" : "下一条";
+    const reason = `${reorderDraft.reason.trim()}\n排序调整：与${directionLabel}交换位置。`;
+
+    setReorderSaving(true);
+    setReorderError(null);
+    setFeedback(null);
+
+    try {
+      if (sourceOrder === targetOrder) {
+        await updateAdminSystemRule(token, reorderDraft.rule.id, {
+          sort_order: reorderDraft.direction === "up" ? sourceOrder - 1 : sourceOrder + 1,
+          reason
+        });
+      } else {
+        await updateAdminSystemRule(token, reorderDraft.rule.id, {
+          sort_order: targetOrder,
+          reason
+        });
+        await updateAdminSystemRule(token, reorderDraft.targetRule.id, {
+          sort_order: sourceOrder,
+          reason
+        });
+      }
+      await refreshAfterMutation(token, logRuleId);
+      setFeedback({ tone: "success", message: "规则排序已调整。" });
+      setReorderDraft(null);
+    } catch (error) {
+      setReorderError(normalizeAdminError(error, "排序调整失败，请稍后重试。"));
+      try {
+        await refreshAfterMutation(token, logRuleId);
+      } catch (refreshError) {
+        setFeedback({
+          tone: "error",
+          message: normalizeAdminError(refreshError, "排序失败，且刷新最新数据失败，请手动刷新页面。")
+        });
+      }
+    } finally {
+      setReorderSaving(false);
     }
   };
 
@@ -427,11 +476,11 @@ export function SystemRulesAdminShell() {
       {feedback ? <Notice tone={feedback.tone} message={feedback.message} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-        <section className="space-y-4">
+        <section className="space-y-4 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto xl:pr-2">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <SectionTitle
               title="规则列表"
-              description="启用和停用规则都会显示，按 sort_order 从小到大排序。"
+              description="启用和停用规则都会显示，可以用上移 / 下移调整展示顺序。"
             />
             <Button
               variant="outline"
@@ -448,13 +497,17 @@ export function SystemRulesAdminShell() {
 
           {sortedRules.length > 0 ? (
             <div className="space-y-4">
-              {sortedRules.map((rule) => (
+              {sortedRules.map((rule, index) => (
                 <RuleCard
                   key={rule.id}
                   rule={rule}
+                  isFirst={index === 0}
+                  isLast={index === sortedRules.length - 1}
                   onEdit={() => openEditDialog(rule)}
                   onToggle={() => openToggleDialog(rule)}
                   onShowLogs={() => void selectLogRule(rule.id)}
+                  onMoveUp={() => openReorderDialog(rule, index, "up")}
+                  onMoveDown={() => openReorderDialog(rule, index, "down")}
                 />
               ))}
             </div>
@@ -471,9 +524,11 @@ export function SystemRulesAdminShell() {
         </section>
 
         <ChangeLogsPanel
+          rules={rules}
           logs={logs}
           loading={logsLoading}
           selectedRule={selectedLogRule}
+          currentUserId={currentUserId}
           onRefresh={() => {
             if (token) {
               void loadLogs(token, logRuleId);
@@ -486,7 +541,6 @@ export function SystemRulesAdminShell() {
       <RuleEditorDialog
         open={editorOpen}
         mode={editorMode}
-        rule={editingRule}
         draft={draft}
         saving={saving}
         error={formError}
@@ -512,6 +566,21 @@ export function SystemRulesAdminShell() {
           }
         }}
         onSave={() => void saveToggle()}
+      />
+
+      <ReorderRuleDialog
+        draft={reorderDraft}
+        error={reorderError}
+        saving={reorderSaving}
+        onChange={(reason) => {
+          setReorderDraft((current) => (current ? { ...current, reason } : current));
+        }}
+        onClose={() => {
+          if (!reorderSaving) {
+            setReorderDraft(null);
+          }
+        }}
+        onSave={() => void saveReorder()}
       />
     </section>
   );
@@ -559,14 +628,22 @@ function Notice({ tone, message }: Feedback) {
 
 function RuleCard({
   rule,
+  isFirst,
+  isLast,
   onEdit,
   onToggle,
-  onShowLogs
+  onShowLogs,
+  onMoveUp,
+  onMoveDown
 }: {
   rule: SystemRuleAdminItem;
+  isFirst: boolean;
+  isLast: boolean;
   onEdit: () => void;
   onToggle: () => void;
   onShowLogs: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
   return (
     <Card className={cn(rule.is_enabled ? "bg-paper" : "bg-muted opacity-80")}>
@@ -577,13 +654,28 @@ function RuleCard({
               <Badge variant={rule.is_enabled ? "inverse" : "neutral"}>
                 {rule.is_enabled ? "启用" : "停用"}
               </Badge>
-              <Badge variant="secondary">sort_order: {rule.sort_order}</Badge>
-              <Badge variant="muted">{rule.code}</Badge>
             </div>
             <CardTitle>{rule.title}</CardTitle>
-            <CardDescription>最近更新：{formatDate(rule.updated_at)}</CardDescription>
+            <CardDescription>
+              最近更新：{formatDate(rule.updated_at)}
+              <button
+                type="button"
+                className="ml-3 font-black underline decoration-4 underline-offset-4 hover:opacity-70"
+                onClick={onShowLogs}
+              >
+                查看变更
+              </button>
+            </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onMoveUp} disabled={isFirst}>
+              <ArrowUp size={16} strokeWidth={3} />
+              上移
+            </Button>
+            <Button variant="outline" size="sm" onClick={onMoveDown} disabled={isLast}>
+              <ArrowDown size={16} strokeWidth={3} />
+              下移
+            </Button>
             <Button variant="outline" size="sm" onClick={onEdit}>
               <PenLine size={16} strokeWidth={3} />
               编辑
@@ -596,10 +688,6 @@ function RuleCard({
               )}
               {rule.is_enabled ? "停用" : "启用"}
             </Button>
-            <Button variant="outline" size="sm" onClick={onShowLogs}>
-              <History size={16} strokeWidth={3} />
-              日志
-            </Button>
           </div>
         </div>
       </CardHeader>
@@ -607,6 +695,25 @@ function RuleCard({
         <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
           <p className="whitespace-pre-wrap break-words text-sm font-bold leading-6">{rule.content}</p>
         </div>
+        <details className="mt-4 border-4 border-ink bg-paper p-3 shadow-neo-sm">
+          <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em]">
+            技术详情
+          </summary>
+          <dl className="mt-3 space-y-2 break-words text-xs font-bold leading-5">
+            <div>
+              <dt className="font-black">code</dt>
+              <dd className="font-mono">{rule.code}</dd>
+            </div>
+            <div>
+              <dt className="font-black">id</dt>
+              <dd className="font-mono">{rule.id}</dd>
+            </div>
+            <div>
+              <dt className="font-black">sort_order</dt>
+              <dd className="font-mono">{rule.sort_order}</dd>
+            </div>
+          </dl>
+        </details>
       </CardContent>
     </Card>
   );
@@ -615,7 +722,6 @@ function RuleCard({
 function RuleEditorDialog({
   open,
   mode,
-  rule,
   draft,
   saving,
   error,
@@ -625,7 +731,6 @@ function RuleEditorDialog({
 }: {
   open: boolean;
   mode: EditorMode;
-  rule: SystemRuleAdminItem | null;
   draft: RuleDraft;
   saving: boolean;
   error: string | null;
@@ -638,7 +743,7 @@ function RuleEditorDialog({
       open={open}
       onClose={onClose}
       title={mode === "create" ? "新增系统规则" : "编辑系统规则"}
-      description="所有写操作必须填写 reason。code 由后端生成或保留，前端不允许编辑。"
+      description="所有写操作都必须填写变更原因，方便后续追踪。"
       footer={
         <>
           <Button onClick={onSave} disabled={saving}>
@@ -653,18 +758,9 @@ function RuleEditorDialog({
     >
       {error ? <Notice tone="error" message={error} /> : null}
 
-      {mode === "edit" && rule ? (
-        <DialogSection>
-          <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="rule-code">
-            code
-          </label>
-          <Input id="rule-code" value={rule.code} disabled />
-        </DialogSection>
-      ) : null}
-
       <DialogSection>
         <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="rule-title">
-          title
+          标题
         </label>
         <Input
           id="rule-title"
@@ -676,7 +772,7 @@ function RuleEditorDialog({
 
       <DialogSection>
         <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="rule-content">
-          content
+          规则正文
         </label>
         <Textarea
           id="rule-content"
@@ -687,38 +783,23 @@ function RuleEditorDialog({
         />
       </DialogSection>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <DialogSection>
-          <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="rule-sort-order">
-            sort_order
+      {mode === "create" ? (
+        <DialogSection className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+          <label className="flex items-center gap-3 text-sm font-black uppercase tracking-[0.14em]">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-black"
+              checked={draft.isEnabled}
+              onChange={(event) => onChange({ ...draft, isEnabled: event.target.checked })}
+            />
+            创建后立即启用
           </label>
-          <Input
-            id="rule-sort-order"
-            type="number"
-            value={draft.sortOrder}
-            onChange={(event) => onChange({ ...draft, sortOrder: event.target.value })}
-            placeholder="留空则由后端处理"
-          />
         </DialogSection>
-
-        {mode === "create" ? (
-          <DialogSection className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-            <label className="flex items-center gap-3 text-sm font-black uppercase tracking-[0.14em]">
-              <input
-                type="checkbox"
-                className="h-5 w-5 accent-black"
-                checked={draft.isEnabled}
-                onChange={(event) => onChange({ ...draft, isEnabled: event.target.checked })}
-              />
-              创建后立即启用
-            </label>
-          </DialogSection>
-        ) : null}
-      </div>
+      ) : null}
 
       <DialogSection>
         <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="rule-reason">
-          reason
+          变更原因
         </label>
         <Textarea
           id="rule-reason"
@@ -787,12 +868,11 @@ function ToggleRuleDialog({
 
           <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
             <p className="text-sm font-black leading-6">{draft.rule.title}</p>
-            <p className="mt-2 break-words font-mono text-xs font-bold">{draft.rule.code}</p>
           </div>
 
           <DialogSection>
             <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="toggle-reason">
-              reason
+              变更原因
             </label>
             <Textarea
               id="toggle-reason"
@@ -808,28 +888,101 @@ function ToggleRuleDialog({
   );
 }
 
+function ReorderRuleDialog({
+  draft,
+  error,
+  saving,
+  onChange,
+  onClose,
+  onSave
+}: {
+  draft: ReorderDraft | null;
+  error: string | null;
+  saving: boolean;
+  onChange: (reason: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const directionLabel = draft?.direction === "up" ? "上移" : "下移";
+
+  return (
+    <Dialog
+      open={Boolean(draft)}
+      onClose={onClose}
+      title={`确认${directionLabel}规则`}
+      description="排序调整也会记录到变更日志，必须填写变更原因后才能确认。"
+      footer={
+        <>
+          <Button onClick={onSave} disabled={saving}>
+            {saving ? (
+              <Loader2 className="animate-spin" size={18} strokeWidth={3} />
+            ) : draft?.direction === "up" ? (
+              <ArrowUp size={18} strokeWidth={3} />
+            ) : (
+              <ArrowDown size={18} strokeWidth={3} />
+            )}
+            {saving ? "提交中..." : `确认${directionLabel}`}
+          </Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+        </>
+      }
+    >
+      {draft ? (
+        <>
+          {error ? <Notice tone="error" message={error} /> : null}
+
+          <div className="space-y-3 border-4 border-ink bg-paper p-4 shadow-neo-sm">
+            <p className="text-sm font-black leading-6">
+              将《{draft.rule.title}》与《{draft.targetRule.title}》交换位置。
+            </p>
+          </div>
+
+          <DialogSection>
+            <label className="text-sm font-black uppercase tracking-[0.14em]" htmlFor="reorder-reason">
+              变更原因
+            </label>
+            <Textarea
+              id="reorder-reason"
+              value={draft.reason}
+              onChange={(event) => onChange(event.target.value)}
+              placeholder="说明为什么要调整这条系统规则的顺序，至少 10 个字符"
+              className="min-h-[7rem]"
+            />
+          </DialogSection>
+        </>
+      ) : null}
+    </Dialog>
+  );
+}
+
 function ChangeLogsPanel({
+  rules,
   logs,
   loading,
   selectedRule,
+  currentUserId,
   onRefresh,
   onClearFilter
 }: {
+  rules: SystemRuleAdminItem[];
   logs: SystemRuleChangeLog[];
   loading: boolean;
   selectedRule: SystemRuleAdminItem | null;
+  currentUserId: string | null;
   onRefresh: () => void;
   onClearFilter: () => void;
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto xl:pr-2">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <SectionTitle
           title="变更日志"
           description={
             selectedRule
               ? `当前只看：${selectedRule.title}`
-              : "最近 50 条规则变更记录，old_value / new_value 折叠展示。"
+              : "最近 50 条规则变更记录。"
           }
         />
         <div className="flex flex-wrap gap-2">
@@ -838,13 +991,20 @@ function ChangeLogsPanel({
               查看全部
             </Button>
           ) : null}
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label="刷新日志"
+            title="刷新日志"
+            className="min-w-[2.75rem] px-3"
+          >
             {loading ? (
               <Loader2 className="animate-spin" size={16} strokeWidth={3} />
             ) : (
               <RefreshCcw size={16} strokeWidth={3} />
             )}
-            刷新日志
           </Button>
         </div>
       </div>
@@ -859,7 +1019,7 @@ function ChangeLogsPanel({
           ) : logs.length > 0 ? (
             <div className="space-y-4">
               {logs.map((log) => (
-                <LogItem key={log.id} log={log} />
+                <LogItem key={log.id} log={log} rules={rules} currentUserId={currentUserId} />
               ))}
             </div>
           ) : (
@@ -871,40 +1031,97 @@ function ChangeLogsPanel({
   );
 }
 
-function LogItem({ log }: { log: SystemRuleChangeLog }) {
+const ACTION_VERBS: Record<SystemRuleChangeLog["action"], string> = {
+  create: "新增了",
+  update: "编辑了",
+  enable: "启用了",
+  disable: "停用了",
+  reorder: "调整了排序",
+  restore: "恢复了"
+};
+
+function readSnapshotTitle(value?: Record<string, unknown> | null) {
+  const title = value?.title;
+  return typeof title === "string" && title.trim() ? title.trim() : null;
+}
+
+function getLogActor(log: SystemRuleChangeLog, currentUserId: string | null) {
+  if (currentUserId && log.changed_by === currentUserId) {
+    return "你";
+  }
+  if (log.changed_by_email?.trim()) {
+    return log.changed_by_email.trim();
+  }
+  return "其他管理员";
+}
+
+function getLogRuleTitle(log: SystemRuleChangeLog, rules: SystemRuleAdminItem[]) {
+  const currentRuleTitle = rules.find((rule) => rule.id === log.rule_id)?.title;
+  if (currentRuleTitle) {
+    return currentRuleTitle;
+  }
+
+  return (
+    readSnapshotTitle(log.new_value) ||
+    readSnapshotTitle(log.old_value) ||
+    log.summary ||
+    "未知规则"
+  );
+}
+
+function LogItem({
+  log,
+  rules,
+  currentUserId
+}: {
+  log: SystemRuleChangeLog;
+  rules: SystemRuleAdminItem[];
+  currentUserId: string | null;
+}) {
+  const actor = getLogActor(log, currentUserId);
+  const ruleTitle = getLogRuleTitle(log, rules);
+
   return (
     <article className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Badge variant="secondary">{ACTION_LABELS[log.action]}</Badge>
-        <Badge variant="muted">{log.rule_code_snapshot}</Badge>
-      </div>
       <div className="space-y-2 text-sm font-bold leading-6">
-        <p>{log.summary || "未记录摘要"}</p>
-        <p>reason：{log.reason}</p>
-        <p>changed_by：{log.changed_by}</p>
-        <p>changed_at：{formatDate(log.changed_at)}</p>
+        <p className="font-black">
+          {formatDate(log.changed_at)} · {actor} {ACTION_VERBS[log.action]}规则《{ruleTitle}》
+        </p>
+        <p>原因：{log.reason}</p>
       </div>
-      <div className="mt-3 space-y-2">
-        <JsonDetails title="old_value" value={log.old_value} />
-        <JsonDetails title="new_value" value={log.new_value} />
-      </div>
+
+      <details className="mt-3 border-4 border-ink bg-paper p-3 shadow-neo-sm">
+        <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em]">
+          查看技术详情
+        </summary>
+        <div className="mt-3 space-y-3 text-xs font-bold leading-5">
+          <p className="break-words">
+            <span className="font-black">rule_code_snapshot：</span>
+            <span className="font-mono">{log.rule_code_snapshot}</span>
+          </p>
+          <p className="break-words">
+            <span className="font-black">changed_by：</span>
+            <span className="font-mono">{log.changed_by}</span>
+          </p>
+          <JsonBlock title="old_value" value={log.old_value} />
+          <JsonBlock title="new_value" value={log.new_value} />
+        </div>
+      </details>
     </article>
   );
 }
 
-function JsonDetails({ title, value }: { title: string; value?: Record<string, unknown> | null }) {
+function JsonBlock({ title, value }: { title: string; value?: Record<string, unknown> | null }) {
   if (!value) {
     return null;
   }
 
   return (
-    <details className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
-      <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em]">
-        {title}
-      </summary>
+    <div className="space-y-2">
+      <p className="font-black">{title}</p>
       <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs font-bold leading-5">
         {JSON.stringify(value, null, 2)}
       </pre>
-    </details>
+    </div>
   );
 }

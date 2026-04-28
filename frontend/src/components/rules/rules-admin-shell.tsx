@@ -1,5 +1,7 @@
 "use client";
 
+// DEPRECATED: 自 Task 4.1 起不再被 /admin/rules 页面引用，旧 built-in 规则页面不再作为当前规则维护入口。后续清理轮次再物理删除。
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, FolderKanban, Library, Loader2, ShieldCheck, ShieldOff } from "lucide-react";

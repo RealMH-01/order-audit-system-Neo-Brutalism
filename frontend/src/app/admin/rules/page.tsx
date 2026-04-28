@@ -1,11 +1,11 @@
 import { AuthGuard } from "@/components/auth/auth-guard";
-import { RulesAdminShell } from "@/components/rules/rules-admin-shell";
+import { LegacyRulesNoticeShell } from "@/components/admin/legacy-rules-notice-shell";
 
 export default function AdminRulesPage() {
   return (
     <AuthGuard>
       <main className="page-shell">
-        <RulesAdminShell />
+        <LegacyRulesNoticeShell />
       </main>
     </AuthGuard>
   );
