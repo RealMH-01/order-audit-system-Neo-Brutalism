@@ -295,12 +295,11 @@ class AuditOrchestratorService:
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
         self._require_profile_api_key(profile, primary_provider)
-        custom_rules = list(profile.get("active_custom_rules", []))
         company_affiliates = list(profile.get("company_affiliates", []))
         resolved_rules = self.template_library.resolve_audit_rules_for_run(
             current_user=current_user,
             template_id=payload.template_id,
-            temporary_rules=custom_rules,
+            temporary_rules=[],
         )
 
         task_id = str(uuid4())
@@ -317,7 +316,7 @@ class AuditOrchestratorService:
             "template_file_id": payload.template_file_id,
             "template_id": resolved_rules.template.id if resolved_rules.template else None,
             "reference_file_ids": list(payload.reference_file_ids),
-            "custom_rules": custom_rules,
+            "custom_rules": [],
             "company_affiliates": company_affiliates,
             "audit_rules_text": resolved_rules.rules_text,
             "audit_rule_snapshot": resolved_rules.rule_snapshot,
