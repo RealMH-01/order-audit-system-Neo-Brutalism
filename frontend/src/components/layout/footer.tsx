@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/lib/auth-context";
 
 const footerLinks = [
   { href: "/audit", label: "审核" },
@@ -8,7 +11,17 @@ const footerLinks = [
   { href: "/settings", label: "设置" }
 ];
 
+const guestFooterLinks = [
+  { href: "/", label: "首页" },
+  { href: "/login", label: "登录" },
+  { href: "/register", label: "注册" }
+];
+
 export function Footer() {
+  const { state } = useAuth();
+  const isAuthenticated = state.status === "authenticated" && state.user !== null;
+  const visibleLinks = isAuthenticated ? footerLinks : guestFooterLinks;
+
   return (
     <footer className="mt-10 border-t-4 border-ink bg-secondary">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 md:px-8 lg:flex-row lg:items-end lg:justify-between">
@@ -19,7 +32,7 @@ export function Footer() {
           </p>
         </div>
         <nav className="flex flex-wrap gap-3">
-          {footerLinks.map((item) => (
+          {visibleLinks.map((item) => (
             <Link
               key={item.href}
               href={item.href}

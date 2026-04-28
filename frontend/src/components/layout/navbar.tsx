@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -19,12 +19,20 @@ const navItems = [
   { href: "/admin/rules", label: "规则", requireRole: "admin" }
 ];
 
+const guestNavItems = [
+  { href: "/", label: "首页" },
+  { href: "/login", label: "登录" },
+  { href: "/register", label: "注册" }
+];
+
 export function Navbar() {
   const router = useRouter();
   const { state, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const isAuthenticated = state.status === "authenticated" && state.user !== null;
-  const visibleNavItems = navItems.filter((item) => !item.requireRole || state.user?.role === item.requireRole);
+  const visibleNavItems = isAuthenticated
+    ? navItems.filter((item) => !item.requireRole || state.user?.role === item.requireRole)
+    : guestNavItems;
   const accountDisplayName =
     state.user?.display_name?.trim() ||
     state.user?.email?.split("@")[0]?.trim() ||
@@ -70,11 +78,7 @@ export function Navbar() {
                 退出登录
               </Button>
             </>
-          ) : (
-            <Link href="/login" className={buttonVariants({ variant: "outline" })}>
-              登录
-            </Link>
-          )}
+          ) : null}
         </nav>
 
         <div className="flex items-center gap-3">
@@ -117,15 +121,7 @@ export function Navbar() {
                 退出登录
               </Button>
             </>
-          ) : (
-            <Link
-              href="/login"
-              className={cn(buttonVariants({ variant: "outline" }), "justify-center")}
-              onClick={() => setOpen(false)}
-            >
-              登录
-            </Link>
-          )}
+          ) : null}
         </nav>
       </div>
     </header>
