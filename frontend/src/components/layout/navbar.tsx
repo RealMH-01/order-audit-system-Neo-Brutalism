@@ -10,21 +10,63 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/audit", label: "审核" },
-  { href: "/templates", label: "自定义规则集" },
-  { href: "/wizard", label: "引导" },
-  { href: "/history", label: "历史" },
-  { href: "/updates", label: "平台更新" },
-  { href: "/settings", label: "设置" },
-  { href: "/admin/system-rules", label: "系统硬规则", requireRole: "admin" }
+type NavLine = {
+  text: string;
+  className?: string;
+};
+
+type NavItem = {
+  href: string;
+  label: string;
+  displayLines?: NavLine[];
+  className?: string;
+  requireRole?: "admin";
+};
+
+const navItems: NavItem[] = [
+  { href: "/audit", label: "审核", displayLines: [{ text: "审核" }] },
+  {
+    href: "/templates",
+    label: "自定义规则集",
+    displayLines: [{ text: "自定义" }, { text: "规则集" }],
+    className: "min-w-[5.5rem]"
+  },
+  { href: "/wizard", label: "引导", displayLines: [{ text: "引导" }] },
+  { href: "/history", label: "历史", displayLines: [{ text: "历史" }] },
+  {
+    href: "/updates",
+    label: "平台更新",
+    displayLines: [{ text: "平台" }, { text: "更新" }]
+  },
+  { href: "/settings", label: "设置", displayLines: [{ text: "设置" }] },
+  {
+    href: "/admin/system-rules",
+    label: "系统硬规则",
+    displayLines: [{ text: "系统硬" }, { text: "规则", className: "tracking-[0.5em] pl-[0.5em]" }],
+    className: "min-w-[5.75rem]",
+    requireRole: "admin"
+  }
 ];
 
-const guestNavItems = [
-  { href: "/", label: "首页" },
-  { href: "/login", label: "登录" },
-  { href: "/register", label: "注册" }
+const guestNavItems: NavItem[] = [
+  { href: "/", label: "首页", displayLines: [{ text: "首页" }] },
+  { href: "/login", label: "登录", displayLines: [{ text: "登录" }] },
+  { href: "/register", label: "注册", displayLines: [{ text: "注册" }] }
 ];
+
+function NavItemLabel({ item }: { item: NavItem }) {
+  const displayLines = item.displayLines ?? [{ text: item.label }];
+
+  return (
+    <span className="flex flex-col items-center justify-center gap-0.5 whitespace-nowrap text-center leading-none">
+      {displayLines.map((line) => (
+        <span key={line.text} className={cn("whitespace-nowrap", line.className)}>
+          {line.text}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function Navbar() {
   const router = useRouter();
@@ -47,7 +89,7 @@ export function Navbar() {
 
   return (
     <header className="relative z-20 border-b-4 border-ink bg-canvas">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 md:px-8">
+      <div className="mx-auto flex max-w-[92rem] items-center justify-between gap-5 px-4 py-4 md:px-8">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -61,14 +103,17 @@ export function Navbar() {
           </Badge>
         </div>
 
-        <nav className="hidden items-center gap-2 lg:flex">
+        <nav className="hidden items-center gap-3 lg:flex">
           {visibleNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="inline-flex h-11 items-center border-4 border-transparent px-3 font-bold uppercase tracking-[0.14em] transition-all duration-100 ease-linear hover:border-ink hover:bg-secondary hover:shadow-neo-sm"
+              className={cn(
+                "inline-flex h-14 min-w-[4.25rem] shrink-0 items-center justify-center border-4 border-transparent px-3 font-bold uppercase tracking-[0.12em] transition-all duration-100 ease-linear hover:border-ink hover:bg-secondary hover:shadow-neo-sm",
+                item.className
+              )}
             >
-              {item.label}
+              <NavItemLabel item={item} />
             </Link>
           ))}
           {isAuthenticated ? (
@@ -109,7 +154,7 @@ export function Navbar() {
               className="inline-flex min-h-[3.5rem] items-center justify-between border-4 border-ink bg-secondary px-4 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
               onClick={() => setOpen(false)}
             >
-              {item.label}
+              <NavItemLabel item={item} />
             </Link>
           ))}
           {isAuthenticated ? (
