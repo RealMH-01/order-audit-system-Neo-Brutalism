@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import type {
   WizardAffiliateRole,
   WizardConnectionTestResponse,
@@ -48,7 +47,6 @@ type SettingsState = {
   hasZhipuOcrKey: boolean;
   companyMode: "single" | "group";
   affiliateRoles: WizardAffiliateRole[];
-  rulesText: string;
   wizardCompleted: boolean;
   disclaimerAccepted: boolean;
 };
@@ -86,7 +84,6 @@ const initialState: SettingsState = {
   hasZhipuOcrKey: false,
   companyMode: "single",
   affiliateRoles: [],
-  rulesText: "",
   wizardCompleted: false,
   disclaimerAccepted: false
 };
@@ -200,7 +197,6 @@ export function SettingsShell() {
         hasZhipuOcrKey: data.has_zhipu_ocr_key,
         companyMode: affiliateRoles.length > 0 ? "group" : "single",
         affiliateRoles,
-        rulesText: data.active_custom_rules.join("\n"),
         wizardCompleted: data.wizard_completed,
         disclaimerAccepted: data.disclaimer_accepted
       });
@@ -337,19 +333,8 @@ export function SettingsShell() {
         { token }
       );
 
-      await apiPut(
-        "/rules/custom",
-        {
-          rules: state.rulesText
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        },
-        { token }
-      );
-
       updateCurrentUser({ display_name: state.displayName.trim() || null });
-      setSuccess("配置已保存，后续审核会自动使用这套模型、密钥和规则。");
+      setSuccess("配置已保存，后续审核会自动使用这套模型、密钥和公司信息。");
       await loadProfile(token);
     } catch (saveError) {
       setError(
@@ -757,19 +742,17 @@ export function SettingsShell() {
 
       <Card className="bg-paper">
         <CardHeader>
-          <Badge variant="accent">审核规则</Badge>
-          <CardTitle>维护当前审核规则</CardTitle>
+          <Badge variant="accent">规则模板</Badge>
+          <CardTitle>自定义规则管理</CardTitle>
           <CardDescription>
-            这里展示当前启用的自定义审核规则。每行一条规则，保存后会在后续审核中自动使用。
+            多套自定义规则集请在「规则模板」页面创建和维护。审核时选择其中一套使用。
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            value={state.rulesText}
-            onChange={(event) => updateField("rulesText", event.target.value)}
-            className="min-h-[20rem]"
-            placeholder="每行一条审核规则。可以继续人工维护。"
-          />
+        <CardContent>
+          <Button variant="secondary" onClick={() => router.push("/templates")}>
+            <ArrowRight size={18} strokeWidth={3} />
+            前往规则模板页
+          </Button>
         </CardContent>
       </Card>
 
