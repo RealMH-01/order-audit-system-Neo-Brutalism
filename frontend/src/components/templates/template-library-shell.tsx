@@ -16,9 +16,9 @@ import type {
   AuditTemplate,
   AuditTemplateDraft,
   AuditTemplateListResponse,
-  MessageResponse,
-  SystemHardRulesResponse
+  MessageResponse
 } from "@/components/templates/types";
+import { SystemRulesReadonlyPanel } from "@/components/templates/system-rules-readonly-panel";
 import {
   createTemplateDraft,
   formatTemplateDate,
@@ -60,7 +60,6 @@ const SUPPLEMENTAL_PLACEHOLDER = [
 
 export function TemplateLibraryShell() {
   const [token, setToken] = useState<string | null>(null);
-  const [systemRules, setSystemRules] = useState<SystemHardRulesResponse | null>(null);
   const [templates, setTemplates] = useState<AuditTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -91,12 +90,9 @@ export function TemplateLibraryShell() {
       setLoadError(null);
 
       try {
-        const [systemResult, templateResult] = await Promise.all([
-          apiGet<SystemHardRulesResponse>("/templates/system-rules", { token: accessToken }),
-          apiGet<AuditTemplateListResponse>("/templates", { token: accessToken })
-        ]);
-
-        setSystemRules(systemResult.data);
+        const templateResult = await apiGet<AuditTemplateListResponse>("/templates", {
+          token: accessToken
+        });
         setTemplates(sortTemplates(templateResult.data.templates));
       } catch (error) {
         setLoadError(normalizeTemplateError(error, "规则集资料读取失败，请稍后重试。"));
@@ -342,7 +338,7 @@ export function TemplateLibraryShell() {
 
       {feedback ? <Notice tone={feedback.tone} message={feedback.message} /> : null}
 
-      <SystemHardRulesPanel systemRules={systemRules} />
+      <SystemRulesReadonlyPanel token={token} />
 
       <section className="space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -439,54 +435,6 @@ function SectionTitle({
         {description}
       </p>
     </div>
-  );
-}
-
-function SystemHardRulesPanel({
-  systemRules
-}: {
-  systemRules: SystemHardRulesResponse | null;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <SectionTitle
-          title="系统硬规则"
-          description="固定启用，不可关闭。所有审核都会遵守这些底线要求。"
-        />
-        <Badge variant="inverse">
-          <ShieldCheck size={14} strokeWidth={3} />
-          固定启用，不可关闭
-        </Badge>
-      </div>
-
-      <Card className="bg-paper">
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="accent">第 {systemRules?.version ?? 1} 版</Badge>
-            <CardTitle>{systemRules?.title ?? "系统硬规则"}</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2">
-            {(systemRules?.rules ?? []).map((rule, index) => (
-              <div
-                key={rule.code}
-                className="border-4 border-ink bg-secondary p-4 shadow-neo-sm"
-              >
-                <div className="mb-2 flex items-center gap-3">
-                  <span className="inline-flex h-9 w-9 items-center justify-center border-4 border-ink bg-paper text-sm font-black shadow-neo-sm">
-                    {index + 1}
-                  </span>
-                  <h3 className="text-lg font-black leading-tight">{rule.title}</h3>
-                </div>
-                <p className="text-sm font-bold leading-6">{rule.content}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </section>
   );
 }
 
