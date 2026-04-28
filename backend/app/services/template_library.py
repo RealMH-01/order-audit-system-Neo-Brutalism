@@ -102,6 +102,14 @@ class ResolvedAuditTemplateRules:
     rule_snapshot: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class LoadedSystemHardRules:
+    """System hard rules resolved for one audit run."""
+
+    rules: list[SystemHardRuleItem]
+    source: str
+
+
 class TemplateLibraryService:
     """Service for the new backend template library surface."""
 
@@ -231,7 +239,8 @@ class TemplateLibraryService:
         """Resolve the actual audit-rule stack used by an audit run."""
 
         resolved_template = self._resolve_template_for_run(current_user.id, template_id)
-        sections = [self._format_system_hard_rules()]
+        system_rules = self._load_system_hard_rules()
+        sections = [self._format_system_hard_rules(system_rules.rules)]
 
         if resolved_template is not None:
             if resolved_template.supplemental_rules.strip():
@@ -254,6 +263,7 @@ class TemplateLibraryService:
             rule_snapshot=self._build_rule_snapshot(
                 resolved_template=resolved_template,
                 temporary_rules=clean_temporary_rules,
+                system_rules=system_rules,
             ),
         )
 
@@ -296,11 +306,43 @@ class TemplateLibraryService:
                 return template
         return None
 
+    def _load_system_hard_rules(self) -> LoadedSystemHardRules:
+        if self.repo is None:
+            return self._fallback_system_hard_rules()
+
+        try:
+            rows = self.repo.list_system_hard_rules(enabled_only=True)
+        except AppError:
+            return self._fallback_system_hard_rules()
+
+        if not rows:
+            raise AppError("当前没有启用的系统硬约束规则，请至少启用一条后再审核。", status_code=500)
+
+        return LoadedSystemHardRules(
+            rules=[self._to_system_hard_rule_item(row) for row in rows],
+            source="db",
+        )
+
     @staticmethod
-    def _format_system_hard_rules() -> str:
+    def _fallback_system_hard_rules() -> LoadedSystemHardRules:
+        return LoadedSystemHardRules(
+            rules=list(SYSTEM_HARD_RULES.rules),
+            source="fallback",
+        )
+
+    @staticmethod
+    def _to_system_hard_rule_item(row: dict[str, Any]) -> SystemHardRuleItem:
+        return SystemHardRuleItem(
+            code=str(row.get("code") or row.get("id") or ""),
+            title=str(row.get("title") or ""),
+            content=str(row.get("content") or ""),
+        )
+
+    @staticmethod
+    def _format_system_hard_rules(rules: list[SystemHardRuleItem]) -> str:
         lines = [
             f"- {rule.title}：{rule.content}"
-            for rule in SYSTEM_HARD_RULES.rules
+            for rule in rules
         ]
         return "【系统硬约束规则】\n" + "\n".join(lines)
 
@@ -309,11 +351,12 @@ class TemplateLibraryService:
         *,
         resolved_template: AuditTemplateResponse | None,
         temporary_rules: list[str],
+        system_rules: LoadedSystemHardRules,
     ) -> dict[str, Any]:
         resolved_sections = [
             {
                 "title": "系统硬约束规则",
-                "rules": [f"{rule.title}：{rule.content}" for rule in SYSTEM_HARD_RULES.rules],
+                "rules": [f"{rule.title}：{rule.content}" for rule in system_rules.rules],
             },
         ]
 
@@ -338,7 +381,8 @@ class TemplateLibraryService:
             "system_rules": {
                 "title": "系统硬约束规则",
                 "version": SYSTEM_HARD_RULES.version,
-                "rules": [rule.model_dump(mode="json") for rule in SYSTEM_HARD_RULES.rules],
+                "source": system_rules.source,
+                "rules": [rule.model_dump(mode="json") for rule in system_rules.rules],
             },
             "template": self._template_snapshot(resolved_template),
             "run_supplemental_rules": list(temporary_rules),
