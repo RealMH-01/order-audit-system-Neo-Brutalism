@@ -16,6 +16,7 @@ from app.services.report_generator import ReportGeneratorService
 from app.services.rules_config import RulesConfigService
 from app.services.runtime_store import RuntimeStore, get_runtime_store
 from app.services.settings_service import SettingsService
+from app.services.system_rules_admin import SystemRulesAdminService
 from app.services.template_library import TemplateLibraryService
 from app.services.token_utils import TokenUtilityService
 from app.services.wizard_engine import WizardEngineService
@@ -117,6 +118,18 @@ def get_template_library_service(
     return TemplateLibraryService(store=store, repo=repo)
 
 
+def get_system_rules_admin_service(
+    repo: SupabaseRepository | None = Depends(get_repository),
+) -> SystemRulesAdminService:
+    return SystemRulesAdminService(repo=repo)
+
+
+def get_system_rules_service(
+    repo: SupabaseRepository | None = Depends(get_repository),
+) -> SystemRulesAdminService:
+    return SystemRulesAdminService(repo=repo)
+
+
 def get_audit_orchestrator_service(
     settings: Settings = Depends(get_app_settings),
     file_parser: FileParserService = Depends(get_file_parser_service),
@@ -144,3 +157,22 @@ def get_current_user(
     if credentials is None or not credentials.credentials:
         raise AppError("请先登录后再访问该接口。", status_code=401)
     return auth_service.get_current_user(credentials.credentials)
+
+
+def require_admin(
+    current_user: CurrentUser = Depends(get_current_user),
+    repo: SupabaseRepository | None = Depends(get_repository),
+) -> CurrentUser:
+    if repo is None:
+        raise AppError("Supabase is not configured.", status_code=500)
+
+    profile = repo.get_profile(current_user.id)
+    if profile is None or profile.get("role") != "admin":
+        raise AppError("只有管理员可以访问该接口。", status_code=403)
+
+    return CurrentUser(
+        id=current_user.id,
+        email=current_user.email,
+        display_name=profile.get("display_name") or current_user.display_name,
+        role="admin",
+    )

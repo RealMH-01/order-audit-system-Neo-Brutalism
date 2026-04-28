@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
+from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 
@@ -142,6 +143,114 @@ class SupabaseRepository:
 
     def update_system_rule(self, data: dict[str, Any]) -> dict[str, Any]:
         return self.update_system_rules(data)
+
+    def list_system_hard_rules(self, *, enabled_only: bool = False) -> list[dict[str, Any]]:
+        def build_query(table: Any) -> Any:
+            query = table.select("*")
+            if enabled_only:
+                query = query.eq("is_enabled", True)
+            return query.order("sort_order", desc=False).order("created_at", desc=False)
+
+        return self._select_many(
+            "system_hard_rules",
+            "list system hard rules",
+            build_query,
+        )
+
+    def get_system_hard_rule(self, rule_id: str) -> dict[str, Any] | None:
+        return self._select_one(
+            "system_hard_rules",
+            "read system hard rule",
+            lambda table: table.select("*").eq("id", rule_id).limit(1),
+        )
+
+    def get_system_hard_rule_by_code(self, code: str) -> dict[str, Any] | None:
+        return self._select_one(
+            "system_hard_rules",
+            "read system hard rule by code",
+            lambda table: table.select("*").eq("code", code).limit(1),
+        )
+
+    def get_max_system_hard_rule_sort_order(self) -> int:
+        rows = self._select_many(
+            "system_hard_rules",
+            "read max system hard rule sort order",
+            lambda table: table.select("sort_order").order("sort_order", desc=True).limit(1),
+        )
+        if not rows:
+            return 0
+        value = rows[0].get("sort_order", 0)
+        return int(value) if isinstance(value, int) else 0
+
+    def count_enabled_system_hard_rules(self) -> int:
+        rows = self._select_many(
+            "system_hard_rules",
+            "count enabled system hard rules",
+            lambda table: table.select("id").eq("is_enabled", True),
+        )
+        return len(rows)
+
+    def create_system_hard_rule(self, data: dict[str, Any]) -> dict[str, Any]:
+        rule_id = str(data.get("id") or uuid4())
+        payload = self._encode({"id": rule_id, **data})
+        rows = self._execute(
+            "create system hard rule",
+            lambda: self.client.table("system_hard_rules").insert(payload).execute(),
+        )
+        if rows:
+            return rows[0]
+        rule = self.get_system_hard_rule(rule_id)
+        if rule is None:
+            raise AppError("System hard rule creation succeeded but no record was returned.", status_code=500)
+        return rule
+
+    def update_system_hard_rule(self, rule_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        if self.get_system_hard_rule(rule_id) is None:
+            raise AppError("未找到指定系统硬约束规则。", status_code=404)
+
+        payload = self._encode(
+            data,
+            exclude_fields={"id", "code", "created_at", "created_by"},
+        )
+        if payload:
+            self._execute(
+                "update system hard rule",
+                lambda: self.client.table("system_hard_rules").update(payload).eq("id", rule_id).execute(),
+            )
+
+        rule = self.get_system_hard_rule(rule_id)
+        if rule is None:
+            raise AppError("System hard rule update succeeded but no record was returned.", status_code=500)
+        return rule
+
+    def create_system_rule_change_log(self, data: dict[str, Any]) -> dict[str, Any]:
+        log_id = str(data.get("id") or uuid4())
+        payload = self._encode({"id": log_id, **data})
+        rows = self._execute(
+            "create system rule change log",
+            lambda: self.client.table("system_rule_change_logs").insert(payload).execute(),
+        )
+        if rows:
+            return rows[0]
+        return {"id": log_id, **payload}
+
+    def list_system_rule_change_logs(
+        self,
+        *,
+        limit: int = 50,
+        rule_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        def build_query(table: Any) -> Any:
+            query = table.select("*")
+            if rule_id:
+                query = query.eq("rule_id", rule_id)
+            return query.order("changed_at", desc=True).limit(limit)
+
+        return self._select_many(
+            "system_rule_change_logs",
+            "list system rule change logs",
+            build_query,
+        )
 
     def list_audit_templates(self, user_id: str) -> list[dict[str, Any]]:
         return self._select_many(

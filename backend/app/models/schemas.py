@@ -275,6 +275,66 @@ class SystemHardRulesResponse(BaseModel):
     rules: list[SystemHardRuleItem]
 
 
+class SystemRuleCreateRequest(BaseModel):
+    """Admin request for creating a DB-backed system hard rule."""
+
+    title: Any
+    content: Any
+    sort_order: Any = None
+    is_enabled: Any = True
+    reason: Any
+
+
+class SystemRuleUpdateRequest(BaseModel):
+    """Admin request for updating a DB-backed system hard rule."""
+
+    title: Any = None
+    content: Any = None
+    sort_order: Any = None
+    is_enabled: Any = None
+    reason: Any
+
+
+class AdminSystemRuleResponse(BaseModel):
+    """Admin-facing DB-backed system hard rule."""
+
+    id: str
+    code: str
+    title: str
+    content: str
+    is_enabled: bool
+    sort_order: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
+
+
+class PublicSystemRuleResponse(BaseModel):
+    """Current enabled DB-backed system hard rule visible to signed-in users."""
+
+    id: str
+    code: str
+    title: str
+    content: str
+    sort_order: int
+
+
+class SystemRuleChangeLogResponse(BaseModel):
+    """Admin-facing DB-backed system hard rule change log."""
+
+    id: str
+    rule_id: str | None = None
+    rule_code_snapshot: str
+    action: Literal["create", "update", "enable", "disable", "reorder", "restore"]
+    old_value: dict[str, Any] | None = None
+    new_value: dict[str, Any] | None = None
+    reason: str
+    summary: str | None = None
+    changed_by: str
+    changed_at: datetime | None = None
+
+
 class AuditTemplateRecord(BaseModel):
     """Database-facing user audit template."""
 
