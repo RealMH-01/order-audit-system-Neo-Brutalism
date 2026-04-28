@@ -250,8 +250,8 @@ export function WizardContainer() {
         provider,
         selectedModel: normalizeModelForDisplay(data.selected_model),
         deepThinkEnabled: data.deep_think_enabled,
-        manualRulesText: data.active_custom_rules.join("\n"),
-        generatedRules: data.active_custom_rules,
+        manualRulesText: "",
+        generatedRules: [],
         generatedAffiliates: data.company_affiliates,
         hasOpenaiKey: data.has_openai_key,
         hasDeepseekKey: data.has_deepseek_key,
@@ -399,6 +399,8 @@ export function WizardContainer() {
         sessionId: data.session_id,
         chatMessages: [{ role: "assistant", content: data.ai_message }],
         chatInput: "",
+        generatedRules: [],
+        generatedAffiliates: [],
         aiCompleted: data.is_complete,
         aiRulesConfirmed: false
       }));

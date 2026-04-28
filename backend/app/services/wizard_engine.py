@@ -15,6 +15,7 @@ from app.db.repository import SupabaseRepository
 from app.db.supabase_client import ApiKeyCipher, EncryptionConfigurationError
 from app.errors import AppError
 from app.models.schemas import (
+    AuditTemplateCreateRequest,
     CurrentUser,
     FeatureStatus,
     WizardCapability,
@@ -28,6 +29,7 @@ from app.models.schemas import (
 )
 from app.services.llm_client import LLMClientService
 from app.services.runtime_store import RuntimeStore
+from app.services.template_library import TemplateLibraryService
 
 WIZARD_SESSION_TIMEOUT = timedelta(minutes=30)
 WIZARD_MAX_MESSAGE_LENGTH = 5000  # 单条消息最大字符数
@@ -202,16 +204,24 @@ class WizardEngineService:
         )
 
     def complete(self, current_user: CurrentUser, payload: WizardCompleteRequest) -> WizardSkipResponse:
-        """确认引导结果并写回 profile。"""
+        """确认引导结果并保存为用户自定义规则集。"""
 
         session = self._get_session(current_user.id, payload.session_id)
         profile = self._get_profile(current_user.id)
 
-        final_rules = list(payload.final_rules) or list(session.generated_rules) or list(profile.get("active_custom_rules", []))
+        final_rules = self._normalize_generated_list(payload.final_rules) or self._normalize_generated_list(
+            session.generated_rules
+        )
         affiliates = list(payload.generated_affiliates) or list(session.generated_affiliates)
         affiliate_roles = list(payload.generated_affiliate_roles)
 
-        profile["active_custom_rules"] = final_rules
+        self._create_rule_set_template(
+            current_user,
+            name_prefix="AI 引导生成规则",
+            description="由 AI 引导向导自动生成的自定义规则集。",
+            rules=final_rules,
+        )
+
         profile["company_affiliates"] = affiliates
         profile["company_affiliates_roles"] = affiliate_roles
         profile["wizard_completed"] = True
@@ -223,7 +233,7 @@ class WizardEngineService:
         session.generated_affiliates = affiliates
 
         return WizardSkipResponse(
-            message="引导规则已确认并写回当前用户资料。",
+            message="规则已保存为自定义规则集，可在规则模板页面管理，并在审核时选择使用。",
             is_complete=True,
             generated_rules=final_rules,
             generated_affiliates=affiliates,
@@ -233,8 +243,13 @@ class WizardEngineService:
         """跳过 AI 对话，直接保存用户手写或导入规则。"""
 
         profile = self._get_profile(current_user.id)
-        if payload.rules_text:
-            profile["active_custom_rules"] = list(payload.rules_text)
+        rules_list = self._normalize_generated_list(payload.rules_text)
+        self._create_rule_set_template(
+            current_user,
+            name_prefix="手动配置规则",
+            description="由 AI 引导向导手动配置的自定义规则集。",
+            rules=rules_list,
+        )
         if payload.generated_affiliates:
             profile["company_affiliates"] = list(payload.generated_affiliates)
         if payload.generated_affiliate_roles:
@@ -244,9 +259,9 @@ class WizardEngineService:
         profile = self._save_profile(current_user.id, profile)
 
         return WizardSkipResponse(
-            message="已跳过 AI 引导，并保存当前规则配置。",
+            message="规则已保存为自定义规则集，可在规则模板页面管理，并在审核时选择使用。",
             is_complete=True,
-            generated_rules=list(profile.get("active_custom_rules", [])),
+            generated_rules=rules_list,
             generated_affiliates=list(profile.get("company_affiliates", [])),
         )
 
@@ -374,32 +389,44 @@ class WizardEngineService:
     def _save_profile(self, user_id: str, profile: dict[str, object]) -> dict[str, object]:
         if self.repo is not None:
             updates = {
-                "active_custom_rules": profile.get("active_custom_rules", []),
                 "company_affiliates": profile.get("company_affiliates", []),
                 "company_affiliates_roles": profile.get("company_affiliates_roles", []),
                 "wizard_completed": profile.get("wizard_completed", False),
                 "updated_at": profile.get("updated_at"),
             }
             if self.repo.get_profile(user_id) is None:
-                profile = self.repo.upsert_profile(user_id, profile)
+                profile_payload = dict(profile)
+                profile_payload.pop("active_custom_rules", None)
+                profile = self.repo.upsert_profile(user_id, profile_payload)
             else:
-                if bool(profile.get("wizard_completed")):
-                    profile = self.repo.mark_wizard_completed(
-                        user_id,
-                        list(profile.get("active_custom_rules", [])),
-                    )
-                    profile = self.repo.update_profile(
-                        user_id,
-                        {
-                            "company_affiliates": updates["company_affiliates"],
-                            "company_affiliates_roles": updates["company_affiliates_roles"],
-                            "updated_at": updates["updated_at"],
-                        },
-                    )
-                else:
-                    profile = self.repo.update_profile(user_id, updates)
+                profile = self.repo.update_profile(user_id, updates)
         self.store.profiles[user_id] = profile
         return profile
+
+    def _create_rule_set_template(
+        self,
+        current_user: CurrentUser,
+        *,
+        name_prefix: str,
+        description: str,
+        rules: list[str],
+    ) -> None:
+        clean_rules = self._normalize_generated_list(rules)
+        if not clean_rules:
+            return
+
+        created_at_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+        template_service = TemplateLibraryService(store=self.store, repo=self.repo)
+        template_service.create_template(
+            current_user,
+            AuditTemplateCreateRequest(
+                name=f"{name_prefix} - {created_at_label}",
+                description=description,
+                business_type="domestic",
+                supplemental_rules="\n".join(clean_rules),
+                is_default=True,
+            ),
+        )
 
     def _resolve_api_key(self, profile: dict[str, object], provider: str) -> str | None:
         """根据 provider 读取并尽量解密 API key。"""
