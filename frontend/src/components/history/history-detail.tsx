@@ -191,6 +191,33 @@ function resolveDocumentCount(document: HistoryDocumentResult) {
   return document.result?.issues?.length ?? 0;
 }
 
+function normalizeComparableText(value: string) {
+  return value.replace(/[，。、“”‘’：:；;,.!！?？（）()\s]/g, "").toLowerCase();
+}
+
+function renderOptionalText(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+function appendUniqueText(target: string[], seen: Set<string>, value: unknown) {
+  const text = renderOptionalText(value);
+
+  if (!text) {
+    return;
+  }
+
+  const comparable = normalizeComparableText(text);
+  if (!seen.has(comparable)) {
+    seen.add(comparable);
+    target.push(text);
+  }
+}
+
 function isUserFacingSummary(value: string | null | undefined) {
   const text = (value || "").trim();
   if (!text) {
@@ -201,40 +228,192 @@ function isUserFacingSummary(value: string | null | undefined) {
   return !internalHints.some((hint) => text.includes(hint));
 }
 
+function resolveIssueSeveritySummary(
+  issues: HistoryIssue[],
+  fallback: ReturnType<typeof summarizeSeverity>
+) {
+  if (issues.length === 0) {
+    return fallback;
+  }
+
+  return issues.reduce(
+    (counts, issue) => {
+      if (issue.level === "RED") {
+        counts.red += 1;
+      } else if (issue.level === "BLUE") {
+        counts.blue += 1;
+      } else {
+        counts.yellow += 1;
+      }
+      return counts;
+    },
+    { red: 0, yellow: 0, blue: 0 }
+  );
+}
+
+function extractRecommendation(value: string) {
+  const text = value.trim();
+  const suggestionIndex = text.indexOf("建议");
+
+  if (suggestionIndex >= 0) {
+    return text.slice(suggestionIndex).trim();
+  }
+
+  if (text.includes("本次审核共发现") || text.includes("未发现明确问题")) {
+    return "";
+  }
+
+  return text;
+}
+
+function appendIssueDetailHint(value: string) {
+  const text = value.trim();
+
+  if (!text) {
+    return "建议优先查看问题明细。";
+  }
+
+  if (text.includes("问题明细") || text.includes("详见")) {
+    return /[。.!！?？]$/.test(text) ? text : `${text}。`;
+  }
+
+  return `${text.replace(/[。.!！?？；;，,]*$/, "")}，详见问题明细。`;
+}
+
+function resolveSummaryRecommendation(candidates: string[], issueCount: number) {
+  if (issueCount === 0) {
+    return "";
+  }
+
+  const recommendations = candidates
+    .map(extractRecommendation)
+    .filter((text) => normalizeComparableText(text).length > 0)
+    .sort(
+      (left, right) =>
+        normalizeComparableText(right).length - normalizeComparableText(left).length
+    );
+
+  return appendIssueDetailHint(recommendations[0] ?? "建议优先查看问题明细。");
+}
+
 function formatIssueSummary(summary: ReturnType<typeof summarizeSeverity>, issueCount: number) {
   if (issueCount === 0) {
     return "本次审核未发现明确问题，可结合原始单据进行最终确认。";
   }
 
   const parts = [
-    summary.red > 0 ? `高风险 ${summary.red} 个` : "",
-    summary.yellow > 0 ? `疑点 ${summary.yellow} 个` : "",
-    summary.blue > 0 ? `提示 ${summary.blue} 个` : ""
+    summary.red > 0 ? `高风险 ${summary.red}` : "",
+    summary.yellow > 0 ? `疑点 ${summary.yellow}` : "",
+    summary.blue > 0 ? `提示 ${summary.blue}` : ""
   ].filter(Boolean);
 
-  return `本次审核共发现 ${issueCount} 个问题${parts.length ? `，其中${parts.join("、")}` : ""}。建议优先查看问题明细中的高风险项。`;
+  return `本次审核共发现 ${issueCount} 个问题${
+    parts.length ? `（${parts.join("、")}）` : ""
+  }。建议优先查看问题明细。`;
 }
 
 function resolveAuditSummaryText({
   item,
   issueCount,
   summary,
-  hasMinimalDetail
+  hasMinimalDetail,
+  userFacingNotes
 }: {
   item: HistoryDetailRecord;
   issueCount: number;
   summary: ReturnType<typeof summarizeSeverity>;
   hasMinimalDetail: boolean;
+  userFacingNotes: string[];
 }) {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
   if (isUserFacingSummary(item.audit_result?.message)) {
-    return item.audit_result.message;
+    appendUniqueText(candidates, seen, item.audit_result.message);
+  }
+  for (const note of userFacingNotes) {
+    appendUniqueText(candidates, seen, note);
   }
 
   if (hasMinimalDetail) {
     return "本次审核未生成额外摘要，请直接查看基础信息和报告文件。";
   }
 
-  return formatIssueSummary(summary, issueCount);
+  if (issueCount === 0 && candidates.length > 0) {
+    return candidates.sort(
+      (left, right) =>
+        normalizeComparableText(right).length - normalizeComparableText(left).length
+    )[0];
+  }
+
+  if (issueCount === 0) {
+    return formatIssueSummary(summary, issueCount);
+  }
+
+  return `本次审核共发现 ${issueCount} 个问题${
+    summary.red + summary.yellow + summary.blue > 0
+      ? `（${[
+          summary.red > 0 ? `高风险 ${summary.red}` : "",
+          summary.yellow > 0 ? `疑点 ${summary.yellow}` : "",
+          summary.blue > 0 ? `提示 ${summary.blue}` : ""
+        ]
+          .filter(Boolean)
+          .join("、")}）`
+      : ""
+  }。${resolveSummaryRecommendation(candidates, issueCount)}`;
+}
+
+function normalizeTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => renderOptionalText(item))
+      .filter((item): item is string => Boolean(item));
+  }
+
+  const text = renderOptionalText(value);
+  return text ? [text] : [];
+}
+
+function isUsefulDocumentText(value: string) {
+  const comparable = normalizeComparableText(value);
+  const emptyHints = [
+    "当前单据结果没有额外说明",
+    "没有额外说明",
+    "暂无额外说明",
+    "无额外说明"
+  ];
+
+  return !emptyHints.some((hint) => comparable.includes(normalizeComparableText(hint)));
+}
+
+function collectDocumentNotes(document: HistoryDocumentResult) {
+  const result = document.result;
+  const record = (result ?? {}) as Record<string, unknown>;
+  const notes: string[] = [];
+  const seen = new Set<string>();
+
+  appendUniqueText(notes, seen, result?.message);
+  appendUniqueText(notes, seen, result?.explanation);
+  appendUniqueText(notes, seen, result?.ai_summary);
+  appendUniqueText(notes, seen, result?.summary_text);
+  if (typeof record.summary === "string") {
+    appendUniqueText(notes, seen, record.summary);
+  }
+  for (const note of normalizeTextList(result?.notes)) {
+    appendUniqueText(notes, seen, note);
+  }
+  for (const note of normalizeTextList(result?.extra_notes)) {
+    appendUniqueText(notes, seen, note);
+  }
+
+  return notes.filter(isUsefulDocumentText);
+}
+
+function resolveDocumentIssueSummaries(document: HistoryDocumentResult) {
+  return (document.result?.issues ?? [])
+    .map((issue) => resolveIssueMessage(issue))
+    .filter((text) => isUsefulDocumentText(text))
+    .slice(0, 5);
 }
 
 function resolveBusinessTypeLabel(type?: string | null) {
@@ -571,7 +750,11 @@ export function HistoryDetail({
   const documentResults = item?.audit_result?.documents ?? [];
   const notes = item?.audit_result?.notes ?? [];
   const userFacingNotes = notes.filter(isUserFacingSummary);
-  const summary = summarizeSeverity(item?.audit_result?.summary);
+  const summary = resolveIssueSeveritySummary(
+    issues,
+    summarizeSeverity(item?.audit_result?.summary)
+  );
+  const issueCount = issues.length > 0 ? issues.length : summary.red + summary.yellow + summary.blue;
   const resolvedStatus = resolveHistoryStatus();
   const hasMinimalDetail =
     Boolean(item) &&
@@ -582,9 +765,10 @@ export function HistoryDetail({
   const auditSummaryText = item
     ? resolveAuditSummaryText({
         item,
-        issueCount: issues.length,
+        issueCount,
         summary,
-        hasMinimalDetail
+        hasMinimalDetail,
+        userFacingNotes
       })
     : "";
 
@@ -704,7 +888,7 @@ export function HistoryDetail({
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-black uppercase tracking-tight">审核摘要</h3>
-                <Badge variant="muted">{userFacingNotes.length} 条备注</Badge>
+                <Badge variant="muted">主摘要</Badge>
               </div>
               <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                 <div className="flex flex-wrap gap-2">
@@ -717,18 +901,6 @@ export function HistoryDetail({
                 </div>
                 <p className="mt-3 text-sm font-bold leading-6">{auditSummaryText}</p>
               </div>
-              {userFacingNotes.length > 0 ? (
-                <div className="space-y-3">
-                  {userFacingNotes.map((note, index) => (
-                    <div
-                      key={`${note.slice(0, 24)}-${index}`}
-                      className="border-4 border-ink bg-paper p-4 shadow-neo-sm"
-                    >
-                      <p className="text-sm font-bold leading-6">{note}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
             </div>
 
             <details className="group border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -748,28 +920,58 @@ export function HistoryDetail({
               </summary>
               {documentResults.length > 0 ? (
                 <div className="mt-4 grid gap-3">
-                  {documentResults.map((document, index) => (
-                    <div
-                      key={`${document.file_id || document.doc_type || "document"}-${index}`}
-                      className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
-                    >
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="inverse">
-                          {document.doc_type || "未返回单据类型"}
-                        </Badge>
-                        <Badge variant="muted">
-                          提供方 {document.provider || "未返回"}
-                        </Badge>
-                        <Badge variant="secondary">
-                          {resolveDocumentCount(document)} 条问题
-                        </Badge>
+                  {documentResults.map((document, index) => {
+                    const documentNotes = collectDocumentNotes(document);
+                    const issueSummaries = resolveDocumentIssueSummaries(document);
+
+                    return (
+                      <div
+                        key={`${document.file_id || document.doc_type || "document"}-${index}`}
+                        className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
+                      >
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="inverse">
+                            {document.doc_type || "未返回单据类型"}
+                          </Badge>
+                          <Badge variant="muted">
+                            提供方 {document.provider || "未返回"}
+                          </Badge>
+                          <Badge variant="secondary">
+                            {resolveDocumentCount(document)} 条问题
+                          </Badge>
+                        </div>
+                        {documentNotes.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {documentNotes.map((note, noteIndex) => (
+                              <p
+                                key={`${note.slice(0, 24)}-${noteIndex}`}
+                                className="text-sm font-bold leading-6"
+                              >
+                                {note}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+                        {issueSummaries.length > 0 ? (
+                          <ul className="mt-3 space-y-2">
+                            {issueSummaries.map((issueSummary, issueIndex) => (
+                              <li
+                                key={`${issueSummary.slice(0, 24)}-${issueIndex}`}
+                                className="text-sm font-bold leading-6"
+                              >
+                                {issueSummary}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {documentNotes.length === 0 && issueSummaries.length === 0 ? (
+                          <p className="mt-3 text-sm font-bold leading-6">
+                            暂无额外说明，可查看问题明细。
+                          </p>
+                        ) : null}
                       </div>
-                      <p className="mt-3 text-sm font-bold leading-6">
-                        {document.result?.message ||
-                          "当前单据结果没有额外说明。"}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="mt-4 border-4 border-ink bg-canvas p-4 shadow-neo-sm">

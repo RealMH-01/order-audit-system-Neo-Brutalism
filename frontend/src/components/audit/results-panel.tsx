@@ -57,6 +57,149 @@ function resolveValidNotes(notes: unknown): string[] {
   return cleaned;
 }
 
+type SeveritySummary = {
+  red: number;
+  yellow: number;
+  blue: number;
+};
+
+function normalizeComparableText(value: string) {
+  return value.replace(/[，。、“”‘’：:；;,.!！?？（）()\s]/g, "").toLowerCase();
+}
+
+function appendUniqueText(target: string[], seen: Set<string>, value: unknown) {
+  const text = renderOptionalText(value);
+
+  if (!text) {
+    return;
+  }
+
+  const comparable = normalizeComparableText(text);
+  if (!seen.has(comparable)) {
+    seen.add(comparable);
+    target.push(text);
+  }
+}
+
+function resolveIssueSeveritySummary(
+  issues: AuditIssue[],
+  fallback: SeveritySummary
+): SeveritySummary {
+  if (issues.length === 0) {
+    return fallback;
+  }
+
+  return issues.reduce<SeveritySummary>(
+    (counts, issue) => {
+      if (issue.level === "RED") {
+        counts.red += 1;
+      } else if (issue.level === "BLUE") {
+        counts.blue += 1;
+      } else {
+        counts.yellow += 1;
+      }
+      return counts;
+    },
+    { red: 0, yellow: 0, blue: 0 }
+  );
+}
+
+function extractRecommendation(value: string) {
+  const text = value.trim();
+  const suggestionIndex = text.indexOf("建议");
+
+  if (suggestionIndex >= 0) {
+    return text.slice(suggestionIndex).trim();
+  }
+
+  if (text.includes("本次审核共发现") || text.includes("未发现明确问题")) {
+    return "";
+  }
+
+  return text;
+}
+
+function appendIssueDetailHint(value: string) {
+  const text = value.trim();
+
+  if (!text) {
+    return "建议优先查看问题明细。";
+  }
+
+  if (text.includes("问题明细") || text.includes("详见")) {
+    return /[。.!！?？]$/.test(text) ? text : `${text}。`;
+  }
+
+  return `${text.replace(/[。.!！?？；;，,]*$/, "")}，详见问题明细。`;
+}
+
+function resolveSummaryRecommendation(candidates: string[], issueCount: number) {
+  if (issueCount === 0) {
+    return "";
+  }
+
+  const recommendations = candidates
+    .map(extractRecommendation)
+    .filter((text) => normalizeComparableText(text).length > 0)
+    .sort(
+      (left, right) =>
+        normalizeComparableText(right).length - normalizeComparableText(left).length
+    );
+
+  return appendIssueDetailHint(recommendations[0] ?? "建议优先查看问题明细。");
+}
+
+function formatAuditSummaryText({
+  summary,
+  issueCount,
+  recommendation
+}: {
+  summary: SeveritySummary;
+  issueCount: number;
+  recommendation: string;
+}) {
+  if (issueCount === 0) {
+    return "本次审核未发现明确问题，可结合原始单据进行最终确认。";
+  }
+
+  const parts = [
+    summary.red > 0 ? `高风险 ${summary.red}` : "",
+    summary.yellow > 0 ? `疑点 ${summary.yellow}` : "",
+    summary.blue > 0 ? `提示 ${summary.blue}` : ""
+  ].filter(Boolean);
+
+  return `本次审核共发现 ${issueCount} 个问题${
+    parts.length ? `（${parts.join("、")}）` : ""
+  }。${recommendation}`;
+}
+
+function resolveAuditSummaryText(result: AuditResultResponse) {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  appendUniqueText(candidates, seen, result.message);
+  for (const note of resolveValidNotes(result.notes)) {
+    appendUniqueText(candidates, seen, note);
+  }
+
+  const summary = resolveIssueSeveritySummary(result.issues, result.summary);
+  const summaryIssueCount = summary.red + summary.yellow + summary.blue;
+  const issueCount = result.issues.length > 0 ? result.issues.length : summaryIssueCount;
+
+  if (issueCount === 0 && candidates.length > 0) {
+    return candidates.sort(
+      (left, right) =>
+        normalizeComparableText(right).length - normalizeComparableText(left).length
+    )[0];
+  }
+
+  return formatAuditSummaryText({
+    summary,
+    issueCount,
+    recommendation: resolveSummaryRecommendation(candidates, issueCount)
+  });
+}
+
 function resolveIssueClass(level: AuditIssue["level"]) {
   if (level === "RED") {
     return "issue-red";
@@ -427,8 +570,8 @@ export function ResultsPanel({
     result?.issues.filter((issue) => (filter === "ALL" ? true : issue.level === filter)) ?? [];
 
   const confidencePercent = result ? resolveConfidencePercent(result.confidence) : null;
-  const validNotes = result ? resolveValidNotes(result.notes) : [];
-  const hasSummaryExtras = confidencePercent !== null || validNotes.length > 0;
+  const auditSummaryText = result ? resolveAuditSummaryText(result) : "";
+  const hasSummaryExtras = confidencePercent !== null;
   const ruleSnapshot =
     result?.rule_snapshot && Object.keys(result.rule_snapshot).length > 0
       ? result.rule_snapshot
@@ -499,7 +642,7 @@ export function ResultsPanel({
                 <p className="text-xs font-black uppercase tracking-[0.14em]">
                   结果说明
                 </p>
-                <p className="mt-2 text-sm font-bold leading-6">{result.message}</p>
+                <p className="mt-2 text-sm font-bold leading-6">{auditSummaryText}</p>
               </div>
             </div>
 
@@ -513,23 +656,6 @@ export function ResultsPanel({
                     <p className="mt-2 text-sm font-bold leading-6">
                       整体置信度：{confidencePercent}%
                     </p>
-                  </div>
-                ) : null}
-                {validNotes.length > 0 ? (
-                  <div className={confidencePercent !== null ? "mt-3" : ""}>
-                    <p className="text-xs font-black uppercase tracking-[0.14em]">
-                      审核备注
-                    </p>
-                    <ul className="mt-2 space-y-2">
-                      {validNotes.map((note, index) => (
-                        <li
-                          key={`audit-note-${index}`}
-                          className="text-sm font-bold leading-6"
-                        >
-                          {note}
-                        </li>
-                      ))}
-                    </ul>
                   </div>
                 ) : null}
               </div>

@@ -46,6 +46,11 @@ export type HistoryDocumentAuditResult = {
   issues?: HistoryIssue[];
   confidence?: number;
   message?: string;
+  explanation?: string;
+  ai_summary?: string;
+  summary_text?: string;
+  notes?: string[] | string;
+  extra_notes?: string[] | string;
 };
 
 export type HistoryDocumentResult = {
