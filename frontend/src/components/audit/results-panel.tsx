@@ -121,8 +121,33 @@ function normalizeTextList(value: unknown): string[] {
   return [];
 }
 
+function normalizeRuleLines(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (isRecord(item)) {
+          return String(item.title ?? item.content ?? item.name ?? "").trim();
+        }
+        return String(item ?? "").trim();
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-•\s]*/, "").trim())
+    .filter(Boolean);
+}
+
 function countRules(value: unknown): number {
-  return normalizeTextList(value).length;
+  return normalizeRuleLines(value).length;
 }
 
 function findSnapshotSection(
@@ -143,20 +168,13 @@ function findSnapshotSection(
 
 function buildRuleSnapshotSummary(snapshot: AuditRuleSnapshot) {
   const systemSection = findSnapshotSection(snapshot, ["系统", "硬规则", "system"]);
-  const customSection = findSnapshotSection(snapshot, [
-    "临时",
-    "自定义",
-    "supplemental",
-    "temporary",
-    "custom"
-  ]);
 
   const systemRuleCount =
     countRules(systemSection?.rules) || countRules(snapshot.system_rules?.rules);
-  const customRules =
-    normalizeTextList(customSection?.rules).length > 0
-      ? normalizeTextList(customSection?.rules)
-      : normalizeTextList(snapshot.temporary_rules ?? snapshot.run_supplemental_rules);
+  const templateRuleCount = countRules(snapshot.template?.supplemental_rules);
+  const temporaryRules = normalizeRuleLines(
+    snapshot.temporary_rules ?? snapshot.run_supplemental_rules
+  );
 
   const templateName =
     renderOptionalText(snapshot.template?.name) ??
@@ -166,8 +184,9 @@ function buildRuleSnapshotSummary(snapshot: AuditRuleSnapshot) {
 
   return {
     systemRuleCount,
+    templateRuleCount,
     templateName,
-    customRules,
+    temporaryRules,
     companyAffiliates
   };
 }
@@ -204,31 +223,36 @@ function RuleSnapshotDialog({
             label="系统硬约束规则"
             value={`${summary.systemRuleCount} 条（不可关闭）`}
           />
-          <DetailTile label="自定义规则集" value={`「${summary.templateName}」`} />
           <DetailTile
-            label="自定义规则"
-            value={
-              summary.customRules.length > 0
-                ? `${summary.customRules.length} 条`
-                : "无"
-            }
+            label="本次选择的自定义规则集"
+            value={`「${summary.templateName}」${
+              summary.templateRuleCount > 0
+                ? `；自定义规则：${summary.templateRuleCount} 条`
+                : ""
+            }`}
           />
           <DetailTile
-            label="关联公司"
+            label="关联公司 / 分工"
             value={
               summary.companyAffiliates.length > 0
                 ? summary.companyAffiliates.join("、")
                 : "无"
             }
           />
+          {summary.temporaryRules.length > 0 ? (
+            <DetailTile
+              label="临时补充规则"
+              value={`${summary.temporaryRules.length} 条`}
+            />
+          ) : null}
         </div>
-        {summary.customRules.length > 0 ? (
+        {summary.temporaryRules.length > 0 ? (
           <details className="border-4 border-ink bg-paper p-3 shadow-neo-sm">
             <summary className="cursor-pointer text-sm font-black">
-              查看自定义规则摘要
+              查看临时补充规则
             </summary>
             <ul className="mt-3 space-y-2">
-              {summary.customRules.map((rule, index) => (
+              {summary.temporaryRules.map((rule, index) => (
                 <li key={`${rule.slice(0, 24)}-${index}`} className="text-sm font-bold leading-6">
                   {rule}
                 </li>

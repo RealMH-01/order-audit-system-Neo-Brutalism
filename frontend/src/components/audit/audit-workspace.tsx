@@ -1823,8 +1823,12 @@ export function AuditWorkspace() {
           <div className="grid gap-3 md:grid-cols-2">
             {[
               ["系统硬约束规则", "自动使用，不可关闭"],
-              ["当前选择的自定义规则集", selectedTemplate?.name ?? "未选择任何规则集"],
-              ["规则条数", `${selectedTemplateRuleCount} 条`],
+              [
+                "当前选择的自定义规则集",
+                selectedTemplate
+                  ? `「${selectedTemplate.name}」；自定义规则：${selectedTemplateRuleCount} 条`
+                  : "未选择任何规则集"
+              ],
               ["公司信息", companyAffiliatesDisplay],
               ["公司分工", companyAffiliateRolesDisplay],
               ["深度思考", runDeepThink ? "已开启" : "未开启"]

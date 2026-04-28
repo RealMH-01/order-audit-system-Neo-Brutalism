@@ -820,7 +820,7 @@ export function WizardContainer() {
                 <CardTitle>引导配置已完成</CardTitle>
               </div>
               <CardDescription>
-                你之前已经完成了引导向导，当前配置摘要如下：
+                你之前已经完成了引导向导。规则集会在规则模板页管理，审核时在审核工作台选择使用。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -830,10 +830,8 @@ export function WizardContainer() {
                   <p className="mt-2 break-words text-lg font-black">{form.selectedModel}</p>
                 </div>
                 <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
-                  <p className="text-xs font-black uppercase tracking-[0.14em]">规则数量</p>
-                  <p className="mt-2 text-lg font-black">
-                    {form.generatedRules.length > 0 ? `${form.generatedRules.length} 条` : "未配置"}
-                  </p>
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">自定义规则集</p>
+                  <p className="mt-2 text-lg font-black">已保存到规则模板页</p>
                 </div>
                 <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
                   <p className="text-xs font-black uppercase tracking-[0.14em]">公司架构模式</p>
@@ -854,6 +852,9 @@ export function WizardContainer() {
                 </Button>
                 <Button variant="secondary" onClick={() => router.push("/settings")}>
                   前往设置页
+                </Button>
+                <Button variant="secondary" onClick={() => router.push("/templates")}>
+                  前往规则模板页
                 </Button>
                 <Button onClick={() => router.push("/audit")}>前往审核工作台</Button>
               </div>

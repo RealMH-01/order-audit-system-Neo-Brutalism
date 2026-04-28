@@ -254,8 +254,18 @@ function countSystemRules(snapshot: HistoryRuleSnapshot) {
 function normalizeRuleLines(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          return String(
+            record.title ?? record.content ?? record.name ?? record.company ?? ""
+          ).trim();
+        }
+        return String(item ?? "").trim();
+      })
       .filter(Boolean);
   }
 
@@ -267,6 +277,32 @@ function normalizeRuleLines(value: unknown): string[] {
     .split(/\r?\n/)
     .map((item) => item.replace(/^[-•]\s*/, "").trim())
     .filter(Boolean);
+}
+
+function normalizeSnapshotCompanies(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          const company = String(record.company ?? record.name ?? "").trim();
+          const role = String(record.role ?? record.division ?? "").trim();
+          return role ? `${company}（${role}）` : company;
+        }
+        return String(item ?? "").trim();
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+
+  return [];
 }
 
 function RuleList({
@@ -327,9 +363,14 @@ function SnapshotResolvedSection({
 function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot | null | undefined }) {
   const template = snapshot?.template ?? null;
   const templateSupplementalRules = normalizeRuleLines(template?.supplemental_rules);
-  const runSupplementalRules = normalizeRuleLines(snapshot?.run_supplemental_rules);
+  const temporarySupplementalRules = normalizeRuleLines(
+    snapshot?.temporary_rules ?? snapshot?.run_supplemental_rules
+  );
   const resolvedSections = snapshot?.resolved_sections ?? [];
   const businessType = template?.business_type ?? null;
+  const companyAffiliates = normalizeSnapshotCompanies(snapshot?.company_affiliates);
+  const hasRuleDetails =
+    templateSupplementalRules.length > 0 || temporarySupplementalRules.length > 0;
 
   return (
     <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
@@ -362,9 +403,12 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">使用规则集</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em]">本次选择的自定义规则集</p>
               <p className="mt-2 text-sm font-bold leading-6">
                 {template?.name || "未使用规则集"}
+                {templateSupplementalRules.length > 0
+                  ? `；自定义规则：${templateSupplementalRules.length} 条`
+                  : ""}
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
@@ -374,19 +418,20 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               </p>
             </div>
             <div className="border-4 border-ink bg-canvas p-3 shadow-neo-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em]">规则数量</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em]">关联公司 / 分工</p>
               <p className="mt-2 text-sm font-bold leading-6">
-                系统 {countSystemRules(snapshot)} 条 / 自定义规则 {templateSupplementalRules.length} 条 / 本轮额外规则 {runSupplementalRules.length} 条
+                {companyAffiliates.length > 0 ? companyAffiliates.join("、") : "无"}
               </p>
             </div>
           </div>
 
+          {hasRuleDetails ? (
           <details className="group border-4 border-ink bg-canvas p-4 shadow-neo-sm">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="inverse">自定义规则原文</Badge>
+                <Badge variant="inverse">规则原文</Badge>
                 <Badge variant="muted">
-                  {templateSupplementalRules.length + runSupplementalRules.length} 条
+                  {templateSupplementalRules.length + temporarySupplementalRules.length} 条
                 </Badge>
               </div>
               <span className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.14em]">
@@ -399,23 +444,31 @@ function HistoryRuleSnapshotCard({ snapshot }: { snapshot: HistoryRuleSnapshot |
               </span>
             </summary>
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em]">规则集内自定义规则</p>
-                <div className="mt-3">
-                  <RuleList
-                    rules={templateSupplementalRules}
-                    emptyText="本次使用的规则集没有自定义规则。"
-                  />
+              {templateSupplementalRules.length > 0 ? (
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">规则集内自定义规则</p>
+                  <div className="mt-3">
+                    <RuleList
+                      rules={templateSupplementalRules}
+                      emptyText="本次使用的规则集没有自定义规则。"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em]">本轮额外自定义规则</p>
-                <div className="mt-3">
-                  <RuleList rules={runSupplementalRules} emptyText="本轮未填写额外自定义规则。" />
+              ) : null}
+              {temporarySupplementalRules.length > 0 ? (
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em]">临时补充规则</p>
+                  <div className="mt-3">
+                    <RuleList
+                      rules={temporarySupplementalRules}
+                      emptyText="本轮未填写临时补充规则。"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </details>
+          ) : null}
 
           <div className="space-y-3">
             {resolvedSections.length > 0 ? (

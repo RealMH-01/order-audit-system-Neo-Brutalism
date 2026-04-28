@@ -91,7 +91,9 @@ export type HistoryRuleSnapshot = {
     }>;
   };
   template?: HistoryTemplateSnapshot | null;
+  temporary_rules?: string[] | string | null;
   run_supplemental_rules?: string[] | string | null;
+  company_affiliates?: unknown[] | string | null;
   resolved_sections?: HistoryRuleSnapshotSection[];
 };
 
