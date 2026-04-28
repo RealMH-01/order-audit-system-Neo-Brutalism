@@ -380,14 +380,10 @@ export function WizardContainer() {
     setChatError(null);
 
     try {
-      const firstMessage = form.manualRulesText.trim()
-        ? `我已经写了一些规则草稿，请把它们也纳入上下文：\n${form.manualRulesText.trim()}`
-        : null;
-
       const { data } = await apiPost<WizardStartApiResponse>(
         "/wizard/start",
         {
-          first_message: firstMessage,
+          first_message: null,
           business_background: form.businessBackground.trim() || null,
           provider: form.provider
         },
@@ -399,6 +395,7 @@ export function WizardContainer() {
         sessionId: data.session_id,
         chatMessages: [{ role: "assistant", content: data.ai_message }],
         chatInput: "",
+        manualRulesText: "",
         generatedRules: [],
         generatedAffiliates: [],
         aiCompleted: data.is_complete,
@@ -411,7 +408,7 @@ export function WizardContainer() {
     } finally {
       setChatLoading(false);
     }
-  }, [form.businessBackground, form.manualRulesText, form.provider, form.token]);
+  }, [form.businessBackground, form.provider, form.token]);
 
   const handleSendChatMessage = useCallback(
     async (message: string) => {
