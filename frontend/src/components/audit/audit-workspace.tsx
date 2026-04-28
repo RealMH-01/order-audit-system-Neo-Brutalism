@@ -177,6 +177,32 @@ function normalizeFilename(filename: string) {
   return filename.trim().toLowerCase();
 }
 
+function countNonEmptyLines(value?: string | null) {
+  return value?.split(/\r?\n/).filter((line) => line.trim().length > 0).length ?? 0;
+}
+
+function formatCompanyAffiliates(profile: WizardProfile | null) {
+  const affiliates =
+    profile?.company_affiliates.map((company) => company.trim()).filter(Boolean) ?? [];
+  return affiliates.length > 0 ? affiliates.join("、") : "未配置";
+}
+
+function formatCompanyAffiliateRoles(profile: WizardProfile | null) {
+  const roles =
+    profile?.company_affiliates_roles
+      .map((item) => {
+        const company = item.company.trim();
+        const role = item.role.trim();
+        if (company && role) {
+          return `${company}：${role}`;
+        }
+        return company || role;
+      })
+      .filter(Boolean) ?? [];
+
+  return roles.length > 0 ? roles.join("；") : "未配置";
+}
+
 function mergeFilesByFilename(
   existing: AuditBucketFile[],
   uploaded: AuditBucketFile[]
@@ -381,6 +407,8 @@ export function AuditWorkspace() {
   const [progressMessage, setProgressMessage] = useState("");
   const [progressEvents, setProgressEvents] = useState<AuditProgressPayload[]>([]);
   const [startLoading, setStartLoading] = useState(false);
+  const [ruleConfirmOpen, setRuleConfirmOpen] = useState(false);
+  const [pendingStartPayload, setPendingStartPayload] = useState<AuditStartPayload | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [result, setResult] = useState<AuditResultResponse | null>(null);
   const [resultFilter, setResultFilter] = useState<ResultFilter>("ALL");
@@ -436,6 +464,15 @@ export function AuditWorkspace() {
   const selectedTemplate = useMemo(
     () => auditTemplates.find((template) => template.id === selectedTemplateId) ?? null,
     [auditTemplates, selectedTemplateId]
+  );
+  const selectedTemplateRuleCount = useMemo(
+    () => countNonEmptyLines(selectedTemplate?.supplemental_rules),
+    [selectedTemplate?.supplemental_rules]
+  );
+  const companyAffiliatesDisplay = useMemo(() => formatCompanyAffiliates(profile), [profile]);
+  const companyAffiliateRolesDisplay = useMemo(
+    () => formatCompanyAffiliateRoles(profile),
+    [profile]
   );
 
   useEffect(() => {
@@ -1018,7 +1055,7 @@ export function AuditWorkspace() {
     [invalidateFinishedRun, workspaceDisabled]
   );
 
-  const handleStartAudit = useCallback(async () => {
+  const handleStartAudit = useCallback(() => {
     if (!token) {
       setWorkspaceError("请先登录后再启动审核。");
       return;
@@ -1039,6 +1076,11 @@ export function AuditWorkspace() {
       return;
     }
 
+    if (uploadingKey || removingFileIds.length > 0) {
+      setWorkspaceError("文件上传或删除处理中，请完成后再启动审核。");
+      return;
+    }
+
     if (!poFile) {
       setWorkspaceError("请先上传 PO 基准文件。");
       return;
@@ -1049,10 +1091,6 @@ export function AuditWorkspace() {
       return;
     }
 
-    progressAbortRef.current?.abort();
-    clearRunState();
-
-    setStartLoading(true);
     setWorkspaceError(null);
     setWorkspaceMessage(null);
 
@@ -1073,6 +1111,51 @@ export function AuditWorkspace() {
       reference_file_ids: referenceFiles.map((file) => file.id),
       deep_think: runDeepThink
     };
+
+    setPendingStartPayload(payload);
+    setRuleConfirmOpen(true);
+  }, [
+    auditLocked,
+    disclaimerOpen,
+    hasAnyKey,
+    removingFileIds.length,
+    poFile,
+    prevTicketFiles,
+    referenceFiles,
+    runDeepThink,
+    selectedTemplateId,
+    targetFiles,
+    templateFile,
+    token,
+    uploadingKey
+  ]);
+
+  const handleCancelRuleConfirm = useCallback(() => {
+    setRuleConfirmOpen(false);
+    setPendingStartPayload(null);
+  }, []);
+
+  const handleConfirmAndStart = useCallback(async () => {
+    const payload = pendingStartPayload;
+    setRuleConfirmOpen(false);
+
+    if (!token) {
+      setPendingStartPayload(null);
+      setWorkspaceError("请先登录后再启动审核。");
+      return;
+    }
+
+    if (!payload) {
+      setWorkspaceError("启动审核信息已失效，请重新点击启动审核。");
+      return;
+    }
+
+    progressAbortRef.current?.abort();
+    clearRunState();
+
+    setStartLoading(true);
+    setWorkspaceError(null);
+    setWorkspaceMessage(null);
 
     try {
       const { data } = await apiPost<AuditStartResponse>("/audit/start", payload, {
@@ -1101,19 +1184,11 @@ export function AuditWorkspace() {
       }
     } finally {
       setStartLoading(false);
+      setPendingStartPayload(null);
     }
   }, [
-    auditLocked,
     clearRunState,
-    disclaimerOpen,
-    hasAnyKey,
-    poFile,
-    prevTicketFiles,
-    referenceFiles,
-    runDeepThink,
-    selectedTemplateId,
-    targetFiles,
-    templateFile,
+    pendingStartPayload,
     token
   ]);
 
@@ -1453,7 +1528,7 @@ export function AuditWorkspace() {
               <Badge variant="inverse">4. 审核控制区</Badge>
               <CardTitle>启动或重跑审核</CardTitle>
               <CardDescription>
-                启动审核时会自动使用你在设置页和引导向导中保存的模型与规则配置。
+                启动审核时会自动使用系统硬约束规则、当前规则集和公司信息。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1467,7 +1542,7 @@ export function AuditWorkspace() {
                       </p>
                     </div>
                     <p className="text-sm font-bold leading-6">
-                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、模板补充规则和本轮临时补充规则。
+                      选择本次审核要使用的单据审核模板。系统会自动组合系统硬规则、模板补充规则和公司信息。
                     </p>
                   </div>
                   <Button
@@ -1525,7 +1600,7 @@ export function AuditWorkspace() {
                 {!templatesLoading && auditTemplates.length > 0 && !selectedTemplateId ? (
                   <div className="issue-yellow mt-3 p-4">
                     <p className="text-sm font-bold leading-6">
-                      未选择模板时，系统会优先使用默认模板；没有默认模板则按默认审核规则执行。
+                      未选择任何规则集时，将仅使用系统硬约束规则和公司信息。
                     </p>
                   </div>
                 ) : null}
@@ -1542,10 +1617,10 @@ export function AuditWorkspace() {
                 </div>
                 <div className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
                   <p className="text-xs font-black uppercase tracking-[0.14em]">
-                    当前规则数
+                    当前规则集规则数
                   </p>
                   <p className="mt-2 text-sm font-bold leading-6">
-                    {profile?.active_custom_rules.length ?? 0} 条
+                    {selectedTemplateRuleCount} 条
                   </p>
                 </div>
               </div>
@@ -1712,6 +1787,58 @@ export function AuditWorkspace() {
           </Card>
         </div>
       </section>
+
+      <Dialog
+        open={ruleConfirmOpen}
+        onClose={handleCancelRuleConfirm}
+        title="本次审核将使用的规则"
+        description="确认以下规则与公司信息后，系统才会启动审核任务。"
+        footer={
+          <>
+            <Button variant="outline" onClick={handleCancelRuleConfirm}>
+              取消
+            </Button>
+            <Button
+              onClick={() => void handleConfirmAndStart()}
+              disabled={!pendingStartPayload || startLoading}
+            >
+              {startLoading ? (
+                <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+              ) : (
+                <Play size={18} strokeWidth={3} />
+              )}
+              {startLoading ? "启动中..." : "确认并开始审核"}
+            </Button>
+          </>
+        }
+      >
+        <DialogSection>
+          {!selectedTemplate ? (
+            <div className="issue-yellow p-4">
+              <p className="text-sm font-bold leading-6">
+                未选择任何规则集，将仅使用系统硬约束规则和公司信息。
+              </p>
+            </div>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              ["系统硬约束规则", "自动使用，不可关闭"],
+              ["当前选择的自定义规则集", selectedTemplate?.name ?? "未选择任何规则集"],
+              ["规则条数", `${selectedTemplateRuleCount} 条`],
+              ["公司信息", companyAffiliatesDisplay],
+              ["公司分工", companyAffiliateRolesDisplay],
+              ["深度思考", runDeepThink ? "已开启" : "未开启"]
+            ].map(([label, value]) => (
+              <div key={label} className="border-4 border-ink bg-paper p-4 shadow-neo-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-muted">
+                  {label}
+                </p>
+                <p className="mt-2 text-sm font-bold leading-6">{value}</p>
+              </div>
+            ))}
+          </div>
+        </DialogSection>
+      </Dialog>
 
       <Dialog
         open={disclaimerOpen}
