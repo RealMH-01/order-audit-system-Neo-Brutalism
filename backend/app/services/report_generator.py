@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import io
+import json
+import re
+import tempfile
 import zipfile
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.errors import AppError
 from app.models.schemas import FeatureStatus
+from app.services.marked_workbook_generator import generate_marked_copies
 from app.services.report_filename import build_report_filename, pick_report_identifier
+from app.services.report_manifest import build_manifest
+from app.services.task_info_writer import render_task_info_text
 
 try:
     from openpyxl import Workbook
@@ -147,17 +155,32 @@ class ReportGeneratorService:
     ) -> io.BytesIO:
         """把面向用户的标记版和详情版报告打包为 ZIP。"""
 
-        marked = self.generate_marked_report(task_id, audit_result)
-        detailed = self.generate_detail_report(task_id, audit_result)
         filenames = filenames or self.build_report_filenames(task_id, audit_context)
-        archive = io.BytesIO()
+        generated_at = self._generated_at()
+        timestamp = self._timestamp_from_filenames(filenames) or self._filename_timestamp(generated_at)
+        identifier = pick_report_identifier(audit_context or {}, task_id)
 
-        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(filenames["marked"], marked.getvalue())
-            zf.writestr(filenames["detailed"], detailed.getvalue())
-
-        archive.seek(0)
-        return archive
+        with tempfile.TemporaryDirectory(prefix="audit-marked-") as temp_dir:
+            marked_paths, marked_summary, updated_issues = self._generate_marked_artifacts(
+                audit_result,
+                audit_context,
+                Path(temp_dir),
+                timestamp,
+            )
+            updated_result = {**audit_result, "issues": updated_issues}
+            detailed = self.generate_detail_report(task_id, updated_result)
+            return self._build_zip_archive(
+                task_id=task_id,
+                identifier=identifier,
+                generated_at=generated_at,
+                detailed=detailed,
+                detailed_filename=filenames["detailed"],
+                marked_paths=marked_paths,
+                marked_summary=marked_summary,
+                uploaded_files=self._uploaded_files(audit_context),
+                issues=updated_issues,
+                confidence=audit_result.get("confidence"),
+            )
 
     def generate_report_bundle(
         self,
@@ -168,10 +191,36 @@ class ReportGeneratorService:
         """返回一组可直接下载或持久化的报告二进制对象。"""
 
         filenames = self.build_report_filenames(task_id, audit_context)
+        generated_at = self._generated_at()
+        timestamp = self._timestamp_from_filenames(filenames) or self._filename_timestamp(generated_at)
+        identifier = pick_report_identifier(audit_context or {}, task_id)
+
+        with tempfile.TemporaryDirectory(prefix="audit-marked-") as temp_dir:
+            marked_paths, marked_summary, updated_issues = self._generate_marked_artifacts(
+                audit_result,
+                audit_context,
+                Path(temp_dir),
+                timestamp,
+            )
+            updated_result = {**audit_result, "issues": updated_issues}
+            detailed_report = self.generate_detail_report(task_id, updated_result)
+            report_zip = self._build_zip_archive(
+                task_id=task_id,
+                identifier=identifier,
+                generated_at=generated_at,
+                detailed=detailed_report,
+                detailed_filename=filenames["detailed"],
+                marked_paths=marked_paths,
+                marked_summary=marked_summary,
+                uploaded_files=self._uploaded_files(audit_context),
+                issues=updated_issues,
+                confidence=audit_result.get("confidence"),
+            )
+
         return {
             "marked_report": self.generate_marked_report(task_id, audit_result),
-            "detailed_report": self.generate_detail_report(task_id, audit_result),
-            "report_zip": self.generate_report_zip(task_id, audit_result, audit_context, filenames),
+            "detailed_report": detailed_report,
+            "report_zip": report_zip,
             "filenames": filenames,
         }
 
@@ -185,6 +234,119 @@ class ReportGeneratorService:
             "detailed": build_report_filename("详情版", identifier, "xlsx"),
             "zip": build_report_filename("报告", identifier, "zip"),
         }
+
+    def _generate_marked_artifacts(
+        self,
+        audit_result: dict[str, Any],
+        audit_context: Any | None,
+        output_dir: Path,
+        timestamp: str,
+    ) -> tuple[list[Path], list[dict], list[dict]]:
+        """Generate source-workbook marked copies for ZIP packaging."""
+
+        return generate_marked_copies(
+            self._extract_issues(audit_result),
+            self._context_mapping(audit_context),
+            output_dir,
+            timestamp,
+        )
+
+    def _build_zip_archive(
+        self,
+        *,
+        task_id: str,
+        identifier: str,
+        generated_at: str,
+        detailed: io.BytesIO,
+        detailed_filename: str,
+        marked_paths: list[Path],
+        marked_summary: list[dict],
+        uploaded_files: list[dict],
+        issues: list[dict],
+        confidence: Any,
+    ) -> io.BytesIO:
+        archive = io.BytesIO()
+        summary_payload = {"files": marked_summary, "confidence": confidence}
+        task_info = render_task_info_text(
+            task_id=task_id,
+            identifier=identifier,
+            generated_at=generated_at,
+            uploaded_files=uploaded_files,
+            issues=issues,
+            marked_summary=summary_payload,
+        )
+        manifest = build_manifest(
+            task_id=task_id,
+            identifier=identifier,
+            generated_at=generated_at,
+            uploaded_files=uploaded_files,
+            issues=issues,
+            marked_files=marked_summary,
+        )
+
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(detailed_filename, detailed.getvalue())
+            for marked_path in marked_paths:
+                zf.write(marked_path, arcname=f"标记版/{marked_path.name}")
+            zf.writestr("任务信息.txt", task_info.encode("utf-8-sig"))
+            zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
+
+        archive.seek(0)
+        return archive
+
+    @staticmethod
+    def _context_mapping(audit_context: Any | None) -> dict[str, Any]:
+        if isinstance(audit_context, dict):
+            return audit_context
+        if audit_context is None:
+            return {}
+        return {
+            key: getattr(audit_context, key)
+            for key in ("uploaded_files", "files", "original_xlsx_paths", "cell_indexes")
+            if hasattr(audit_context, key)
+        }
+
+    @classmethod
+    def _uploaded_files(cls, audit_context: Any | None) -> list[dict]:
+        context = cls._context_mapping(audit_context)
+        for key in ("uploaded_files", "files", "file_records"):
+            value = context.get(key)
+            if isinstance(value, list):
+                return [dict(item) for item in value if isinstance(item, dict)]
+
+        files: list[dict] = []
+        original_paths = context.get("original_xlsx_paths")
+        if isinstance(original_paths, dict):
+            for file_id, path in original_paths.items():
+                files.append(
+                    {
+                        "id": str(file_id),
+                        "filename": Path(str(path)).name,
+                        "extension": "xlsx",
+                        "original_xlsx_path": str(path),
+                    }
+                )
+        return files
+
+    @staticmethod
+    def _generated_at() -> str:
+        return datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+    @staticmethod
+    def _filename_timestamp(generated_at: str) -> str:
+        try:
+            generated = datetime.fromisoformat(generated_at)
+        except ValueError:
+            generated = datetime.now().astimezone()
+        return generated.strftime("%Y%m%d-%H%M")
+
+    @staticmethod
+    def _timestamp_from_filenames(filenames: dict[str, str]) -> str:
+        for key in ("zip", "detailed", "marked"):
+            match = re.search(r"-(\d{8}-\d{4})\.[^.]+$", str(filenames.get(key) or ""))
+            if match:
+                return match.group(1)
+        return ""
 
     @staticmethod
     def _source_file_name(issue: dict[str, Any]) -> str:
