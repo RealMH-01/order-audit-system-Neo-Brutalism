@@ -12,6 +12,7 @@ import {
   type AnnouncementItem
 } from "@/lib/api/announcements";
 import { getStoredAccessToken } from "@/lib/api";
+import { markAnnouncementAsSeen } from "@/lib/announcement-seen";
 
 type LoadStatus = "idle" | "loading" | "success" | "error";
 
@@ -67,6 +68,17 @@ export function UpdatesPageShell() {
 
     void loadAnnouncements(accessToken);
   }, [loadAnnouncements]);
+
+  useEffect(() => {
+    if (status !== "success") {
+      return;
+    }
+
+    const latest = announcements[0];
+    if (latest) {
+      markAnnouncementAsSeen(latest);
+    }
+  }, [announcements, status]);
 
   return (
     <section className="space-y-8">

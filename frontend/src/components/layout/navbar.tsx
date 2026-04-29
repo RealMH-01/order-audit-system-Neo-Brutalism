@@ -3,10 +3,18 @@
 import Link from "next/link";
 import { LogOut, Menu, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getStoredAccessToken } from "@/lib/api";
+import { getAnnouncements } from "@/lib/api/announcements";
+import {
+  ANNOUNCEMENT_LAST_SEEN_CHANGED_EVENT,
+  ANNOUNCEMENT_LAST_SEEN_STORAGE_KEY,
+  getLastSeenAnnouncementKey,
+  getLatestAnnouncementKey
+} from "@/lib/announcement-seen";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +80,8 @@ export function Navbar() {
   const router = useRouter();
   const { state, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const [latestAnnouncementKey, setLatestAnnouncementKey] = useState<string | null>(null);
+  const [hasUnseenUpdates, setHasUnseenUpdates] = useState(false);
   const isAuthenticated = state.status === "authenticated" && state.user !== null;
   const visibleNavItems = isAuthenticated
     ? navItems.filter((item) => !item.requireRole || state.user?.role === item.requireRole)
@@ -86,6 +96,75 @@ export function Navbar() {
     setOpen(false);
     router.replace("/login");
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setLatestAnnouncementKey(null);
+      setHasUnseenUpdates(false);
+      return;
+    }
+
+    const token = getStoredAccessToken();
+    if (!token) {
+      setLatestAnnouncementKey(null);
+      setHasUnseenUpdates(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    void getAnnouncements(token)
+      .then((items) => {
+        if (cancelled) {
+          return;
+        }
+
+        const latest = items[0];
+        if (!latest) {
+          setLatestAnnouncementKey(null);
+          setHasUnseenUpdates(false);
+          return;
+        }
+
+        const nextLatestKey = getLatestAnnouncementKey(latest);
+        setLatestAnnouncementKey(nextLatestKey);
+        setHasUnseenUpdates(getLastSeenAnnouncementKey() !== nextLatestKey);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLatestAnnouncementKey(null);
+          setHasUnseenUpdates(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !latestAnnouncementKey) {
+      return;
+    }
+
+    const refreshSeenState = () => {
+      setHasUnseenUpdates(getLastSeenAnnouncementKey() !== latestAnnouncementKey);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === ANNOUNCEMENT_LAST_SEEN_STORAGE_KEY) {
+        refreshSeenState();
+      }
+    };
+
+    window.addEventListener(ANNOUNCEMENT_LAST_SEEN_CHANGED_EVENT, refreshSeenState);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(ANNOUNCEMENT_LAST_SEEN_CHANGED_EVENT, refreshSeenState);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [isAuthenticated, latestAnnouncementKey]);
 
   return (
     <header className="relative z-20 border-b-4 border-ink bg-canvas">
@@ -121,11 +200,17 @@ export function Navbar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "inline-flex h-14 min-w-[4.25rem] shrink-0 items-center justify-center border-4 border-transparent px-3 font-bold uppercase tracking-[0.12em] transition-all duration-100 ease-linear hover:border-ink hover:bg-secondary hover:shadow-neo-sm",
+                "relative inline-flex h-14 min-w-[4.25rem] shrink-0 items-center justify-center border-4 border-transparent px-3 font-bold uppercase tracking-[0.12em] transition-all duration-100 ease-linear hover:border-ink hover:bg-secondary hover:shadow-neo-sm",
                 item.className
               )}
             >
               <NavItemLabel item={item} />
+              {item.href === "/updates" && hasUnseenUpdates ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-ink bg-red-500"
+                />
+              ) : null}
             </Link>
           ))}
         </nav>
@@ -163,10 +248,16 @@ export function Navbar() {
             <Link
               key={item.href}
               href={item.href}
-              className="inline-flex min-h-[3.5rem] items-center justify-between border-4 border-ink bg-secondary px-4 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
+              className="relative inline-flex min-h-[3.5rem] items-center justify-between border-4 border-ink bg-secondary px-4 font-bold uppercase tracking-[0.14em] shadow-neo-sm transition-all duration-100 ease-linear active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
               onClick={() => setOpen(false)}
             >
               <NavItemLabel item={item} />
+              {item.href === "/updates" && hasUnseenUpdates ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border-2 border-ink bg-red-500"
+                />
+              ) : null}
             </Link>
           ))}
           {isAuthenticated ? (
