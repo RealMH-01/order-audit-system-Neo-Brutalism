@@ -94,7 +94,7 @@ export function Navbar() {
           "mx-auto flex max-w-[92rem] items-center justify-between gap-4 px-4 py-4 md:px-8 lg:grid lg:gap-5",
           isAuthenticated
             ? "lg:grid-cols-[minmax(13rem,18rem)_1fr_minmax(13rem,18rem)]"
-            : "lg:grid-cols-[minmax(13rem,1fr)_auto_minmax(13rem,1fr)]"
+            : "lg:grid-cols-[minmax(13rem,18rem)_1fr_minmax(8rem,14rem)]"
         )}
       >
         <div className="flex shrink-0 items-center gap-3 lg:w-full">
@@ -110,7 +110,12 @@ export function Navbar() {
           </Badge>
         </div>
 
-        <nav className="hidden min-w-0 items-center justify-center gap-2 lg:flex xl:gap-3">
+        <nav
+          className={cn(
+            "hidden min-w-0 items-center justify-center gap-2 lg:flex xl:gap-3",
+            !isAuthenticated && "lg:translate-x-24 xl:translate-x-28 2xl:translate-x-32"
+          )}
+        >
           {visibleNavItems.map((item) => (
             <Link
               key={item.href}
@@ -134,20 +139,7 @@ export function Navbar() {
                 退出登录
               </Button>
             </div>
-          ) : (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none hidden shrink-0 select-none items-center gap-3 opacity-0 lg:flex"
-            >
-              <span className="inline-flex -rotate-1 items-center gap-3 border-4 border-ink bg-acid px-4 py-3 font-black uppercase tracking-[0.18em] shadow-neo-md">
-                <Sparkles size={18} strokeWidth={3} />
-                OAS
-              </span>
-              <Badge variant="secondary" className="hidden md:inline-flex">
-                Neo Brutalism
-              </Badge>
-            </div>
-          )}
+          ) : null}
           <Button
             variant="outline"
             size="sm"
