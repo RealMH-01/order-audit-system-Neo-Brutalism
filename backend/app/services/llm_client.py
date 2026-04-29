@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Awaitable
 
 from app.config import Settings
@@ -18,6 +19,56 @@ try:
     from zhipuai import ZhipuAI
 except Exception:  # pragma: no cover
     ZhipuAI = None
+
+logger = logging.getLogger(__name__)
+
+MAX_CELLS_FOR_LLM = 1500
+MAX_CHARS_FOR_LLM = 30000
+
+
+def format_cell_index_for_llm(cell_index: list[dict]) -> str:
+    """Format non-empty Excel cells as lightweight coordinate text for LLM input."""
+
+    lines: list[str] = []
+    char_count = 0
+    truncated = False
+
+    for record in cell_index:
+        if len(lines) >= MAX_CELLS_FOR_LLM:
+            truncated = True
+            break
+
+        value = str(record.get("value_str") or "").strip()
+        if not value:
+            continue
+
+        sheet = str(record.get("sheet") or "").strip()
+        cell = str(record.get("cell") or "").strip()
+        if not sheet or not cell:
+            continue
+
+        left_label = str(record.get("left_label") or "").strip()
+        payload = f"{left_label}: {value}" if left_label else value
+        line = f"[{sheet}!{cell}] {payload}"
+
+        projected_count = char_count + len(line) + (1 if lines else 0)
+        if projected_count > MAX_CHARS_FOR_LLM:
+            truncated = True
+            break
+
+        lines.append(line)
+        char_count = projected_count
+
+    if truncated:
+        logger.warning(
+            "Cell index text for LLM was truncated: emitted_cells=%d max_cells=%d emitted_chars=%d max_chars=%d",
+            len(lines),
+            MAX_CELLS_FOR_LLM,
+            char_count,
+            MAX_CHARS_FOR_LLM,
+        )
+
+    return "\n".join(lines)
 
 
 class LLMClientService:

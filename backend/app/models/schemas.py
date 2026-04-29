@@ -684,6 +684,11 @@ class AuditIssue(BaseModel):
     source_value: str | None = None
     source: str | None = None
     field_location: str | None = None
+    location_hints: list[str] = Field(default_factory=list)
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    mark_status: str | None = None
+    mark_reason_code: str | None = None
+    mark_reason: str | None = None
 
 
 class AuditResultResponse(BaseModel):

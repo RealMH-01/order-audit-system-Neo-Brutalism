@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import json
 import logging
@@ -36,9 +37,9 @@ from app.models.schemas import (
     FeatureStatus,
 )
 from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
-from app.services.evidence_locator import build_cell_index
+from app.services.evidence_locator import build_cell_index, resolve_issue_locations
 from app.services.file_parser import FileParserService
-from app.services.llm_client import LLMClientService
+from app.services.llm_client import LLMClientService, format_cell_index_for_llm
 from app.services.report_filename import build_report_filename, pick_report_identifier
 from app.services.report_generator import ReportGeneratorService
 from app.services.runtime_store import RuntimeStore
@@ -339,6 +340,7 @@ class AuditOrchestratorService:
             "audit_temp_dir": None,
             "original_xlsx_paths": {},
             "cell_indexes": {},
+            "llm_raw_issues": [],
         }
         self.store.audit_tasks[task_id]["_async_task"] = asyncio.create_task(self._run_task(task_id))
         return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
@@ -399,6 +401,7 @@ class AuditOrchestratorService:
                 user_id=user_id,
                 index=index,
                 target_item=target_item,
+                task=task,
                 po_record=po_record,
                 prev_records=prev_records,
                 template_record=template_record,
@@ -462,6 +465,7 @@ class AuditOrchestratorService:
 
         await self._notify_progress(progress_callback, 80, "正在汇总审核结果并生成报告。")
         aggregate_result = self._aggregate_results(first_round_results)
+        aggregate_result["llm_raw_issues"] = copy.deepcopy(task.get("llm_raw_issues") or [])
 
         # 把交叉检查结果追加到 aggregate_result 中（不修改单文件结果）
         if cross_check_result and isinstance(cross_check_result.get("issues"), list):
@@ -470,6 +474,10 @@ class AuditOrchestratorService:
             for idx, issue in enumerate(cross_issues, 1):
                 if isinstance(issue, dict):
                     issue["id"] = f"X-{idx:02d}"
+                    issue["locations"] = []
+                    issue["mark_status"] = "not_applicable"
+                    issue["mark_reason_code"] = "ADVISORY_NO_CELL"
+                    issue["mark_reason"] = "跨文件问题不对应单一原 Excel 单元格"
                     issue["source"] = "多目标文件交叉检查"
                     issue["field_location"] = "多目标文件交叉检查"
                     issue["document_label"] = "多目标文件交叉检查"
@@ -799,6 +807,7 @@ class AuditOrchestratorService:
         user_id: str,
         index: int,
         target_item: dict[str, Any],
+        task: dict[str, Any],
         po_record: dict[str, Any],
         prev_records: list[dict[str, Any]],
         template_record: dict[str, Any] | None,
@@ -848,12 +857,12 @@ class AuditOrchestratorService:
             document_token_budget = max(512, safe_limit // 4)
 
         po_text_context, po_truncated = self._prepare_text_context(
-            str(po_record.get("text", "")),
+            self._llm_text_for_record(task, po_record),
             model_for_call,
             document_token_budget,
         )
         target_text_context, target_truncated = self._prepare_text_context(
-            str(target_record.get("text", "")),
+            self._llm_text_for_record(task, target_record),
             model_for_call,
             document_token_budget,
         )
@@ -909,6 +918,7 @@ class AuditOrchestratorService:
             )
 
         parsed_result = self.audit_engine.parse_audit_result(raw_response)
+        self._store_raw_llm_issues(task, parsed_result)
         parsed_result = self._post_process_force_downgrade(parsed_result, company_affiliates)
 
         parsed_result = self._post_process_evidence_and_identifiers(
@@ -922,6 +932,7 @@ class AuditOrchestratorService:
             self._append_truncation_notice(parsed_result, doc_type, index)
 
         enriched = self._attach_document_context(parsed_result, target_item, target_record, doc_type, index)
+        enriched = self._resolve_issue_locations_for_result(enriched, task)
         return {
             "file_id": target_item["file_id"],
             "doc_type": doc_type,
@@ -976,6 +987,20 @@ class AuditOrchestratorService:
             return "\n\n".join(typed_matches)
         fallback_matches = [str(record.get("text", "")) for record in prev_records if record.get("text")]
         return "\n\n".join(fallback_matches)
+
+    @staticmethod
+    def _llm_text_for_record(task: dict[str, Any], record: dict[str, Any]) -> str:
+        """Use coordinate-rich cell text for .xlsx files when a cell index is available."""
+
+        file_id = str(record.get("id") or "")
+        extension = str(record.get("extension") or Path(str(record.get("filename", ""))).suffix.lstrip(".")).lower()
+        if file_id and extension == "xlsx":
+            cell_index = dict(task.get("cell_indexes") or {}).get(file_id)
+            if isinstance(cell_index, list) and cell_index:
+                formatted = format_cell_index_for_llm(cell_index)
+                if formatted.strip():
+                    return formatted
+        return str(record.get("text", ""))
 
     def _prepare_text_context(self, text: str, model: str, max_tokens: int) -> tuple[str, bool]:
         """根据 token 安全上限控制输入文本大小。"""
@@ -1421,6 +1446,58 @@ class AuditOrchestratorService:
                 return True
         return False
 
+    @staticmethod
+    def _store_raw_llm_issues(task: dict[str, Any], parsed_result: dict[str, Any]) -> None:
+        raw_issues = task.setdefault("llm_raw_issues", [])
+        if not isinstance(raw_issues, list):
+            raw_issues = []
+            task["llm_raw_issues"] = raw_issues
+
+        for issue in parsed_result.get("issues", []):
+            if not isinstance(issue, dict):
+                continue
+            raw_issues.append(copy.deepcopy(issue.get("raw_llm_issue") or issue))
+
+    def _resolve_issue_locations_for_result(
+        self,
+        parsed_result: dict[str, Any],
+        task: dict[str, Any],
+    ) -> dict[str, Any]:
+        issues = parsed_result.get("issues", [])
+        if not isinstance(issues, list):
+            parsed_result["issues"] = []
+            return parsed_result
+
+        file_records = self._uploaded_file_records_for_task(task)
+        cell_indexes = dict(task.get("cell_indexes") or {})
+        resolved_issues: list[Any] = []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                resolved_issues.append(issue)
+                continue
+            resolved_issue = copy.deepcopy(issue)
+            locations, mark_status, mark_reason_code, mark_reason = resolve_issue_locations(
+                resolved_issue,
+                cell_indexes,
+                file_records,
+            )
+            resolved_issue["locations"] = locations
+            resolved_issue["mark_status"] = mark_status
+            resolved_issue["mark_reason_code"] = mark_reason_code
+            resolved_issue["mark_reason"] = mark_reason
+            resolved_issues.append(resolved_issue)
+
+        parsed_result["issues"] = resolved_issues
+        return parsed_result
+
+    def _uploaded_file_records_for_task(self, task: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        records: dict[str, dict[str, Any]] = {}
+        for file_id in self._collect_task_file_ids(task):
+            record = self.store.files.get(file_id)
+            if isinstance(record, dict):
+                records[file_id] = record
+        return records
+
     def _attach_document_context(
         self,
         parsed_result: dict[str, Any],
@@ -1721,6 +1798,21 @@ class AuditOrchestratorService:
                 source_value=optional_issue_text(issue, "source_value"),
                 source=optional_issue_text(issue, "source"),
                 field_location=optional_issue_text(issue, "field_location"),
+                location_hints=[
+                    str(item)
+                    for item in issue.get("location_hints", [])
+                    if str(item).strip()
+                ]
+                if isinstance(issue.get("location_hints"), list)
+                else [],
+                locations=[
+                    item
+                    for item in issue.get("locations", [])
+                    if isinstance(item, dict)
+                ],
+                mark_status=optional_issue_text(issue, "mark_status"),
+                mark_reason_code=optional_issue_text(issue, "mark_reason_code"),
+                mark_reason=optional_issue_text(issue, "mark_reason"),
             )
             for issue in aggregate_result.get("issues", [])
             if isinstance(issue, dict)

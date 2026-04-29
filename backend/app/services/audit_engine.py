@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import logging
 import re
@@ -228,6 +229,7 @@ DEFAULT_PROMPT_RULE_TEXT = SYSTEM_PROMPT_TEXT
 
 _OUTPUT_FORMAT_RULES = """
 Return a JSON object with this exact shape:
+Each issue object must include location_hints: an array of "SheetName!Cell" strings, or [] when uncertain.
 {
   "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
   "issues": [
@@ -253,6 +255,7 @@ Output requirements:
 - All user-facing text must be Simplified Chinese.
 - Preserve original field names, numbers, currency codes, and Incoterms.
 - Number issues by severity: R-01, Y-01, B-01.
+- For every issue, include "location_hints" as a list of likely Excel cell coordinates in "SheetName!Cell" format, for example "Sheet1!F9". If you are not sure, output [] and do not guess.
 - Do not output any text outside the JSON object.
 """.strip()
 
@@ -757,6 +760,7 @@ Cross-check instructions:
                 "finding": finding,
                 "suggestion": suggestion,
                 "confidence": confidence,
+                "raw_llm_issue": copy.deepcopy(raw_issue),
             }
 
             for optional_key in (
@@ -768,6 +772,7 @@ Cross-check instructions:
                 "source_value",
                 "source",
                 "field_location",
+                "location_hints",
             ):
                 value = raw_issue.get(optional_key)
                 if value not in (None, ""):

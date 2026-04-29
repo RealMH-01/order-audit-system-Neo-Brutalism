@@ -104,8 +104,9 @@ class ReportGeneratorService:
             "文档类型",
             "文件 ID",
         ]
+        headers.extend(["源文件名", "定位单元格", "标记状态", "未标记原因", "定位置信度"])
         issue_sheet.append(headers)
-        self._set_column_widths(issue_sheet, [12, 16, 20, 50, 40, 12, 24, 24, 40, 16, 20])
+        self._set_column_widths(issue_sheet, [12, 16, 20, 50, 40, 12, 24, 24, 40, 16, 20, 24, 28, 18, 36, 14])
         self._style_header_row(issue_sheet, row_index=1)
 
         for index, issue in enumerate(self._extract_issues(audit_result), start=1):
@@ -123,6 +124,11 @@ class ReportGeneratorService:
                     issue.get("source_excerpt", ""),
                     issue.get("document_type", ""),
                     issue.get("file_id", ""),
+                    self._source_file_name(issue),
+                    self._location_refs(issue),
+                    issue.get("mark_status", ""),
+                    "" if issue.get("mark_status") == "marked" else issue.get("mark_reason", ""),
+                    self._location_confidence(issue),
                 ]
             )
             current_row = issue_sheet.max_row
@@ -179,6 +185,55 @@ class ReportGeneratorService:
             "detailed": build_report_filename("详情版", identifier, "xlsx"),
             "zip": build_report_filename("报告", identifier, "zip"),
         }
+
+    @staticmethod
+    def _source_file_name(issue: dict[str, Any]) -> str:
+        locations = issue.get("locations")
+        if isinstance(locations, list) and locations:
+            first = locations[0]
+            if isinstance(first, dict) and first.get("file_name"):
+                return str(first["file_name"])
+        candidates = issue.get("candidate_locations")
+        if isinstance(candidates, list) and candidates:
+            first = candidates[0]
+            if isinstance(first, dict) and first.get("file_name"):
+                return str(first["file_name"])
+        return str(issue.get("document_label") or "")
+
+    @staticmethod
+    def _location_refs(issue: dict[str, Any]) -> str:
+        locations = issue.get("locations")
+        if not locations and issue.get("mark_status") == "multiple_candidates":
+            locations = issue.get("candidate_locations")
+        if not isinstance(locations, list):
+            return ""
+
+        refs: list[str] = []
+        for location in locations:
+            if not isinstance(location, dict):
+                continue
+            sheet = str(location.get("sheet") or "").strip()
+            cell = str(location.get("cell") or "").strip()
+            if sheet and cell:
+                refs.append(f"{sheet}!{cell}")
+        return "; ".join(dict.fromkeys(refs))
+
+    @staticmethod
+    def _location_confidence(issue: dict[str, Any]) -> str:
+        locations = issue.get("locations")
+        if not locations and issue.get("mark_status") == "low_confidence":
+            locations = issue.get("candidate_locations")
+        if not isinstance(locations, list) or not locations:
+            return ""
+
+        values = [
+            float(location["confidence"])
+            for location in locations
+            if isinstance(location, dict) and location.get("confidence") not in (None, "")
+        ]
+        if not values:
+            return ""
+        return f"{max(values):.2f}"
 
     def _new_workbook(self):
         """创建 Workbook 并检查依赖。"""
