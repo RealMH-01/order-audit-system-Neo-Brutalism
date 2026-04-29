@@ -101,23 +101,23 @@ function resolveProviderFromModel(model: string) {
 
 // DeepSeek 旧模型名在前端向 V4 归一化，保证下拉框可以正确展示当前选中项。
 // 后端依然保留对旧值的兼容，这里只是视觉层面的迁移。
-const DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
+const DEEPSEEK_COMPAT_MODEL_MAP: Record<string, string> = {
   "deepseek-chat": "deepseek-v4-flash",
   "deepseek-reasoner": "deepseek-v4-pro"
 };
 
-const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
+const ZHIPU_COMPAT_MODEL_MAP: Record<string, string> = {
   "glm-4v": "glm-4.6v",
   "glm-4-flash": "glm-4.6v-flash"
 };
 
 function normalizeModelForDisplay(model: string) {
   const normalized = model.trim().toLowerCase();
-  if (normalized in DEEPSEEK_LEGACY_MODEL_MAP) {
-    return DEEPSEEK_LEGACY_MODEL_MAP[normalized];
+  if (normalized in DEEPSEEK_COMPAT_MODEL_MAP) {
+    return DEEPSEEK_COMPAT_MODEL_MAP[normalized];
   }
-  if (normalized in ZHIPU_LEGACY_MODEL_MAP) {
-    return ZHIPU_LEGACY_MODEL_MAP[normalized];
+  if (normalized in ZHIPU_COMPAT_MODEL_MAP) {
+    return ZHIPU_COMPAT_MODEL_MAP[normalized];
   }
   return model;
 }

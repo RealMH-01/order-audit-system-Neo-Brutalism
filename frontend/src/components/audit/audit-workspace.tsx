@@ -72,6 +72,14 @@ const AUDIT_UPLOAD_FORMAT_HINT =
   "支持格式：PDF、DOCX、XLSX、PNG、JPG/JPEG、TXT；单文件 20MB 以内。";
 const AUDIT_SINGLE_UPLOAD_LIMIT_HINT = `${AUDIT_UPLOAD_FORMAT_HINT} 当前入口保留 1 个文件，可重新上传替换；所有上传区合计最多暂存 10 个文件。`;
 const AUDIT_MULTI_UPLOAD_LIMIT_HINT = `${AUDIT_UPLOAD_FORMAT_HINT} 可一次选择多个文件，重复文件名会自动替换；所有上传区合计最多暂存 10 个文件。`;
+const AUDIT_UPLOAD_HINT_LIST = [
+  "推荐上传 Excel（.xlsx）格式。",
+  ".xlsx 支持生成原表标记版。",
+  ".xls / .xlsm 第一版暂不支持原表标记版，建议另存为 .xlsx 后再上传。",
+  "PDF / Word / 图片仅生成文字审核结果，不生成原文视觉标注版。"
+];
+const MARKED_REPORT_UNAVAILABLE_HINT =
+  "本次没有可生成的原表标记版。可下载详情版 Excel 或完整报告包查看问题。";
 
 type BucketKey = "po" | "target" | "prev" | "template" | "reference";
 type ResultFilter = "ALL" | "RED" | "YELLOW" | "BLUE";
@@ -134,6 +142,15 @@ function getErrorStatus(error: unknown) {
     return Number.isFinite(status) ? status : null;
   }
   return null;
+}
+
+function getErrorReasonCode(error: unknown) {
+  if (typeof error !== "object" || !error || !("reason_code" in error)) {
+    return null;
+  }
+
+  const reasonCode = error.reason_code;
+  return typeof reasonCode === "string" && reasonCode.trim() ? reasonCode : null;
 }
 
 function resolveDefaultDocumentType(detectedType: string): AuditDocumentType {
@@ -292,10 +309,27 @@ function resolveBucketName(key: BucketKey) {
 const REPORT_DOWNLOAD_BUTTONS: Array<{
   type: AuditReportType;
   label: string;
+  variant: "primary" | "outline";
+  tooltip: string;
 }> = [
-  { type: "marked", label: "下载旧版标记汇总 Excel" },
-  { type: "detailed", label: "下载详情版 Excel" },
-  { type: "zip", label: "下载 ZIP（含标记版 + 详情版）" }
+  {
+    type: "zip",
+    label: "完整报告包",
+    variant: "primary",
+    tooltip: "ZIP，含详情版、标记版、任务信息、系统清单"
+  },
+  {
+    type: "marked",
+    label: "标记版",
+    variant: "outline",
+    tooltip: "ZIP，仅含原表填色批注的 Excel 副本"
+  },
+  {
+    type: "detailed",
+    label: "详情版",
+    variant: "outline",
+    tooltip: "Excel，问题明细 + 审核摘要"
+  }
 ];
 
 function resolveMarkedIssueSummary(result: AuditResultResponse | null) {
@@ -446,6 +480,7 @@ export function AuditWorkspace() {
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [reportInfo, setReportInfo] = useState<AuditReportResponse | null>(null);
   const [reportDownloadError, setReportDownloadError] = useState<string | null>(null);
+  const [markedUnavailableHint, setMarkedUnavailableHint] = useState<string | null>(null);
   const [downloadingReports, setDownloadingReports] = useState<Record<AuditReportType, boolean>>({
     marked: false,
     detailed: false,
@@ -514,6 +549,10 @@ export function AuditWorkspace() {
     latestTaskStatusRef.current = taskStatus;
   }, [taskStatus]);
 
+  useEffect(() => {
+    setMarkedUnavailableHint(null);
+  }, [taskId]);
+
   const clearRunState = useCallback((nextMessage?: string) => {
     progressAbortRef.current?.abort();
     progressAbortRef.current = null;
@@ -529,6 +568,7 @@ export function AuditWorkspace() {
     setReportInfo(null);
     setReportLoading(false);
     setReportDownloadError(null);
+    setMarkedUnavailableHint(null);
     setDownloadingReports({
       marked: false,
       detailed: false,
@@ -1087,6 +1127,8 @@ export function AuditWorkspace() {
   );
 
   const handleStartAudit = useCallback(() => {
+    setMarkedUnavailableHint(null);
+
     if (!token) {
       setWorkspaceError("请先登录后再启动审核。");
       return;
@@ -1255,6 +1297,7 @@ export function AuditWorkspace() {
     setReportLoading(true);
     setWorkspaceError(null);
     setReportDownloadError(null);
+    setMarkedUnavailableHint(null);
 
     try {
       const { data } = await apiGet<AuditReportResponse>(`/audit/report/${taskId}`, {
@@ -1273,10 +1316,12 @@ export function AuditWorkspace() {
     async (reportType: AuditReportType) => {
       if (!token || !taskId) {
         setReportDownloadError("报告暂不可下载，请先运行一次审核。");
+        setMarkedUnavailableHint(null);
         return;
       }
 
       setReportDownloadError(null);
+      setMarkedUnavailableHint(null);
       setWorkspaceError(null);
       setDownloadingReports((previous) => ({ ...previous, [reportType]: true }));
 
@@ -1293,6 +1338,15 @@ export function AuditWorkspace() {
         anchor.remove();
         window.URL.revokeObjectURL(objectUrl);
       } catch (error) {
+        if (reportType === "marked" && getErrorStatus(error) === 409) {
+          const reasonCode = getErrorReasonCode(error);
+          if (reasonCode) {
+            console.debug("Marked report unavailable.", { reason_code: reasonCode });
+          }
+          setMarkedUnavailableHint(MARKED_REPORT_UNAVAILABLE_HINT);
+          return;
+        }
+
         const detail = normalizeError(error, "下载报告失败，请稍后重试。");
         setReportDownloadError(detail);
         if (typeof error === "object" && error && "status" in error && error.status === 404) {
@@ -1493,6 +1547,14 @@ export function AuditWorkspace() {
           </div>
 
           <div className="space-y-6">
+            <div className="border-4 border-ink bg-canvas p-4 text-sm font-black leading-6 shadow-neo-sm">
+              <ul className="list-disc space-y-1 pl-5">
+                {AUDIT_UPLOAD_HINT_LIST.map((hint) => (
+                  <li key={hint}>{hint}</li>
+                ))}
+              </ul>
+            </div>
+
             <FileBucket
               title="待审核文件区"
               description="上传多个待审核文件，并为每个文件明确指定文档类型。文档类型改变后，上一轮审核结果会自动清空，避免误读。"
@@ -1502,7 +1564,6 @@ export function AuditWorkspace() {
               limitHint={`${AUDIT_MULTI_UPLOAD_LIMIT_HINT} 启动审核前至少需要 1 个待审核文件。`}
               multiple
               allowDocumentType
-              showMarkingHint
               uploading={uploadingKey === "target"}
               disabled={workspaceDisabled}
               disableHint={bucketDisableHint}
@@ -1774,24 +1835,16 @@ export function AuditWorkspace() {
                     <p>· 建议/资料类（仅详情版）：{markedIssueSummary.textOnlyCount} 个</p>
                     <p>· 其他状态：{markedIssueSummary.otherCount} 个</p>
                   </div>
-                ) : (
-                  <p className="text-sm font-bold leading-6">
-                    ZIP 中包含详情版 Excel；如本次上传了可标记的 .xlsx 文件，ZIP 的“标记版/”目录中还会包含原表标记副本。
-                  </p>
-                )}
-                <div className="mt-3 space-y-2 border-t-4 border-ink pt-3 text-sm font-bold leading-6">
-                  <p>
-                    原表标记版需要下载 ZIP 包，并在 ZIP 里的“标记版/”目录中查看。
-                  </p>
-                  <p>
-                    单独的“旧版标记汇总 Excel”仍是旧汇总表语义，不代表多份原表标记副本；真正的原表标记副本以 ZIP 为准。
-                  </p>
-                  <p>
-                    完整问题仍以页面报告和详情版 Excel 为准；PDF / Word / 图片不会生成原文视觉标注版。
-                  </p>
-                  <p>
-                    .xls / .xlsm 第一版不支持原表标记版，建议另存为 .xlsx 后再上传。
-                  </p>
+                ) : null}
+                <div
+                  className={[
+                    "space-y-2 text-sm font-bold leading-6",
+                    markedIssueSummary ? "mt-3 border-t-4 border-ink pt-3" : ""
+                  ].join(" ")}
+                >
+                  <p>推荐下载完整报告包 ZIP，里面包含详情版、标记版、任务信息和系统清单。</p>
+                  <p>标记版用于查看原表红黄蓝标注。</p>
+                  <p>详情版用于查看完整问题明细。</p>
                 </div>
               </div>
 
@@ -1811,22 +1864,29 @@ export function AuditWorkspace() {
 
                 {reportState.kind === "download"
                   ? REPORT_DOWNLOAD_BUTTONS.map((item) => (
-                      <Button
-                        key={item.type}
-                        variant={item.type === "zip" ? "primary" : "outline"}
-                        onClick={() => void handleDownloadReport(item.type)}
-                        disabled={downloadingReports[item.type]}
-                      >
-                        {downloadingReports[item.type] ? (
-                          <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-                        ) : (
-                          <Download size={18} strokeWidth={3} />
-                        )}
-                        {downloadingReports[item.type] ? "下载中..." : item.label}
-                      </Button>
+                      <Tooltip key={item.type} content={item.tooltip}>
+                        <Button
+                          variant={item.variant}
+                          onClick={() => void handleDownloadReport(item.type)}
+                          disabled={downloadingReports[item.type]}
+                        >
+                          {downloadingReports[item.type] ? (
+                            <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+                          ) : (
+                            <Download size={18} strokeWidth={3} />
+                          )}
+                          {downloadingReports[item.type] ? "下载中..." : item.label}
+                        </Button>
+                      </Tooltip>
                     ))
                   : null}
               </div>
+
+              {markedUnavailableHint ? (
+                <div className="issue-yellow p-4">
+                  <p className="text-sm font-bold leading-6">{markedUnavailableHint}</p>
+                </div>
+              ) : null}
 
               {reportDownloadError ? (
                 <div className="issue-red p-4">

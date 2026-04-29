@@ -225,7 +225,29 @@ def test_generate_marked_copies_returns_updated_issues_for_detail_report(tmp_pat
     )
     result = {"summary": {"red": 1, "yellow": 0, "blue": 0}, "issues": updated_issues}
     detail = ReportGeneratorService().generate_detail_report("task-1", result)
+    workbook = load_workbook(detail)
+    headers = [cell.value for cell in workbook["问题明细"][1]]
 
     assert detail.getvalue()
+    assert workbook.sheetnames[:2] == ["问题明细", "审核摘要"]
+    assert headers[:12] == [
+        "序号",
+        "级别",
+        "字段",
+        "问题说明",
+        "建议",
+        "原文件名",
+        "原表位置",
+        "定位置信度",
+        "标记状态",
+        "未标记原因",
+        "文档类型",
+        "文件 ID",
+    ]
+    row = next(workbook["问题明细"].iter_rows(min_row=2, values_only=True))
+    assert row[6] == "Sheet1!F9"
+    assert row[8] == "marked"
+    assert row[9] is None
+    assert workbook["审核摘要"]["A1"].value == "任务 ID"
     assert updated_issues is not issues
     assert len(marked_paths) == 1

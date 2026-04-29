@@ -134,23 +134,23 @@ function isUnreadableRulesText(text: string) {
   return /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(trimmed);
 }
 
-const ZHIPU_LEGACY_MODEL_MAP: Record<string, string> = {
+const ZHIPU_COMPAT_MODEL_MAP: Record<string, string> = {
   "glm-4v": "glm-4.6v",
   "glm-4-flash": "glm-4.6v-flash"
 };
 
-const DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
+const DEEPSEEK_COMPAT_MODEL_MAP: Record<string, string> = {
   "deepseek-chat": "deepseek-v4-flash",
   "deepseek-reasoner": "deepseek-v4-pro"
 };
 
 function normalizeModelForDisplay(model: string) {
   const normalized = model.trim().toLowerCase();
-  if (normalized in DEEPSEEK_LEGACY_MODEL_MAP) {
-    return DEEPSEEK_LEGACY_MODEL_MAP[normalized];
+  if (normalized in DEEPSEEK_COMPAT_MODEL_MAP) {
+    return DEEPSEEK_COMPAT_MODEL_MAP[normalized];
   }
-  if (normalized in ZHIPU_LEGACY_MODEL_MAP) {
-    return ZHIPU_LEGACY_MODEL_MAP[normalized];
+  if (normalized in ZHIPU_COMPAT_MODEL_MAP) {
+    return ZHIPU_COMPAT_MODEL_MAP[normalized];
   }
   return model;
 }

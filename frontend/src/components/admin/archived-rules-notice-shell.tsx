@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-export function LegacyRulesNoticeShell() {
+export function ArchivedRulesNoticeShell() {
   return (
     <section className="space-y-6">
       <header className="border-4 border-ink bg-paper p-6 shadow-neo-lg md:p-8">

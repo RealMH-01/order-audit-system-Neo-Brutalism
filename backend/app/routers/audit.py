@@ -28,7 +28,7 @@ def _build_report_download_response(
 ) -> StreamingResponse:
     file_obj, filename, media_type = service.get_report_download(current_user, task_id, report_type)
     ascii_fallbacks = {
-        "marked": "audit_marked.xlsx",
+        "marked": "audit_marked.zip",
         "detailed": "audit_detailed.xlsx",
         "zip": "audit_report.zip",
     }

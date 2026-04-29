@@ -247,8 +247,14 @@ def _load_marked(zip_file: zipfile.ZipFile, name_part: str):
 
 def _detail_rows(zip_file: zipfile.ZipFile) -> dict[str, tuple]:
     workbook = load_workbook(io.BytesIO(zip_file.read(DETAIL_FILENAME)), data_only=False)
-    sheet = workbook.worksheets[1]
+    sheet = workbook.worksheets[0]
     return {row[0]: row for row in sheet.iter_rows(min_row=2, values_only=True)}
+
+
+def _detail_headers(zip_file: zipfile.ZipFile) -> list[str]:
+    workbook = load_workbook(io.BytesIO(zip_file.read(DETAIL_FILENAME)), data_only=False)
+    assert workbook.sheetnames[:2] == ["问题明细", "审核摘要"]
+    return [cell.value for cell in workbook.worksheets[0][1]]
 
 
 def test_fixture_setup_prepares_all_required_boundary_files(tmp_path):
@@ -296,11 +302,26 @@ def test_e1_single_xlsx_marks_invoice_no_and_unit_price_and_zip_structure(tmp_pa
         assert _rgb(marked["Sheet1"]["C19"]) == "FF6B6B"
         assert marked["Sheet1"]["F9"].comment is not None
         assert marked["Sheet1"]["C19"].comment is not None
+        assert _detail_headers(zip_file)[:12] == [
+            "序号",
+            "级别",
+            "字段",
+            "问题说明",
+            "建议",
+            "原文件名",
+            "原表位置",
+            "定位置信度",
+            "标记状态",
+            "未标记原因",
+            "文档类型",
+            "文件 ID",
+        ]
         detail = _detail_rows(zip_file)
-        assert detail["E1-F9"][12] == "Sheet1!F9"
-        assert detail["E1-F9"][13] == "marked"
-        assert detail["E1-C19"][12] == "Sheet1!C19"
-        assert detail["E1-C19"][13] == "marked"
+        assert detail["E1-F9"][6] == "Sheet1!F9"
+        assert detail["E1-F9"][8] == "marked"
+        assert detail["E1-F9"][9] is None
+        assert detail["E1-C19"][6] == "Sheet1!C19"
+        assert detail["E1-C19"][8] == "marked"
         manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
         assert manifest["schema_version"] == "1.0"
         assert manifest["summary"]["by_mark_status"]["marked"] == 2
@@ -431,10 +452,10 @@ def test_e9_e10_xls_and_xlsm_do_not_generate_marked_versions_but_keep_detail_rea
     with zipfile.ZipFile(_zip(issues, [upload_xls, upload_xlsm])) as zip_file:
         assert _marked_names(zip_file) == []
         detail = _detail_rows(zip_file)
-        assert detail["E9"][13] == "unsupported_file_type"
-        assert detail["E10"][13] == "unsupported_file_type"
-        assert detail["E9"][14]
-        assert detail["E10"][14]
+        assert detail["E9"][8] == "unsupported_file_type"
+        assert detail["E10"][8] == "unsupported_file_type"
+        assert detail["E9"][9]
+        assert detail["E10"][9]
 
 
 def test_e11_pdf_and_xlsx_mixed_only_generates_xlsx_marked_version(tmp_path):
@@ -450,8 +471,8 @@ def test_e11_pdf_and_xlsx_mixed_only_generates_xlsx_marked_version(tmp_path):
     with zipfile.ZipFile(_zip(issues, [upload_xlsx, upload_pdf])) as zip_file:
         assert len(_marked_names(zip_file)) == 1
         detail = _detail_rows(zip_file)
-        assert detail["E11-XLSX"][13] == "marked"
-        assert detail["E11-PDF"][13] == "unsupported_file_type"
+        assert detail["E11-XLSX"][8] == "marked"
+        assert detail["E11-PDF"][8] == "unsupported_file_type"
 
 
 def test_e12_yellow_and_blue_advisory_issues_are_not_applicable_and_not_marked(tmp_path):
@@ -462,8 +483,8 @@ def test_e12_yellow_and_blue_advisory_issues_are_not_applicable_and_not_marked(t
     with zipfile.ZipFile(_zip(issues, [upload])) as zip_file:
         assert _marked_names(zip_file) == []
         detail = _detail_rows(zip_file)
-        assert detail["E12-Y"][13] == "not_applicable"
-        assert detail["E12-B"][13] == "not_applicable"
+        assert detail["E12-Y"][8] == "not_applicable"
+        assert detail["E12-B"][8] == "not_applicable"
 
 
 def test_e13_single_file_mark_failure_keeps_other_marked_file(tmp_path):
@@ -489,8 +510,8 @@ def test_e13_single_file_mark_failure_keeps_other_marked_file(tmp_path):
     with zipfile.ZipFile(_zip([good_issue, bad_issue], [upload_good, upload_bad])) as zip_file:
         assert len(_marked_names(zip_file)) == 1
         detail = _detail_rows(zip_file)
-        assert detail["E13-good"][13] == "marked"
-        assert detail["E13-bad"][13] == "mark_failed"
+        assert detail["E13-good"][8] == "marked"
+        assert detail["E13-bad"][8] == "mark_failed"
 
 
 def test_e14_all_pdf_upload_has_no_empty_marked_directory_and_keeps_metadata(tmp_path):

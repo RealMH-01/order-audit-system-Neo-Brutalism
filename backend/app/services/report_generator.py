@@ -34,6 +34,14 @@ _LEVEL_FILLCOLORS = {
     "BLUE": "BFDBFE",
 }
 
+_MARKED_REPORT_MESSAGES = {
+    "NO_MARKABLE_XLSX": "本次任务没有可生成原表标记副本的 Excel 文件。",
+    "ONLY_UNSUPPORTED_FILES": "本次上传文件暂不支持生成原表标记副本。",
+    "NO_MARKED_WORKBOOK": "本次审核没有成功生成可下载的原表标记副本。",
+    "LEGACY_TASK_NO_MARKED_WORKBOOK": "该历史任务未保留可下载的原表标记副本，请重新运行审核后下载。",
+    "MARKED_REPORT_UNAVAILABLE": "标记版报告暂不可用，请重新运行审核后下载。",
+}
+
 
 class ReportGeneratorService:
     """根据审核结果生成内存态 Excel 与 ZIP 报告。"""
@@ -50,7 +58,10 @@ class ReportGeneratorService:
         ]
 
     def generate_marked_report(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
-        """生成标记版 Excel 报告。"""
+        """
+        Deprecated, no longer used by user-facing endpoints. Kept temporarily to avoid cascading test rewrites.
+        Do NOT call from new code.
+        """
 
         workbook = self._new_workbook()
         sheet = workbook.active
@@ -85,36 +96,55 @@ class ReportGeneratorService:
         sheet.freeze_panes = "A7"
         return self._workbook_to_bytes(workbook)
 
+    def generate_marked_only_zip(
+        self,
+        task_id: str,
+        audit_result: dict[str, Any],
+        audit_context: Any | None = None,
+    ) -> io.BytesIO:
+        """Generate a ZIP containing only source workbook marked copies."""
+
+        filenames = self.build_report_filenames(task_id, audit_context)
+        generated_at = self._generated_at()
+        timestamp = self._timestamp_from_filenames(filenames) or self._filename_timestamp(generated_at)
+
+        with tempfile.TemporaryDirectory(prefix="audit-marked-") as temp_dir:
+            marked_paths, _, _ = self._generate_marked_artifacts(
+                audit_result,
+                audit_context,
+                Path(temp_dir),
+                timestamp,
+            )
+            if not marked_paths:
+                self._raise_marked_report_unavailable(audit_context)
+            return self._build_marked_only_zip(marked_paths)
+
     def generate_detail_report(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
         """生成详情版 Excel 报告。"""
 
         workbook = self._new_workbook()
-        summary_sheet = workbook.active
-        summary_sheet.title = "审核摘要"
-        summary_sheet.append(["任务 ID", task_id])
-        summary_sheet.append(["整体置信度", f"{float(audit_result.get('confidence', 0.5)) * 100:.1f}%"])
-        summary_sheet.append(["红色问题数", audit_result.get("summary", {}).get("red", 0)])
-        summary_sheet.append(["黄色问题数", audit_result.get("summary", {}).get("yellow", 0)])
-        summary_sheet.append(["蓝色问题数", audit_result.get("summary", {}).get("blue", 0)])
-        summary_sheet.append(["备注", "\n".join(audit_result.get("notes", [])) or ""])
-
-        issue_sheet = workbook.create_sheet("问题详情")
+        issue_sheet = workbook.active
+        issue_sheet.title = "问题明细"
         headers = [
             "序号",
             "级别",
             "字段",
             "问题说明",
             "建议",
+            "原文件名",
+            "原表位置",
+            "定位置信度",
+            "标记状态",
+            "未标记原因",
+            "文档类型",
+            "文件 ID",
             "置信度",
             "PO 值",
             "观察值",
             "引用片段",
-            "文档类型",
-            "文件 ID",
         ]
-        headers.extend(["源文件名", "定位单元格", "标记状态", "未标记原因", "定位置信度"])
         issue_sheet.append(headers)
-        self._set_column_widths(issue_sheet, [12, 16, 20, 50, 40, 12, 24, 24, 40, 16, 20, 24, 28, 18, 36, 14])
+        self._set_column_widths(issue_sheet, [12, 16, 20, 50, 40, 24, 28, 14, 18, 36, 16, 20, 12, 24, 24, 40])
         self._style_header_row(issue_sheet, row_index=1)
 
         for index, issue in enumerate(self._extract_issues(audit_result), start=1):
@@ -126,17 +156,17 @@ class ReportGeneratorService:
                     issue.get("field_name", "unspecified_field"),
                     issue.get("finding") or issue.get("message", ""),
                     issue.get("suggestion", ""),
+                    self._source_file_name(issue),
+                    self._location_refs(issue),
+                    self._location_confidence(issue),
+                    issue.get("mark_status", ""),
+                    "" if issue.get("mark_status") == "marked" else issue.get("mark_reason", ""),
+                    issue.get("document_type", ""),
+                    issue.get("file_id", ""),
                     f"{float(issue.get('confidence', 0.5)) * 100:.1f}%",
                     issue.get("matched_po_value") or issue.get("source_value", ""),
                     issue.get("observed_value") or issue.get("your_value", ""),
                     issue.get("source_excerpt", ""),
-                    issue.get("document_type", ""),
-                    issue.get("file_id", ""),
-                    self._source_file_name(issue),
-                    self._location_refs(issue),
-                    issue.get("mark_status", ""),
-                    "" if issue.get("mark_status") == "marked" else issue.get("mark_reason", ""),
-                    self._location_confidence(issue),
                 ]
             )
             current_row = issue_sheet.max_row
@@ -144,6 +174,14 @@ class ReportGeneratorService:
 
         self._apply_wrap_text(issue_sheet, start_row=1)
         issue_sheet.freeze_panes = "A2"
+
+        summary_sheet = workbook.create_sheet("审核摘要")
+        summary_sheet.append(["任务 ID", task_id])
+        summary_sheet.append(["整体置信度", f"{float(audit_result.get('confidence', 0.5)) * 100:.1f}%"])
+        summary_sheet.append(["红色问题数", audit_result.get("summary", {}).get("red", 0)])
+        summary_sheet.append(["黄色问题数", audit_result.get("summary", {}).get("yellow", 0)])
+        summary_sheet.append(["蓝色问题数", audit_result.get("summary", {}).get("blue", 0)])
+        summary_sheet.append(["备注", "\n".join(audit_result.get("notes", [])) or ""])
         return self._workbook_to_bytes(workbook)
 
     def generate_report_zip(
@@ -216,23 +254,34 @@ class ReportGeneratorService:
                 issues=updated_issues,
                 confidence=audit_result.get("confidence"),
             )
+            marked_report = self._build_marked_only_zip(marked_paths) if marked_paths else None
 
-        return {
-            "marked_report": self.generate_marked_report(task_id, audit_result),
+        bundle = {
             "detailed_report": detailed_report,
             "report_zip": report_zip,
             "filenames": filenames,
         }
+        if marked_report is not None:
+            bundle["marked_report"] = marked_report
+        return bundle
 
     @staticmethod
     def build_report_filenames(task_id: str, audit_context: Any | None = None) -> dict[str, str]:
         """Build user-facing names for all generated report artifacts."""
 
         identifier = pick_report_identifier(audit_context or {}, task_id)
+        marked_filename = build_report_filename("标记版", identifier, "zip")
+        timestamp = ReportGeneratorService._timestamp_from_filenames({"marked": marked_filename})
         return {
-            "marked": build_report_filename("标记版", identifier, "xlsx"),
-            "detailed": build_report_filename("详情版", identifier, "xlsx"),
-            "zip": build_report_filename("报告", identifier, "zip"),
+            "marked": marked_filename,
+            "detailed": ReportGeneratorService._with_filename_timestamp(
+                build_report_filename("详情版", identifier, "xlsx"),
+                timestamp,
+            ),
+            "zip": ReportGeneratorService._with_filename_timestamp(
+                build_report_filename("报告", identifier, "zip"),
+                timestamp,
+            ),
         }
 
     def _generate_marked_artifacts(
@@ -295,6 +344,51 @@ class ReportGeneratorService:
         return archive
 
     @staticmethod
+    def _build_marked_only_zip(marked_paths: list[Path]) -> io.BytesIO:
+        archive = io.BytesIO()
+        written = 0
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for marked_path in marked_paths:
+                if marked_path.suffix.lower() != ".xlsx":
+                    continue
+                zf.write(marked_path, arcname=f"标记版/{marked_path.name}")
+                written += 1
+        if written == 0:
+            raise AppError(
+                _MARKED_REPORT_MESSAGES["MARKED_REPORT_UNAVAILABLE"],
+                status_code=409,
+                reason_code="MARKED_REPORT_UNAVAILABLE",
+            )
+        archive.seek(0)
+        return archive
+
+    @classmethod
+    def _raise_marked_report_unavailable(cls, audit_context: Any | None) -> None:
+        reason_code = cls._marked_report_reason_code(audit_context)
+        raise AppError(_MARKED_REPORT_MESSAGES[reason_code], status_code=409, reason_code=reason_code)
+
+    @classmethod
+    def _marked_report_reason_code(cls, audit_context: Any | None) -> str:
+        context = cls._context_mapping(audit_context)
+        uploaded_files = cls._uploaded_files(context)
+        original_paths = context.get("original_xlsx_paths")
+        has_original_xlsx = isinstance(original_paths, dict) and any(str(path or "").strip() for path in original_paths.values())
+        has_uploaded_xlsx = any(cls._file_extension(item) == "xlsx" for item in uploaded_files)
+        if has_original_xlsx or has_uploaded_xlsx:
+            return "NO_MARKED_WORKBOOK"
+        if uploaded_files and all(cls._file_extension(item) != "xlsx" for item in uploaded_files):
+            return "ONLY_UNSUPPORTED_FILES"
+        return "NO_MARKABLE_XLSX"
+
+    @staticmethod
+    def _file_extension(file_record: dict[str, Any]) -> str:
+        extension = str(file_record.get("extension") or "").strip().lower().lstrip(".")
+        if extension:
+            return extension
+        filename = str(file_record.get("filename") or file_record.get("name") or "")
+        return Path(filename).suffix.lower().lstrip(".")
+
+    @staticmethod
     def _context_mapping(audit_context: Any | None) -> dict[str, Any]:
         if isinstance(audit_context, dict):
             return audit_context
@@ -349,6 +443,12 @@ class ReportGeneratorService:
         return ""
 
     @staticmethod
+    def _with_filename_timestamp(filename: str, timestamp: str) -> str:
+        if not timestamp:
+            return filename
+        return re.sub(r"-\d{8}-\d{4}(\.[^.]+)$", rf"-{timestamp}\1", filename)
+
+    @staticmethod
     def _source_file_name(issue: dict[str, Any]) -> str:
         locations = issue.get("locations")
         if isinstance(locations, list) and locations:
@@ -395,7 +495,7 @@ class ReportGeneratorService:
         ]
         if not values:
             return ""
-        return f"{max(values):.2f}"
+        return "; ".join(dict.fromkeys(f"{value:.2f}" for value in values))
 
     def _new_workbook(self):
         """创建 Workbook 并检查依赖。"""

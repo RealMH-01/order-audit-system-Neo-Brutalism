@@ -180,6 +180,23 @@ function parseFilenameFromDisposition(
   return fallbackFilename;
 }
 
+function extractReasonCode(input: unknown): string | undefined {
+  if (typeof input !== "object" || !input) {
+    return undefined;
+  }
+
+  const record = input as Record<string, unknown>;
+  if (typeof record.reason_code === "string" && record.reason_code.trim()) {
+    return record.reason_code;
+  }
+
+  if (typeof record.detail === "object" && record.detail) {
+    return extractReasonCode(record.detail);
+  }
+
+  return undefined;
+}
+
 async function request<T>(
   path: string,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
@@ -259,7 +276,7 @@ export async function downloadAuditReport(
   options: DownloadAuditReportOptions = {}
 ): Promise<DownloadAuditReportResult> {
   const fallbackFilename = {
-    marked: `audit_marked_${taskId}.xlsx`,
+    marked: `audit_marked_${taskId}.zip`,
     detailed: `audit_detailed_${taskId}.xlsx`,
     zip: `audit_reports_${taskId}.zip`
   }[reportType];
@@ -277,21 +294,24 @@ export async function downloadAuditReport(
     const path = `/audit/tasks/${taskId}/reports/${reportType}`;
     handleUnauthorizedResponse(response.status, path);
 
-    let detail = "报告下载失败，请稍后重试。";
+    let detail: unknown = "报告下载失败，请稍后重试。";
+    let reasonCode: string | undefined;
+    const responseText = await response.text();
 
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        detail = body.detail;
-      }
-    } catch {
-      const rawText = await response.text();
-      if (rawText) {
-        detail = rawText;
+    if (responseText) {
+      try {
+        const body = JSON.parse(responseText) as unknown;
+        reasonCode = extractReasonCode(body);
+        if (typeof body === "object" && body && "detail" in body) {
+          detail = (body as Record<string, unknown>).detail;
+        } else {
+          detail = body;
+        }
+      } catch {
+        detail = responseText;
       }
     }
 
-    // 对常见技术性错误返回友好文案
     if (response.status === 404) {
       detail = "报告文件暂不可用，可能已过期或尚未生成，请重新运行审核。";
     }
@@ -299,11 +319,14 @@ export async function downloadAuditReport(
     const normalizedDetail = isAuthStatus(response.status)
       ? LOGIN_EXPIRED_MESSAGE
       : normalizeApiErrorDetail(detail, "报告下载失败，请稍后重试。");
-    const error: ApiError = {
+    const error: ApiError & { reason_code?: string } = {
       status: response.status,
       detail: normalizedDetail,
       message: normalizedDetail
     };
+    if (reasonCode) {
+      error.reason_code = reasonCode;
+    }
     throw error;
   }
 

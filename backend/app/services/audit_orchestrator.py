@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import tempfile
+import zipfile
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -153,8 +154,8 @@ _REPORT_DOWNLOADS = {
     "marked": {
         "bundle_key": "marked_report",
         "kind": "标记版",
-        "ext": "xlsx",
-        "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ext": "zip",
+        "media_type": "application/zip",
     },
     "detailed": {
         "bundle_key": "detailed_report",
@@ -172,9 +173,17 @@ _REPORT_DOWNLOADS = {
 
 _AUDIT_REPORT_BUCKET = "audit-reports"
 _REPORT_STORAGE_FILENAMES = {
-    "marked": "marked.xlsx",
+    "marked": "marked.zip",
     "detailed": "detailed.xlsx",
     "zip": "reports.zip",
+}
+
+_MARKED_DOWNLOAD_MESSAGES = {
+    "NO_MARKABLE_XLSX": "本次任务没有可生成原表标记副本的 Excel 文件。",
+    "ONLY_UNSUPPORTED_FILES": "本次上传文件暂不支持生成原表标记副本。",
+    "NO_MARKED_WORKBOOK": "本次审核没有成功生成可下载的原表标记副本。",
+    "LEGACY_TASK_NO_MARKED_WORKBOOK": "该历史任务未保留可下载的原表标记副本，请重新运行审核后下载。",
+    "MARKED_REPORT_UNAVAILABLE": "标记版报告暂不可用，请重新运行审核后下载。",
 }
 
 
@@ -679,7 +688,7 @@ class AuditOrchestratorService:
                 raise
             return AuditReportResponse(
                 task_id=task_id,
-                message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。",
+                message="报告已生成，可下载标记版、详情版 Excel 和 ZIP。",
                 status="ready",
                 available=True,
                 downloads=["marked", "detailed", "zip"],
@@ -688,7 +697,7 @@ class AuditOrchestratorService:
         if task.get("report_bundle") or self._has_persisted_report_bundle(current_user.id, task_id):
             return AuditReportResponse(
                 task_id=task_id,
-                message="报告已生成，可下载标记版 Excel、详情版 Excel 和 ZIP。",
+                message="报告已生成，可下载标记版、详情版 Excel 和 ZIP。",
                 status="ready",
                 available=True,
                 downloads=["marked", "detailed", "zip"],
@@ -1735,7 +1744,7 @@ class AuditOrchestratorService:
             await self._finalize_cancel(task)
         except AppError as exc:
             task["status"] = "failed"
-            task["message"] = _safe_user_facing_task_message(exc.message)
+            task["message"] = _safe_user_facing_task_message(getattr(exc, "message_text", exc.message))
             task["updated_at"] = datetime.now(timezone.utc)
         except Exception as exc:  # pragma: no cover
             logger.exception("Audit task %s failed with an unexpected exception.", task_id)
@@ -2060,7 +2069,7 @@ class AuditOrchestratorService:
 
         paths: dict[str, str] = {}
         content_types = {
-            "marked": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "marked": "application/zip",
             "detailed": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "zip": "application/zip",
         }
@@ -2205,14 +2214,24 @@ class AuditOrchestratorService:
                 file_obj = bundle[bundle_key]
                 if hasattr(file_obj, "seek"):
                     file_obj.seek(0)
+                if report_type == "marked":
+                    report_bytes = self._report_bytes_from_object(file_obj)
+                    if not self._is_marked_only_zip(report_bytes):
+                        self._raise_marked_download_unavailable("LEGACY_TASK_NO_MARKED_WORKBOOK")
+                    if hasattr(file_obj, "seek"):
+                        file_obj.seek(0)
                 return file_obj, filename, media_type
+            if report_type == "marked" and bundle:
+                self._raise_marked_download_unavailable(self._marked_report_reason_code_for_task(task))
 
         report_paths = None
+        found_history_record = False
         if task and task.get("user_id") == current_user.id and task.get("report_paths"):
             report_paths = task["report_paths"]
         elif self.repo is not None:
             history_record = self.repo.get_audit_history_by_task_id(current_user.id, task_id)
             if history_record:
+                found_history_record = True
                 report_paths = history_record.get("report_paths")
 
         if report_paths and self.repo is not None:
@@ -2220,9 +2239,85 @@ class AuditOrchestratorService:
             if storage_path:
                 file_bytes = self.repo.download_report_file(_AUDIT_REPORT_BUCKET, storage_path)
                 if file_bytes:
+                    if report_type == "marked":
+                        if self._is_marked_only_zip(file_bytes):
+                            return io.BytesIO(file_bytes), filename, media_type
+                        if self._is_marked_workbook_path(str(storage_path)):
+                            return self._build_single_marked_workbook_zip(file_bytes, str(storage_path)), filename, media_type
+                        self._raise_marked_download_unavailable("LEGACY_TASK_NO_MARKED_WORKBOOK")
                     return io.BytesIO(file_bytes), filename, media_type
+            if report_type == "marked":
+                self._raise_marked_download_unavailable("LEGACY_TASK_NO_MARKED_WORKBOOK")
+
+        if report_type == "marked":
+            if task and task.get("user_id") == current_user.id:
+                self._raise_marked_download_unavailable(self._marked_report_reason_code_for_task(task))
+            if found_history_record:
+                self._raise_marked_download_unavailable("LEGACY_TASK_NO_MARKED_WORKBOOK")
 
         raise AppError("报告文件暂不可用，可能已过期或尚未生成。请重新运行审核。", status_code=404)
+
+    @staticmethod
+    def _is_marked_only_zip(report_bytes: bytes | None) -> bool:
+        if not report_bytes:
+            return False
+        try:
+            with zipfile.ZipFile(io.BytesIO(report_bytes)) as zf:
+                names = zf.namelist()
+        except zipfile.BadZipFile:
+            return False
+        return bool(names) and all(
+            name.startswith("标记版/审核标记版-") and name.endswith(".xlsx") and not name.endswith("/")
+            for name in names
+        )
+
+    @staticmethod
+    def _is_marked_workbook_path(storage_path: str) -> bool:
+        filename = Path(storage_path).name
+        return filename.startswith("审核标记版-") and filename.endswith(".xlsx")
+
+    @staticmethod
+    def _build_single_marked_workbook_zip(file_bytes: bytes, storage_path: str) -> io.BytesIO:
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"标记版/{Path(storage_path).name}", file_bytes)
+        archive.seek(0)
+        return archive
+
+    @staticmethod
+    def _raise_marked_download_unavailable(reason_code: str) -> None:
+        message = _MARKED_DOWNLOAD_MESSAGES.get(reason_code) or _MARKED_DOWNLOAD_MESSAGES["MARKED_REPORT_UNAVAILABLE"]
+        raise AppError(message, status_code=409, reason_code=reason_code)
+
+    def _marked_report_reason_code_for_task(self, task: dict[str, Any]) -> str:
+        target_extensions: list[str] = []
+        for item in task.get("target_files", []):
+            if not isinstance(item, dict):
+                continue
+            file_id = str(item.get("file_id") or item.get("id") or "")
+            record = self.store.files.get(file_id, {}) if file_id else {}
+            extension = self._file_extension({**record, **item})
+            if extension:
+                target_extensions.append(extension)
+        if any(extension == "xlsx" for extension in target_extensions):
+            return "NO_MARKED_WORKBOOK"
+        if target_extensions and all(extension != "xlsx" for extension in target_extensions):
+            return "ONLY_UNSUPPORTED_FILES"
+
+        original_xlsx_paths = task.get("original_xlsx_paths")
+        if isinstance(original_xlsx_paths, dict) and any(str(path or "").strip() for path in original_xlsx_paths.values()):
+            return "NO_MARKED_WORKBOOK"
+        if task.get("status") == "completed":
+            return "NO_MARKABLE_XLSX"
+        return "MARKED_REPORT_UNAVAILABLE"
+
+    @staticmethod
+    def _file_extension(file_record: dict[str, Any]) -> str:
+        extension = str(file_record.get("extension") or "").strip().lower().lstrip(".")
+        if extension:
+            return extension
+        filename = str(file_record.get("filename") or file_record.get("name") or "")
+        return Path(filename).suffix.lower().lstrip(".")
 
     @staticmethod
     def _build_download_filename(
