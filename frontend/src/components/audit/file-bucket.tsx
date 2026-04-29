@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select } from "@/components/ui/select";
+import { getFileMarkBadge, type FileMarkBadgeTone } from "@/lib/file-mark-badge";
 
 import type { AuditBucketFile, AuditDocumentType } from "@/components/audit/types";
 
@@ -25,6 +26,12 @@ const documentTypeOptions: Array<{ label: string; value: AuditDocumentType }> = 
   { label: "其他单据", value: "other" }
 ];
 
+const markBadgeToneClass: Record<FileMarkBadgeTone, string> = {
+  green: "bg-[#86efac] text-ink",
+  yellow: "bg-secondary text-ink",
+  gray: "bg-paper text-ink"
+};
+
 type FileBucketProps = {
   title: string;
   description: string;
@@ -38,6 +45,7 @@ type FileBucketProps = {
   disableHint?: string | null;
   busyFileIds?: string[];
   allowDocumentType?: boolean;
+  showMarkingHint?: boolean;
   uploadLabel?: string;
   onUpload: (files: FileList) => void;
   onRemove: (fileId: string) => void;
@@ -57,6 +65,7 @@ export function FileBucket({
   disableHint = null,
   busyFileIds = [],
   allowDocumentType = false,
+  showMarkingHint = false,
   uploadLabel = "上传文件",
   onUpload,
   onRemove,
@@ -66,6 +75,7 @@ export function FileBucket({
     <div className="space-y-3">
       {files.map((file) => {
         const fileBusy = busyFileIds.includes(file.id);
+        const markBadge = getFileMarkBadge(file.filename);
 
         return (
           <div
@@ -79,6 +89,12 @@ export function FileBucket({
                   <Badge variant="muted">{file.detected_type}</Badge>
                   <Badge variant="secondary">
                     {(file.size_bytes / 1024).toFixed(1)} KB
+                  </Badge>
+                  <Badge
+                    variant="neutral"
+                    className={markBadgeToneClass[markBadge.tone]}
+                  >
+                    {markBadge.label}
                   </Badge>
                   {allowDocumentType ? (
                     <Badge variant="neutral">
@@ -150,6 +166,24 @@ export function FileBucket({
         {disabled && disableHint ? (
           <div className="issue-yellow p-4">
             <p className="text-sm font-bold leading-6">{disableHint}</p>
+          </div>
+        ) : null}
+
+        {showMarkingHint ? (
+          <div className="border-4 border-ink bg-canvas p-3 text-sm font-black leading-6 shadow-neo-sm">
+            <p>推荐上传 Excel（.xlsx）格式。</p>
+            <p>
+              上传 .xlsx，系统可在原单据上直接用红/黄/蓝标出问题单元格，生成“标记版”报告。
+            </p>
+            <p>
+              .xls / .xlsm 第一版不支持原表标记版，建议另存为 .xlsx 后再上传。
+            </p>
+            <p>
+              PDF / Word / 图片不会生成原文视觉标注版，只在详情版和页面报告里说明问题。
+            </p>
+            <p>
+              完整问题仍以页面报告和详情版 Excel 为准。
+            </p>
           </div>
         ) : null}
 

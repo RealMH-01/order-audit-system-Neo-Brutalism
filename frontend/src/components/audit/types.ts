@@ -89,6 +89,20 @@ export type AuditIssue = {
   matched_po_value?: string | null;
   observed_value?: string | null;
   source_excerpt?: string | null;
+  locations?: Array<Record<string, unknown>>;
+  location_hints?: string[];
+  mark_status?:
+    | "marked"
+    | "not_applicable"
+    | "unlocated"
+    | "unsupported_file_type"
+    | "excel_parse_failed"
+    | "mark_failed"
+    | "multiple_candidates"
+    | "low_confidence"
+    | (string & {});
+  mark_reason_code?: string | null;
+  mark_reason?: string | null;
 };
 
 export type AuditRuleSnapshotSection = {

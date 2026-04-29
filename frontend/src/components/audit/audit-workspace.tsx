@@ -293,10 +293,40 @@ const REPORT_DOWNLOAD_BUTTONS: Array<{
   type: AuditReportType;
   label: string;
 }> = [
-  { type: "marked", label: "下载标记版 Excel" },
+  { type: "marked", label: "下载旧版标记汇总 Excel" },
   { type: "detailed", label: "下载详情版 Excel" },
-  { type: "zip", label: "下载全部报告 ZIP" }
+  { type: "zip", label: "下载 ZIP（含标记版 + 详情版）" }
 ];
+
+function resolveMarkedIssueSummary(result: AuditResultResponse | null) {
+  if (!result || result.issues.length === 0) {
+    return null;
+  }
+
+  const hasMarkStatus = result.issues.some(
+    (issue) => typeof issue.mark_status === "string" && issue.mark_status.trim().length > 0
+  );
+
+  if (!hasMarkStatus) {
+    return null;
+  }
+
+  const markedCount = result.issues.filter((issue) => issue.mark_status === "marked").length;
+  const textOnlyCount = result.issues.filter(
+    (issue) =>
+      issue.mark_status === "not_applicable" ||
+      issue.mark_status === "unsupported_file_type" ||
+      issue.mark_status === "unlocated"
+  ).length;
+  const otherCount = Math.max(0, result.issues.length - markedCount - textOnlyCount);
+
+  return {
+    total: result.issues.length,
+    markedCount,
+    textOnlyCount,
+    otherCount
+  };
+}
 
 function resolveReportState(
   report: AuditReportResponse | null,
@@ -442,6 +472,7 @@ export function AuditWorkspace() {
     () => resolveReportState(reportInfo, taskId, taskStatus),
     [reportInfo, taskId, taskStatus]
   );
+  const markedIssueSummary = useMemo(() => resolveMarkedIssueSummary(result), [result]);
   const hasAnyKey =
     profile?.has_deepseek_key || profile?.has_openai_key || profile?.has_zhipu_key || false;
   const activeFileIds = useMemo(
@@ -1471,6 +1502,7 @@ export function AuditWorkspace() {
               limitHint={`${AUDIT_MULTI_UPLOAD_LIMIT_HINT} 启动审核前至少需要 1 个待审核文件。`}
               multiple
               allowDocumentType
+              showMarkingHint
               uploading={uploadingKey === "target"}
               disabled={workspaceDisabled}
               disableHint={bucketDisableHint}
@@ -1729,6 +1761,38 @@ export function AuditWorkspace() {
                 <p className="mt-2 text-sm font-bold leading-6">
                   {reportState.description}
                 </p>
+              </div>
+
+              <div className="border-4 border-ink bg-canvas p-4 shadow-neo-sm">
+                {markedIssueSummary ? (
+                  <div className="space-y-2 text-sm font-bold leading-6">
+                    <p className="text-xs font-black uppercase tracking-[0.14em]">
+                      标记版摘要
+                    </p>
+                    <p>本次共发现 {markedIssueSummary.total} 个问题：</p>
+                    <p>✓ 已标记到原表：{markedIssueSummary.markedCount} 个</p>
+                    <p>· 建议/资料类（仅详情版）：{markedIssueSummary.textOnlyCount} 个</p>
+                    <p>· 其他状态：{markedIssueSummary.otherCount} 个</p>
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold leading-6">
+                    ZIP 中包含详情版 Excel；如本次上传了可标记的 .xlsx 文件，ZIP 的“标记版/”目录中还会包含原表标记副本。
+                  </p>
+                )}
+                <div className="mt-3 space-y-2 border-t-4 border-ink pt-3 text-sm font-bold leading-6">
+                  <p>
+                    原表标记版需要下载 ZIP 包，并在 ZIP 里的“标记版/”目录中查看。
+                  </p>
+                  <p>
+                    单独的“旧版标记汇总 Excel”仍是旧汇总表语义，不代表多份原表标记副本；真正的原表标记副本以 ZIP 为准。
+                  </p>
+                  <p>
+                    完整问题仍以页面报告和详情版 Excel 为准；PDF / Word / 图片不会生成原文视觉标注版。
+                  </p>
+                  <p>
+                    .xls / .xlsm 第一版不支持原表标记版，建议另存为 .xlsx 后再上传。
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-3">
