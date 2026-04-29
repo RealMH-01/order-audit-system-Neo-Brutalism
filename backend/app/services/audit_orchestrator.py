@@ -8,8 +8,11 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -33,6 +36,7 @@ from app.models.schemas import (
     FeatureStatus,
 )
 from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
+from app.services.evidence_locator import build_cell_index
 from app.services.file_parser import FileParserService
 from app.services.llm_client import LLMClientService
 from app.services.report_filename import build_report_filename, pick_report_identifier
@@ -332,6 +336,9 @@ class AuditOrchestratorService:
             "full_result": None,
             "report_bundle": None,
             "report_paths": None,
+            "audit_temp_dir": None,
+            "original_xlsx_paths": {},
+            "cell_indexes": {},
         }
         self.store.audit_tasks[task_id]["_async_task"] = asyncio.create_task(self._run_task(task_id))
         return AuditStartResponse(task_id=task_id, status="queued", message="审核任务已创建，等待处理。")
@@ -362,6 +369,21 @@ class AuditOrchestratorService:
         reference_records = [self._ensure_runtime_file(file_id) for file_id in task["reference_file_ids"]]
 
         targets = list(task["target_files"])
+        target_records_by_id = {
+            str(item["file_id"]): self._ensure_runtime_file(item["file_id"])
+            for item in targets
+            if isinstance(item, dict) and item.get("file_id")
+        }
+        self._prepare_xlsx_task_context(
+            task,
+            [
+                po_record,
+                *target_records_by_id.values(),
+                *prev_records,
+                *([template_record] if template_record else []),
+                *reference_records,
+            ],
+        )
         completed = 0
         progress_lock = asyncio.Lock()
 
@@ -462,18 +484,34 @@ class AuditOrchestratorService:
                 [i for i in aggregate_result.get("issues", []) if isinstance(i, dict)]
             )
 
+        uploaded_target_records = [
+            target_records_by_id.get(str(item["file_id"])) or self._ensure_runtime_file(item["file_id"])
+            for item in targets
+            if isinstance(item, dict) and item.get("file_id")
+        ]
+        original_xlsx_paths = {
+            str(file_id): str(path)
+            for file_id, path in dict(task.get("original_xlsx_paths") or {}).items()
+            if path and Path(str(path)).exists()
+        }
+        logger.info(
+            "AUDIT_XLSX_AVAILABLE_FOR_REPORT task_id=%s original_xlsx_count=%d paths=%s",
+            task_id,
+            len(original_xlsx_paths),
+            original_xlsx_paths,
+        )
         report_context = {
             "baseline_document": po_record,
-            "uploaded_files": [
-                po_record,
-                *[
-                    self._ensure_runtime_file(item["file_id"])
-                    for item in targets
-                    if isinstance(item, dict) and item.get("file_id")
-                ],
-            ],
+            "uploaded_files": [po_record, *uploaded_target_records],
+            "original_xlsx_paths": original_xlsx_paths,
+            "cell_indexes": dict(task.get("cell_indexes") or {}),
         }
         report_bundle = self.report_generator.generate_report_bundle(task_id, aggregate_result, report_context)
+        logger.info(
+            "AUDIT_XLSX_REPORT_GENERATED task_id=%s original_xlsx_count=%d",
+            task_id,
+            len(original_xlsx_paths),
+        )
 
         return {
             "aggregate_result": aggregate_result,
@@ -1405,6 +1443,70 @@ class AuditOrchestratorService:
                 issue["message"] = str(issue.get("finding", ""))
         return parsed_result
 
+    def _prepare_xlsx_task_context(
+        self,
+        task: dict[str, Any],
+        file_records: list[dict[str, Any]],
+    ) -> None:
+        """Write original .xlsx files to the task temp dir and build in-memory cell indexes."""
+
+        task_id = str(task.get("task_id") or "unknown")
+        cell_indexes = task.setdefault("cell_indexes", {})
+        original_xlsx_paths = task.setdefault("original_xlsx_paths", {})
+
+        unique_records: dict[str, dict[str, Any]] = {}
+        for record in file_records:
+            if not isinstance(record, dict):
+                continue
+            file_id = str(record.get("id") or "")
+            if file_id:
+                unique_records[file_id] = record
+
+        for file_id, record in unique_records.items():
+            extension = str(record.get("extension") or Path(str(record.get("filename", ""))).suffix.lstrip(".")).lower()
+            if extension != "xlsx":
+                cell_indexes.setdefault(file_id, [])
+                continue
+
+            raw_bytes = record.get("raw_bytes")
+            if not isinstance(raw_bytes, (bytes, bytearray)):
+                logger.warning(
+                    "XLSX original bytes are unavailable for task %s file_id=%s filename=%s",
+                    task_id,
+                    file_id,
+                    record.get("filename"),
+                )
+                cell_indexes.setdefault(file_id, [])
+                continue
+
+            temp_dir = self._ensure_task_temp_dir(task)
+            filename = Path(str(record.get("filename") or "workbook.xlsx")).name or "workbook.xlsx"
+            safe_filename = re.sub(r"[^A-Za-z0-9._-]+", "_", filename)
+            xlsx_path = Path(temp_dir) / f"{file_id}_{safe_filename}"
+            if not xlsx_path.exists():
+                xlsx_path.write_bytes(bytes(raw_bytes))
+
+            path_text = str(xlsx_path)
+            original_xlsx_paths[file_id] = path_text
+            record["original_xlsx_path"] = path_text
+
+            if file_id not in cell_indexes:
+                cell_indexes[file_id] = build_cell_index(
+                    path_text,
+                    file_id=file_id,
+                    file_name=str(record.get("filename") or filename),
+                )
+
+    @staticmethod
+    def _ensure_task_temp_dir(task: dict[str, Any]) -> str:
+        temp_dir = task.get("audit_temp_dir")
+        if temp_dir and Path(str(temp_dir)).exists():
+            return str(temp_dir)
+
+        task_id = str(task.get("task_id") or "unknown")
+        task["audit_temp_dir"] = tempfile.mkdtemp(prefix=f"audit_{task_id}_")
+        return str(task["audit_temp_dir"])
+
     def _post_process_force_downgrade(
         self,
         parsed_result: dict[str, Any],
@@ -1563,6 +1665,11 @@ class AuditOrchestratorService:
             task["status"] = "failed"
             task["message"] = _USER_FACING_AUDIT_SYSTEM_ERROR_MESSAGE
             task["updated_at"] = datetime.now(timezone.utc)
+        finally:
+            temp_dir = task.get("audit_temp_dir")
+            if temp_dir:
+                shutil.rmtree(str(temp_dir), ignore_errors=True)  # AUDIT_TEMP_CLEANUP
+                task["audit_temp_dir"] = None
 
     @staticmethod
     def _result_rule_snapshot_from_task(task: dict[str, Any]) -> dict[str, Any] | None:

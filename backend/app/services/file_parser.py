@@ -183,7 +183,7 @@ class FileParserService:
         parsed_payload = parser(file_bytes, filename)
 
         preview_text = self._build_preview_text(parsed_payload.get("text", ""), detected_type)
-        keep_raw = bool(parsed_payload.get("needs_ocr")) and not parsed_payload.get("page_images")
+        keep_raw = (extension == "xlsx") or (bool(parsed_payload.get("needs_ocr")) and not parsed_payload.get("page_images"))
         return {
             "id": file_id or str(uuid4()),
             "filename": filename,
