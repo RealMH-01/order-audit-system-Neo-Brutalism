@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Megaphone, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,11 @@ import {
   ANNOUNCEMENT_CATEGORY_LABELS,
   type AnnouncementCategory
 } from "@/lib/api/announcements";
-import { createAdminAnnouncement } from "@/lib/api/admin-announcements";
+import {
+  createAdminAnnouncement,
+  updateAdminAnnouncement,
+  type AdminAnnouncementItem
+} from "@/lib/api/admin-announcements";
 import { normalizeApiErrorDetail } from "@/lib/api-error";
 
 type AnnouncementDraft = {
@@ -21,6 +25,8 @@ type AnnouncementDraft = {
   category: AnnouncementCategory;
   isPublished: boolean;
 };
+
+type AnnouncementEditorMode = "create" | "edit";
 
 const emptyDraft: AnnouncementDraft = {
   title: "",
@@ -32,6 +38,19 @@ const emptyDraft: AnnouncementDraft = {
 const categoryOptions = Object.entries(ANNOUNCEMENT_CATEGORY_LABELS) as Array<
   [AnnouncementCategory, string]
 >;
+
+function toDraft(announcement: AdminAnnouncementItem | null): AnnouncementDraft {
+  if (!announcement) {
+    return emptyDraft;
+  }
+
+  return {
+    title: announcement.title,
+    content: announcement.content,
+    category: announcement.category,
+    isPublished: announcement.is_published
+  };
+}
 
 function getErrorStatus(error: unknown) {
   if (typeof error === "object" && error && "status" in error) {
@@ -67,16 +86,32 @@ export function AnnouncementEditorDialog({
   open,
   token,
   onClose,
-  onSuccess
+  onSuccess,
+  mode = "create",
+  initialAnnouncement = null,
+  onSaved
 }: {
   open: boolean;
   token: string | null;
   onClose: () => void;
-  onSuccess: (message: string) => void;
+  onSuccess?: (message: string) => void;
+  mode?: AnnouncementEditorMode;
+  initialAnnouncement?: AdminAnnouncementItem | null;
+  onSaved?: (message: string) => void;
 }) {
-  const [draft, setDraft] = useState<AnnouncementDraft>(emptyDraft);
+  const [draft, setDraft] = useState<AnnouncementDraft>(() => toDraft(initialAnnouncement));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const isEdit = mode === "edit";
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setDraft(isEdit ? toDraft(initialAnnouncement) : emptyDraft);
+    setError(null);
+  }, [initialAnnouncement, isEdit, open]);
 
   const closeDialog = () => {
     if (!saving) {
@@ -103,14 +138,36 @@ export function AnnouncementEditorDialog({
     setError(null);
 
     try {
-      await createAdminAnnouncement(token, {
-        title: draft.title.trim(),
-        content: draft.content.trim(),
-        category: draft.category,
-        is_published: draft.isPublished
-      });
-      setDraft(emptyDraft);
-      onSuccess(draft.isPublished ? "公告已发布，可在平台更新页查看。" : "公告草稿已保存。");
+      if (isEdit) {
+        if (!initialAnnouncement) {
+          setError("缺少要编辑的公告，请刷新列表后重试。");
+          return;
+        }
+
+        await updateAdminAnnouncement(token, initialAnnouncement.id, {
+          title: draft.title.trim(),
+          content: draft.content.trim(),
+          category: draft.category,
+          is_published: draft.isPublished
+        });
+      } else {
+        await createAdminAnnouncement(token, {
+          title: draft.title.trim(),
+          content: draft.content.trim(),
+          category: draft.category,
+          is_published: draft.isPublished
+        });
+        setDraft(emptyDraft);
+      }
+
+      const message = isEdit
+        ? draft.isPublished
+          ? "公告已保存并发布。"
+          : "公告已保存为草稿。"
+        : draft.isPublished
+          ? "公告已发布，可在平台更新页查看。"
+          : "公告草稿已保存。";
+      (onSaved ?? onSuccess)?.(message);
       onClose();
     } catch (submitError) {
       setError(normalizeAnnouncementError(submitError));
@@ -123,8 +180,12 @@ export function AnnouncementEditorDialog({
     <Dialog
       open={open}
       onClose={closeDialog}
-      title="发布更新公告"
-      description="发布后的公告会展示在普通用户的平台更新页。"
+      title={isEdit ? "编辑更新公告" : "发布更新公告"}
+      description={
+        isEdit
+          ? "修改公告内容和发布状态，保存后会同步到管理员公告列表。"
+          : "发布后的公告会展示在普通用户的平台更新页。"
+      }
       footer={
         <>
           <Button onClick={() => void saveAnnouncement()} disabled={saving}>
@@ -133,7 +194,13 @@ export function AnnouncementEditorDialog({
             ) : (
               <Save size={18} strokeWidth={3} />
             )}
-            {saving ? "提交中..." : draft.isPublished ? "发布公告" : "保存草稿"}
+            {saving
+              ? "提交中..."
+              : isEdit
+                ? "保存公告"
+                : draft.isPublished
+                  ? "发布公告"
+                  : "保存草稿"}
           </Button>
           <Button variant="outline" onClick={closeDialog} disabled={saving}>
             取消
@@ -198,7 +265,7 @@ export function AnnouncementEditorDialog({
           立即发布
         </label>
         <p className="text-sm font-bold leading-6">
-          关闭后只保存草稿，本轮不提供草稿列表或二次发布入口。
+          关闭后会保存为草稿，可稍后在公告管理页继续编辑或发布。
         </p>
       </DialogSection>
 

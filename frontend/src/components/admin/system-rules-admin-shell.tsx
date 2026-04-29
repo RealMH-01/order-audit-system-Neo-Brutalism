@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -18,7 +19,7 @@ import {
 
 import { AnnouncementEditorDialog } from "@/components/admin/announcement-editor-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -474,6 +475,13 @@ export function SystemRulesAdminShell() {
       <HeaderBlock
         action={
           <>
+            <Link
+              href="/admin/announcements"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              <Megaphone size={18} strokeWidth={3} />
+              公告管理
+            </Link>
             <Button variant="outline" onClick={openAnnouncementDialog}>
               <Megaphone size={18} strokeWidth={3} />
               发布更新公告
