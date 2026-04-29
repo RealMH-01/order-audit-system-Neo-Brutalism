@@ -35,6 +35,7 @@ from app.models.schemas import (
 from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
 from app.services.file_parser import FileParserService
 from app.services.llm_client import LLMClientService
+from app.services.report_filename import build_report_filename, pick_report_identifier
 from app.services.report_generator import ReportGeneratorService
 from app.services.runtime_store import RuntimeStore
 from app.services.template_library import TemplateLibraryService
@@ -146,17 +147,20 @@ _CORE_IDENTIFIER_SPECS = (
 _REPORT_DOWNLOADS = {
     "marked": {
         "bundle_key": "marked_report",
-        "filename": "audit_marked_{task_id}.xlsx",
+        "kind": "标记版",
+        "ext": "xlsx",
         "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     },
     "detailed": {
         "bundle_key": "detailed_report",
-        "filename": "audit_detailed_{task_id}.xlsx",
+        "kind": "详情版",
+        "ext": "xlsx",
         "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     },
     "zip": {
         "bundle_key": "report_zip",
-        "filename": "audit_reports_{task_id}.zip",
+        "kind": "报告",
+        "ext": "zip",
         "media_type": "application/zip",
     },
 }
@@ -458,7 +462,18 @@ class AuditOrchestratorService:
                 [i for i in aggregate_result.get("issues", []) if isinstance(i, dict)]
             )
 
-        report_bundle = self.report_generator.generate_report_bundle(task_id, aggregate_result)
+        report_context = {
+            "baseline_document": po_record,
+            "uploaded_files": [
+                po_record,
+                *[
+                    self._ensure_runtime_file(item["file_id"])
+                    for item in targets
+                    if isinstance(item, dict) and item.get("file_id")
+                ],
+            ],
+        }
+        report_bundle = self.report_generator.generate_report_bundle(task_id, aggregate_result, report_context)
 
         return {
             "aggregate_result": aggregate_result,
@@ -1979,10 +1994,12 @@ class AuditOrchestratorService:
             raise AppError("不支持的报告类型。", status_code=400)
 
         bundle_key = spec["bundle_key"]
-        filename = spec["filename"].format(task_id=task_id)
+        filename = self._build_download_filename(report_type, spec, task_id, None)
         media_type = spec["media_type"]
 
         task = self.store.audit_tasks.get(task_id)
+        if task and task.get("user_id") == current_user.id:
+            filename = self._build_download_filename(report_type, spec, task_id, task)
         if task and task.get("user_id") == current_user.id:
             bundle = task.get("report_bundle")
             if bundle and bundle.get(bundle_key):
@@ -2007,6 +2024,23 @@ class AuditOrchestratorService:
                     return io.BytesIO(file_bytes), filename, media_type
 
         raise AppError("报告文件暂不可用，可能已过期或尚未生成。请重新运行审核。", status_code=404)
+
+    @staticmethod
+    def _build_download_filename(
+        report_type: str,
+        report_spec: dict[str, str],
+        task_id: str,
+        task: dict[str, Any] | None,
+    ) -> str:
+        if isinstance(task, dict):
+            bundle = task.get("report_bundle")
+            if isinstance(bundle, dict):
+                filenames = bundle.get("filenames")
+                if isinstance(filenames, dict) and str(filenames.get(report_type) or "").strip():
+                    return str(filenames[report_type])
+
+        identifier = pick_report_identifier(task or {}, task_id)
+        return build_report_filename(str(report_spec["kind"]), identifier, str(report_spec["ext"]))
 
     @staticmethod
     def _normalize_affiliate_text(value: str) -> str:

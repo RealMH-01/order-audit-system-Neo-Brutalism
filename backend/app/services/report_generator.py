@@ -8,6 +8,7 @@ from typing import Any
 
 from app.errors import AppError
 from app.models.schemas import FeatureStatus
+from app.services.report_filename import build_report_filename, pick_report_identifier
 
 try:
     from openpyxl import Workbook
@@ -131,27 +132,52 @@ class ReportGeneratorService:
         issue_sheet.freeze_panes = "A2"
         return self._workbook_to_bytes(workbook)
 
-    def generate_report_zip(self, task_id: str, audit_result: dict[str, Any]) -> io.BytesIO:
+    def generate_report_zip(
+        self,
+        task_id: str,
+        audit_result: dict[str, Any],
+        audit_context: Any | None = None,
+        filenames: dict[str, str] | None = None,
+    ) -> io.BytesIO:
         """把面向用户的标记版和详情版报告打包为 ZIP。"""
 
         marked = self.generate_marked_report(task_id, audit_result)
         detailed = self.generate_detail_report(task_id, audit_result)
+        filenames = filenames or self.build_report_filenames(task_id, audit_context)
         archive = io.BytesIO()
 
         with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{task_id}_审核问题标记汇总.xlsx", marked.getvalue())
-            zf.writestr(f"{task_id}_审核详情报告.xlsx", detailed.getvalue())
+            zf.writestr(filenames["marked"], marked.getvalue())
+            zf.writestr(filenames["detailed"], detailed.getvalue())
 
         archive.seek(0)
         return archive
 
-    def generate_report_bundle(self, task_id: str, audit_result: dict[str, Any]) -> dict[str, io.BytesIO]:
+    def generate_report_bundle(
+        self,
+        task_id: str,
+        audit_result: dict[str, Any],
+        audit_context: Any | None = None,
+    ) -> dict[str, Any]:
         """返回一组可直接下载或持久化的报告二进制对象。"""
 
+        filenames = self.build_report_filenames(task_id, audit_context)
         return {
             "marked_report": self.generate_marked_report(task_id, audit_result),
             "detailed_report": self.generate_detail_report(task_id, audit_result),
-            "report_zip": self.generate_report_zip(task_id, audit_result),
+            "report_zip": self.generate_report_zip(task_id, audit_result, audit_context, filenames),
+            "filenames": filenames,
+        }
+
+    @staticmethod
+    def build_report_filenames(task_id: str, audit_context: Any | None = None) -> dict[str, str]:
+        """Build user-facing names for all generated report artifacts."""
+
+        identifier = pick_report_identifier(audit_context or {}, task_id)
+        return {
+            "marked": build_report_filename("标记版", identifier, "xlsx"),
+            "detailed": build_report_filename("详情版", identifier, "xlsx"),
+            "zip": build_report_filename("报告", identifier, "zip"),
         }
 
     def _new_workbook(self):

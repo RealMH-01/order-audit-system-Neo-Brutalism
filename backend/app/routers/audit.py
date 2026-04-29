@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
@@ -25,10 +27,22 @@ def _build_report_download_response(
     report_type: str,
 ) -> StreamingResponse:
     file_obj, filename, media_type = service.get_report_download(current_user, task_id, report_type)
+    ascii_fallbacks = {
+        "marked": "audit_marked.xlsx",
+        "detailed": "audit_detailed.xlsx",
+        "zip": "audit_report.zip",
+    }
+    ascii_fallback = ascii_fallbacks.get(report_type, "audit_report.xlsx")
+    utf8_name = quote(filename)
     return StreamingResponse(
         file_obj,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{utf8_name}"
+            )
+        },
     )
 
 
