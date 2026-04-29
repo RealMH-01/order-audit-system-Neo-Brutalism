@@ -603,7 +603,7 @@ export function SettingsShell() {
               <Input
                 value={state.displayName}
                 onChange={(event) => updateField("displayName", event.target.value)}
-                placeholder="例如：订单审核组 / 张三 / 业务审核团队"
+                placeholder="例如：订单审核组 / 张三 / 业务审核账号"
               />
             </label>
           </CardContent>
@@ -742,16 +742,16 @@ export function SettingsShell() {
 
       <Card className="bg-paper">
         <CardHeader>
-          <Badge variant="accent">规则模板</Badge>
-          <CardTitle>自定义规则管理</CardTitle>
+          <Badge variant="accent">自定义规则集</Badge>
+          <CardTitle>自定义规则集管理</CardTitle>
           <CardDescription>
-            多套自定义规则集请在「规则模板」页面创建和维护。审核时选择其中一套使用。
+            多套自定义规则集请在「自定义规则集」页面创建和维护。审核时选择其中一套使用。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="secondary" onClick={() => router.push("/templates")}>
             <ArrowRight size={18} strokeWidth={3} />
-            前往规则模板页
+            前往自定义规则集页面
           </Button>
         </CardContent>
       </Card>

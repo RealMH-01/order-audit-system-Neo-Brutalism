@@ -6,7 +6,7 @@ export default function LoginPage() {
       <AuthPanel
         mode="login"
         title="登录审核系统"
-        description="这里已接到当前可用的 auth 接口。登录成功后会按现有系统状态进入向导或审核工作台。"
+        description="登录成功后会根据你的配置情况，进入配置引导或审核工作台。"
       />
     </main>
   );

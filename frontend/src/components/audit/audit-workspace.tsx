@@ -1550,7 +1550,7 @@ export function AuditWorkspace() {
                     size="sm"
                     onClick={() => router.push("/templates")}
                   >
-                    去规则模板
+                    去自定义规则集
                   </Button>
                 </div>
 
@@ -1593,7 +1593,7 @@ export function AuditWorkspace() {
                 {!templatesLoading && auditTemplates.length === 0 ? (
                   <div className="issue-yellow mt-3 p-4">
                     <p className="text-sm font-bold leading-6">
-                      还没有自定义规则集，可先前往规则模板页创建。未选择规则集时，将仅使用系统硬约束规则和公司信息。
+                      还没有自定义规则集，可先前往自定义规则集页面创建。未选择规则集时，将仅使用系统硬约束规则和公司信息。
                     </p>
                   </div>
                 ) : null}

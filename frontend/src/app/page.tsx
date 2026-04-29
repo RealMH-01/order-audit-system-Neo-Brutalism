@@ -50,7 +50,7 @@ export default function HomePage() {
                 让订单审核从反复核对，变成清晰可追踪的风险判断。
               </h1>
               <p className="max-w-2xl text-base font-bold leading-7 md:text-lg">
-                Order Audit System 面向采购、销售、履约、外贸等场景，帮助团队把订单文件、业务规则和风险等级集中到一个可执行的审核流程里。
+                Order Audit System 面向采购、销售、履约、外贸等场景，帮助你把订单文件、业务规则和风险等级集中到一个可执行的审核流程里。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -102,9 +102,9 @@ export default function HomePage() {
 
       <section className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="border-4 border-ink bg-secondary p-6 shadow-neo-md">
-          <p className="text-sm font-black uppercase tracking-[0.18em]">For Teams</p>
+          <p className="text-sm font-black uppercase tracking-[0.18em]">For Work</p>
           <h2 className="mt-3 text-3xl font-black uppercase leading-none md:text-4xl">
-            更适合多人协作的多行业订单审核入口
+            更适合公司内部使用的多场景订单审核入口
           </h2>
         </div>
         <div className="border-4 border-ink bg-paper p-6 shadow-neo-md">

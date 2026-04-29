@@ -122,10 +122,10 @@ function formatDate(value?: string | null) {
 
 function validateReason(reason: string) {
   if (!reason.trim()) {
-    return "reason 不能为空。";
+    return "变更原因不能为空。";
   }
   if (reason.trim().length < 10) {
-    return "reason 至少填写 10 个字符，方便后续追踪变更原因。";
+    return "变更原因至少填写 10 个字符，方便后续追踪。";
   }
   return null;
 }
@@ -446,7 +446,7 @@ export function SystemRulesAdminShell() {
             </Badge>
             <CardTitle>无权限访问系统规则管理</CardTitle>
             <CardDescription>
-              当前账号不是管理员，不能查看新增、编辑、启用、停用或排序操作。真正权限以后端 403 为准。
+              当前账号不是管理员，不能查看新增、编辑、启用、停用或排序操作。最终权限以系统校验结果为准。
             </CardDescription>
           </CardHeader>
         </Card>
@@ -848,7 +848,7 @@ function ToggleRuleDialog({
       open={Boolean(draft)}
       onClose={onClose}
       title={disabling ? "停用系统规则" : "启用系统规则"}
-      description="启用或停用也会影响新审核，必须填写 reason 后才能确认。"
+      description="启用或停用也会影响新审核，必须填写变更原因后才能确认。"
       footer={
         <>
           <Button onClick={onSave} disabled={saving}>
