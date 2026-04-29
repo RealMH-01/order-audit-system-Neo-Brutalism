@@ -113,7 +113,7 @@ export function Navbar() {
         <nav
           className={cn(
             "hidden min-w-0 items-center justify-center gap-2 lg:flex xl:gap-3",
-            !isAuthenticated && "lg:translate-x-24 xl:translate-x-28 2xl:translate-x-32"
+            !isAuthenticated && "lg:translate-x-[29rem] xl:translate-x-[33rem] 2xl:translate-x-[37rem]"
           )}
         >
           {visibleNavItems.map((item) => (
