@@ -55,6 +55,7 @@ def generate_marked_copies(
     skipped = _group_skipped_file_issues(updated_issues, file_records, grouped)
     generated_paths: list[Path] = []
     summaries: list[dict] = []
+    used_output_names: set[str] = set()
 
     for file_id, entries in grouped.items():
         record = file_records.get(file_id, {"id": file_id})
@@ -83,7 +84,7 @@ def generate_marked_copies(
             summaries.append(summary)
             continue
 
-        copy_path = output_dir / _marked_filename(file_name, timestamp)
+        copy_path = _unique_marked_path(output_dir, _marked_filename(file_name, timestamp), used_output_names)
         try:
             shutil.copy2(source_path, copy_path)
             workbook = load_workbook(copy_path)
@@ -288,6 +289,18 @@ def _marked_filename(file_name: str, timestamp: str) -> str:
     stem = _sanitize_identifier(Path(file_name).stem)
     safe_timestamp = _sanitize_identifier(timestamp)
     return f"审核标记版-{stem}-{safe_timestamp}.xlsx"
+
+
+def _unique_marked_path(output_dir: Path, file_name: str, used_names: set[str]) -> Path:
+    candidate = file_name
+    stem = Path(file_name).stem
+    suffix = Path(file_name).suffix
+    counter = 2
+    while candidate.lower() in used_names or (output_dir / candidate).exists():
+        candidate = f"{stem}-{counter}{suffix}"
+        counter += 1
+    used_names.add(candidate.lower())
+    return output_dir / candidate
 
 
 def _sanitize_identifier(identifier: str) -> str:
