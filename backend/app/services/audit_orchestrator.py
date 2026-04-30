@@ -1149,6 +1149,49 @@ class AuditOrchestratorService:
                     )
         return fields
 
+    def _format_extracted_fields(self, label: str, extracted: dict[str, list[dict]]) -> str:
+        if not extracted:
+            return ""
+
+        display_names = {
+            "contract_no": "合同号",
+            "invoice_no": "发票号",
+            "po_no": "PO号/订单号",
+            "unit_price": "单价",
+            "quantity": "数量",
+            "amount": "金额",
+            "packing": "包装",
+            "currency": "币种",
+            "buyer": "买方",
+            "seller": "卖方",
+            "incoterm": "贸易术语",
+        }
+        lines: list[str] = []
+
+        for field_key, records in extracted.items():
+            if not isinstance(records, list):
+                continue
+
+            display_name = display_names.get(field_key, field_key)
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+
+                sheet = str(record.get("sheet") or "").strip()
+                cell = str(record.get("cell") or "").strip()
+                value = str(record.get("value") or "").strip()
+                if not value:
+                    continue
+
+                source = f"{sheet}!{cell}" if sheet and cell else "未知位置"
+                lines.append(f"{display_name}: {value} (来源: {source})")
+
+        if not lines:
+            return ""
+
+        title = f"【系统预提取关键字段：{label}】"
+        return "\n".join([title, *lines])
+
     @classmethod
     def _extract_key_fields(cls, text: str, *, source: str) -> dict[str, str]:
         fields: dict[str, str] = {}
