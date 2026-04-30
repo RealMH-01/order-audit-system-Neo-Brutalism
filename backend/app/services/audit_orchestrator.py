@@ -97,6 +97,22 @@ _EVIDENCE_FIELD_LABELS = {
     "quantity": ("Quantity", "quantity", "Qty", "qty", "数量"),
     "packing": ("Packing", "packing", "包装"),
     "amount": ("Amount", "amount", "Total Value", "total value", "Total", "total", "总金额", "金额"),
+    "currency": ("Currency", "currency", "币种", "币别", "CCY", "ccy"),
+    "buyer": ("Buyer", "buyer", "买方", "购买方", "Applicant", "applicant", "进口商", "Importer", "importer"),
+    "seller": (
+        "Seller",
+        "seller",
+        "卖方",
+        "供应商",
+        "Supplier",
+        "supplier",
+        "Beneficiary",
+        "beneficiary",
+        "出口商",
+        "Exporter",
+        "exporter",
+    ),
+    "incoterm": ("Incoterm", "incoterm", "贸易术语", "Trade Term", "trade term", "价格条件"),
 }
 
 _DOWNGRADE_ALLOWED_FIELDS = {
@@ -1109,6 +1125,29 @@ class AuditOrchestratorService:
                     lines.append(f"- {label}: {target_fields[key]}")
         lines.append("===")
         return "\n".join(lines)
+
+    def _extract_fields_from_cell_index(self, cell_index: list[dict]) -> dict[str, list[dict]]:
+        fields: dict[str, list[dict]] = {}
+        for record in cell_index:
+            sheet = str(record.get("sheet") or "")
+            cell = str(record.get("cell") or "")
+            value = str(record.get("value_str") or "").strip()
+            label = str(record.get("left_label") or "").strip()
+            if not value or not label:
+                continue
+
+            label_lower = label.lower()
+            for field_key, keywords in _EVIDENCE_FIELD_LABELS.items():
+                if any(keyword.lower() in label_lower for keyword in keywords):
+                    fields.setdefault(field_key, []).append(
+                        {
+                            "sheet": sheet,
+                            "cell": cell,
+                            "label": label,
+                            "value": value,
+                        }
+                    )
+        return fields
 
     @classmethod
     def _extract_key_fields(cls, text: str, *, source: str) -> dict[str, str]:
