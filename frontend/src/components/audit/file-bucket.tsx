@@ -32,6 +32,9 @@ const markBadgeToneClass: Record<FileMarkBadgeTone, string> = {
   gray: "bg-paper text-ink"
 };
 
+const legacyDocPreviewMessage =
+  "该文件为 .doc 格式，预览暂不可用。仍可参与审核，建议另存为 .docx / PDF / Excel 以获得更稳定的识别效果。";
+
 type FileBucketProps = {
   title: string;
   description: string;
@@ -76,6 +79,10 @@ export function FileBucket({
       {files.map((file) => {
         const fileBusy = busyFileIds.includes(file.id);
         const markBadge = getFileMarkBadge(file.filename);
+        const isLegacyDocFile = file.filename
+          .toLowerCase()
+          .trim()
+          .endsWith(".doc");
 
         return (
           <div
@@ -83,8 +90,10 @@ export function FileBucket({
             className="border-4 border-ink bg-canvas p-4 shadow-neo-sm"
           >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-2">
-                <p className="text-sm font-black leading-6">{file.filename}</p>
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="max-w-full overflow-hidden break-words text-sm font-black leading-6 [overflow-wrap:anywhere]">
+                  {file.filename}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="muted">{file.detected_type}</Badge>
                   <Badge variant="secondary">
@@ -105,8 +114,10 @@ export function FileBucket({
                     </Badge>
                   ) : null}
                 </div>
-                <p className="line-clamp-3 text-sm font-bold leading-6">
-                  {file.preview_text || "当前文件暂时没有可直接展示的文本预览。"}
+                <p className="line-clamp-3 max-w-full overflow-hidden break-words text-sm font-bold leading-6 [overflow-wrap:anywhere]">
+                  {isLegacyDocFile
+                    ? legacyDocPreviewMessage
+                    : file.preview_text || "当前文件暂时没有可直接展示的文本预览。"}
                 </p>
               </div>
               <div className="flex flex-col gap-3 lg:min-w-[15rem]">
