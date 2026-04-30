@@ -1110,7 +1110,6 @@ class AuditOrchestratorService:
     ) -> str:
         po_fields = self._extract_key_fields(po_text, source="po")
         target_fields = self._extract_key_fields(target_text, source="target")
-        existing_block = ""
 
         lines = ["=== 系统预提取关键字段（仅供参考，以原文为准）==="]
         if po_fields:
@@ -1136,35 +1135,9 @@ class AuditOrchestratorService:
                 if target_fields.get(key):
                     lines.append(f"- {label}: {target_fields[key]}")
         lines.append("===")
-        if po_fields or target_fields:
-            existing_block = "\n".join(lines)
-
-        extra_sections: list[str] = []
-        cell_indexes: dict[str, Any] = {}
-        if isinstance(task, dict):
-            raw_cell_indexes = task.get("cell_indexes") or {}
-            if isinstance(raw_cell_indexes, dict):
-                cell_indexes = raw_cell_indexes
-
-        if po_file_id and cell_indexes:
-            po_cell_index = cell_indexes.get(po_file_id)
-            if isinstance(po_cell_index, list) and po_cell_index:
-                po_extracted = self._extract_fields_from_cell_index(po_cell_index)
-                po_summary = self._format_extracted_fields("PO基准文件", po_extracted)
-                if po_summary:
-                    extra_sections.append(po_summary)
-
-        if target_file_id and cell_indexes:
-            target_cell_index = cell_indexes.get(target_file_id)
-            if isinstance(target_cell_index, list) and target_cell_index:
-                target_extracted = self._extract_fields_from_cell_index(target_cell_index)
-                target_summary = self._format_extracted_fields("目标文件", target_extracted)
-                if target_summary:
-                    extra_sections.append(target_summary)
-
-        sections = [existing_block] if existing_block.strip() else []
-        sections.extend(extra_sections)
-        return "\n\n".join(sections)
+        if not po_fields and not target_fields:
+            return ""
+        return "\n".join(lines)
 
     def _extract_fields_from_cell_index(self, cell_index: list[dict]) -> dict[str, list[dict]]:
         fields: dict[str, list[dict]] = {}
