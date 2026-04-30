@@ -900,7 +900,13 @@ class AuditOrchestratorService:
         self._log_diag_text("po_text", po_text_context)
         self._log_diag_text("target_text", target_text_context)
 
-        evidence_block = self._build_evidence_block(po_text_context, target_text_context)
+        evidence_block = self._build_evidence_block(
+            po_text_context,
+            target_text_context,
+            task=task,
+            po_file_id=str(task.get("po_file_id") or "") or None,
+            target_file_id=str(target_item.get("file_id") or "") or None,
+        )
 
         messages = self.audit_engine.build_audit_prompt(
             po_text=po_text_context,
@@ -1093,12 +1099,18 @@ class AuditOrchestratorService:
         if os.getenv("AUDIT_DEBUG_DIAG", "").lower() == "true":
             logger.info("DIAG %s snippets=%s", label, cls._collect_diag_snippets(source))
 
-    @classmethod
-    def _build_evidence_block(cls, po_text: str, target_text: str) -> str:
-        po_fields = cls._extract_key_fields(po_text, source="po")
-        target_fields = cls._extract_key_fields(target_text, source="target")
-        if not po_fields and not target_fields:
-            return ""
+    def _build_evidence_block(
+        self,
+        po_text: str,
+        target_text: str,
+        *,
+        task: dict[str, Any] | None = None,
+        po_file_id: str | None = None,
+        target_file_id: str | None = None,
+    ) -> str:
+        po_fields = self._extract_key_fields(po_text, source="po")
+        target_fields = self._extract_key_fields(target_text, source="target")
+        existing_block = ""
 
         lines = ["=== 系统预提取关键字段（仅供参考，以原文为准）==="]
         if po_fields:
@@ -1124,7 +1136,35 @@ class AuditOrchestratorService:
                 if target_fields.get(key):
                     lines.append(f"- {label}: {target_fields[key]}")
         lines.append("===")
-        return "\n".join(lines)
+        if po_fields or target_fields:
+            existing_block = "\n".join(lines)
+
+        extra_sections: list[str] = []
+        cell_indexes: dict[str, Any] = {}
+        if isinstance(task, dict):
+            raw_cell_indexes = task.get("cell_indexes") or {}
+            if isinstance(raw_cell_indexes, dict):
+                cell_indexes = raw_cell_indexes
+
+        if po_file_id and cell_indexes:
+            po_cell_index = cell_indexes.get(po_file_id)
+            if isinstance(po_cell_index, list) and po_cell_index:
+                po_extracted = self._extract_fields_from_cell_index(po_cell_index)
+                po_summary = self._format_extracted_fields("PO基准文件", po_extracted)
+                if po_summary:
+                    extra_sections.append(po_summary)
+
+        if target_file_id and cell_indexes:
+            target_cell_index = cell_indexes.get(target_file_id)
+            if isinstance(target_cell_index, list) and target_cell_index:
+                target_extracted = self._extract_fields_from_cell_index(target_cell_index)
+                target_summary = self._format_extracted_fields("目标文件", target_extracted)
+                if target_summary:
+                    extra_sections.append(target_summary)
+
+        sections = [existing_block] if existing_block.strip() else []
+        sections.extend(extra_sections)
+        return "\n\n".join(sections)
 
     def _extract_fields_from_cell_index(self, cell_index: list[dict]) -> dict[str, list[dict]]:
         fields: dict[str, list[dict]] = {}
