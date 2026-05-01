@@ -3,7 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || '';
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
 const JSON_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const FETCH_TIMEOUT_MS = 25000;
+const FETCH_TIMEOUT_MS = 27000;
+const RETRY_DELAYS_MS = [400, 1200] as const;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRYABLE_POST_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/me',
+  '/api/auth/logout',
+]);
 const HOP_BY_HOP_HEADERS = [
   'host',
   'content-length',
@@ -59,6 +66,46 @@ function shouldSerializeJsonBody(req: NextRequest, method: string) {
   return JSON_METHODS.has(method) && !isMultipartRequest(req);
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryRequest(
+  method: string,
+  apiPath: string,
+  isMultipart: boolean
+) {
+  if (isMultipart) {
+    return false;
+  }
+
+  if (method === 'GET') {
+    return true;
+  }
+
+  if (method !== 'POST') {
+    return false;
+  }
+
+  if (apiPath === '/api/audit/start' || apiPath.startsWith('/api/audit/cancel/')) {
+    return false;
+  }
+
+  return RETRYABLE_POST_PATHS.has(apiPath);
+}
+
+function getRetryErrorReason(error: unknown, didTimeout: boolean) {
+  if (didTimeout) {
+    return 'timeout';
+  }
+
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+
+  return String(error);
+}
+
 async function buildProxyBody(
   req: NextRequest,
   method: string,
@@ -91,11 +138,14 @@ async function proxy(
 
     const path = params.path.join('/');
     const search = req.nextUrl.search;
-    const targetUrl = `${BACKEND_ORIGIN}/api/${path}${search}`;
+    const apiPath = `/api/${path}`;
+    const targetUrl = `${BACKEND_ORIGIN}${apiPath}${search}`;
 
     const method = req.method.toUpperCase();
     const headers = buildProxyHeaders(req);
+    const isMultipart = isMultipartRequest(req);
     const body = await buildProxyBody(req, method, headers);
+    const canRetry = shouldRetryRequest(method, apiPath, isMultipart);
 
     console.log('[api-proxy] forwarding request', {
       target_url: targetUrl,
@@ -104,38 +154,78 @@ async function proxy(
       has_authorization: headers.has('authorization'),
     });
 
-    const controller = new AbortController();
-    let didTimeout = false;
-    const timeout = setTimeout(() => {
-      didTimeout = true;
-      controller.abort();
-    }, FETCH_TIMEOUT_MS);
+    let upstream: Response | null = null;
 
-    let upstream: Response;
+    for (let attempt = 0; ; attempt += 1) {
+      const controller = new AbortController();
+      let didTimeout = false;
+      const timeout = setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, FETCH_TIMEOUT_MS);
 
-    try {
-      upstream = await fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        redirect: 'manual',
-        signal: controller.signal,
-      });
-    } catch (err) {
-      if (didTimeout) {
-        return NextResponse.json(
-          {
-            error: 'backend_timeout',
-            elapsed_ms: FETCH_TIMEOUT_MS,
+      try {
+        const response = await fetch(targetUrl, {
+          method,
+          headers,
+          body,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+
+        if (
+          canRetry &&
+          RETRYABLE_STATUSES.has(response.status) &&
+          attempt < RETRY_DELAYS_MS.length
+        ) {
+          const delayMs = RETRY_DELAYS_MS[attempt];
+          console.warn('[api-proxy] retrying request', {
+            retry_attempt: attempt + 1,
+            reason: `status ${response.status}`,
+            delay_ms: delayMs,
             target_url: targetUrl,
-          },
-          { status: 504 }
-        );
-      }
+            request_method: method,
+          });
+          await response.body?.cancel().catch(() => undefined);
+          await sleep(delayMs);
+          continue;
+        }
 
-      throw err;
-    } finally {
-      clearTimeout(timeout);
+        upstream = response;
+        break;
+      } catch (err) {
+        if (canRetry && attempt < RETRY_DELAYS_MS.length) {
+          const delayMs = RETRY_DELAYS_MS[attempt];
+          console.warn('[api-proxy] retrying request', {
+            retry_attempt: attempt + 1,
+            reason: getRetryErrorReason(err, didTimeout),
+            delay_ms: delayMs,
+            target_url: targetUrl,
+            request_method: method,
+          });
+          await sleep(delayMs);
+          continue;
+        }
+
+        if (didTimeout) {
+          return NextResponse.json(
+            {
+              error: 'backend_timeout',
+              elapsed_ms: FETCH_TIMEOUT_MS,
+              target_url: targetUrl,
+            },
+            { status: 504 }
+          );
+        }
+
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (!upstream) {
+      throw new Error('Upstream response was not created.');
     }
 
     const respHeaders = new Headers(upstream.headers);

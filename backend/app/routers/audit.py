@@ -9,6 +9,7 @@ from app.models.schemas import (
     AuditCancelResponse,
     AuditHistoryDetailResponse,
     AuditHistoryListResponse,
+    AuditProgressPayload,
     AuditReportResponse,
     AuditResultResponse,
     AuditStartRequest,
@@ -62,16 +63,13 @@ async def start_audit(
     return service.start_audit(current_user, payload)
 
 
-@router.get("/progress/{task_id}")
+@router.get("/progress/{task_id}", response_model=AuditProgressPayload)
 async def get_audit_progress(
     task_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     service: AuditOrchestratorService = Depends(get_audit_orchestrator_service),
-):
-    return StreamingResponse(
-        service.progress_stream(current_user, task_id),
-        media_type="text/event-stream",
-    )
+) -> AuditProgressPayload:
+    return service.get_progress_snapshot(current_user, task_id)
 
 
 @router.post("/cancel/{task_id}", response_model=AuditCancelResponse)

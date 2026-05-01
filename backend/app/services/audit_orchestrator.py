@@ -635,21 +635,26 @@ class AuditOrchestratorService:
         parsed = self.audit_engine.parse_audit_result(raw_response)
         return parsed
 
+    def get_progress_snapshot(self, current_user: CurrentUser, task_id: str) -> AuditProgressPayload:
+        """返回当前任务进度快照。"""
+
+        task = self._get_task(current_user.id, task_id)
+        return AuditProgressPayload(
+            task_id=task_id,
+            status=str(task["status"]),
+            progress_percent=int(task["progress_percent"]),
+            message=str(task["message"]),
+            created_at=task["created_at"],
+            updated_at=task["updated_at"],
+        )
+
     async def progress_stream(self, current_user: CurrentUser, task_id: str):
         """以 SSE 输出任务进度。"""
 
         while True:
-            task = self._get_task(current_user.id, task_id)
-            payload = AuditProgressPayload(
-                task_id=task_id,
-                status=str(task["status"]),
-                progress_percent=int(task["progress_percent"]),
-                message=str(task["message"]),
-                created_at=task["created_at"],
-                updated_at=task["updated_at"],
-            )
+            payload = self.get_progress_snapshot(current_user, task_id)
             yield f"data: {json.dumps(payload.model_dump(mode='json'), ensure_ascii=False)}\n\n"
-            if task["status"] in {"completed", "cancelled", "failed"}:
+            if payload.status in {"completed", "cancelled", "failed"}:
                 break
             await asyncio.sleep(0.5)
 

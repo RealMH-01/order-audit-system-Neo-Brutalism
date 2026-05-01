@@ -14,18 +14,13 @@ type RequestOptions = {
   token?: string | null;
   body?: unknown;
   redirectOnAuthError?: boolean;
+  signal?: AbortSignal;
 };
 
 type UploadOptions = {
   token?: string | null;
   fieldName?: string;
   signal?: AbortSignal;
-};
-
-type StreamOptions<T> = {
-  token?: string | null;
-  signal?: AbortSignal;
-  onMessage: (payload: T) => void;
 };
 
 type DownloadAuditReportOptions = {
@@ -207,7 +202,8 @@ async function request<T>(
     method,
     cache: "no-store",
     headers: buildHeaders(options.token, hasBody),
-    body: hasBody ? JSON.stringify(options.body) : undefined
+    body: hasBody ? JSON.stringify(options.body) : undefined,
+    signal: options.signal
   });
 
   return parseResponse<T>(response, path, options.redirectOnAuthError);
@@ -337,72 +333,6 @@ export async function downloadAuditReport(
       fallbackFilename
     )
   };
-}
-
-function extractEventData(bufferChunk: string) {
-  const dataLine = bufferChunk
-    .split("\n")
-    .find((line) => line.startsWith("data: "));
-
-  if (!dataLine) {
-    return null;
-  }
-
-  return dataLine.slice(6);
-}
-
-export async function streamJsonEvents<T>(
-  path: string,
-  { token, signal, onMessage }: StreamOptions<T>
-) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "GET",
-    cache: "no-store",
-    headers: {
-      Accept: "text/event-stream",
-      ...buildAuthHeaders(token)
-    },
-    signal
-  });
-
-  if (!response.ok) {
-    await parseResponse<never>(response, path);
-    return;
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    const error: ApiError = {
-      status: 500,
-      detail: "进度流建立失败，请稍后重试。",
-      message: "进度流建立失败，请稍后重试。"
-    };
-    throw error;
-  }
-
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-
-    for (const chunk of chunks) {
-      const rawData = extractEventData(chunk);
-      if (!rawData) {
-        continue;
-      }
-
-      const payload = JSON.parse(rawData) as T;
-      onMessage(payload);
-    }
-  }
 }
 
 export function getStoredAccessToken() {

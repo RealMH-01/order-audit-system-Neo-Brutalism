@@ -21,8 +21,7 @@ import {
   apiPut,
   apiUploadFile,
   downloadAuditReport,
-  getStoredAccessToken,
-  streamJsonEvents
+  getStoredAccessToken
 } from "@/lib/api";
 import { normalizeApiErrorDetail } from "@/lib/api-error";
 import { useAuth } from "@/lib/auth-context";
@@ -437,6 +436,7 @@ export function AuditWorkspace() {
   const router = useRouter();
   const { state: authState } = useAuth();
   const progressAbortRef = useRef<AbortController | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const latestTaskIdRef = useRef<string | null>(null);
   const latestTaskStatusRef = useRef("idle");
 
@@ -553,9 +553,17 @@ export function AuditWorkspace() {
     setMarkedUnavailableHint(null);
   }, [taskId]);
 
-  const clearRunState = useCallback((nextMessage?: string) => {
+  const stopProgressPolling = useCallback(() => {
     progressAbortRef.current?.abort();
     progressAbortRef.current = null;
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearRunState = useCallback((nextMessage?: string) => {
+    stopProgressPolling();
     setTaskId(null);
     setTaskStatus("idle");
     setProgressPercent(0);
@@ -577,7 +585,7 @@ export function AuditWorkspace() {
     if (nextMessage) {
       setWorkspaceMessage(nextMessage);
     }
-  }, []);
+  }, [stopProgressPolling]);
 
   const invalidateFinishedRun = useCallback(
     (nextMessage: string) => {
@@ -713,164 +721,43 @@ export function AuditWorkspace() {
     []
   );
 
-  const confirmAuditTerminalState = useCallback(
-    async (interruptedTaskId: string, accessToken: string) => {
-      const [resultOutcome, reportOutcome] = await Promise.allSettled([
-        apiGet<AuditResultResponse>(`/audit/result/${interruptedTaskId}`, {
-          token: accessToken
-        }),
-        apiGet<AuditReportResponse>(`/audit/report/${interruptedTaskId}`, {
-          token: accessToken
-        })
-      ] as const);
-
-      if (latestTaskIdRef.current !== interruptedTaskId) {
-        return true;
-      }
-
-      if (resultOutcome.status === "rejected") {
-        const resultStatus = getErrorStatus(resultOutcome.reason);
-        if (resultStatus === 401 || resultStatus === 403) {
-          throw resultOutcome.reason;
-        }
-      }
-
-      if (reportOutcome.status === "rejected") {
-        const reportStatus = getErrorStatus(reportOutcome.reason);
-        if (reportStatus === 401 || reportStatus === 403) {
-          throw reportOutcome.reason;
-        }
-      }
-
-      const resultData =
-        resultOutcome.status === "fulfilled" ? resultOutcome.value.data : null;
-      const reportData =
-        reportOutcome.status === "fulfilled" ? reportOutcome.value.data : null;
-
-      if (resultData && TERMINAL_TASK_STATUSES.has(resultData.status)) {
-        const friendlyMessage =
-          resultData.status === "failed"
-            ? "审核任务失败，请稍后重试或重新发起审核。"
-            : normalizeError(resultData.message, PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
-
-        setTaskStatus(resultData.status);
-        if (resultData.status === "completed") {
-          setProgressPercent(100);
-        }
-        setProgressMessage(friendlyMessage);
-        setResult(resultData);
-
-        if (resultData.status === "failed") {
-          setWorkspaceError(friendlyMessage);
-        } else {
-          setWorkspaceMessage(friendlyMessage);
-        }
-
-        await fetchFinishedTaskArtifacts(interruptedTaskId, accessToken);
-        return true;
-      }
-
-      if (!reportData) {
-        return false;
-      }
-
-      const reportMessage = normalizeError(reportData.message, "读取报告状态失败，请稍后重试。");
-      if (reportData.available || reportData.status === "ready") {
-        setReportMessage(reportMessage);
-        setReportInfo({ ...reportData, message: reportMessage });
-        setTaskStatus("completed");
-        setProgressPercent(100);
-        setProgressMessage(reportMessage);
-        if (resultData) {
-          setResult(resultData);
-        }
-        setWorkspaceMessage(reportMessage);
-        return true;
-      }
-
-      if (reportData.status === "failed") {
-        setReportMessage(reportMessage);
-        setReportInfo({ ...reportData, message: reportMessage });
-        setTaskStatus("failed");
-        setProgressMessage(reportMessage);
-        if (resultData) {
-          setResult(resultData);
-        }
-        setWorkspaceError(reportMessage);
-        return true;
-      }
-
-      return false;
-    },
-    [fetchFinishedTaskArtifacts]
-  );
-
   useEffect(() => {
     if (!taskId || !token) {
       return;
     }
 
     const controller = new AbortController();
+    const pollIntervalMs = 2000;
+    const maxConsecutiveFailures = 5;
     let closed = false;
-    let receivedTerminalEvent = false;
+    let requestInFlight = false;
+    let consecutiveFailures = 0;
     progressAbortRef.current = controller;
 
-    const handleProgressStreamInterrupted = async (error?: unknown) => {
-      if (
-        closed ||
-        controller.signal.aborted ||
-        receivedTerminalEvent ||
-        latestTaskIdRef.current !== taskId ||
-        !ACTIVE_TASK_STATUSES.has(latestTaskStatusRef.current)
-      ) {
-        return;
+    const clearPollingInterval = () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
       }
-
-      const status = getErrorStatus(error);
-      if (status === 401 || status === 403) {
-        setWorkspaceError(
-          normalizeError(error, "登录已过期，请重新登录后继续。")
-        );
-        return;
-      }
-
-      try {
-        const confirmed = await confirmAuditTerminalState(taskId, token);
-        if (confirmed || latestTaskIdRef.current !== taskId) {
-          return;
-        }
-      } catch (confirmError) {
-        const confirmStatus = getErrorStatus(confirmError);
-        if (confirmStatus === 401 || confirmStatus === 403) {
-          setWorkspaceError(
-            normalizeError(confirmError, "登录已过期，请重新登录后继续。")
-          );
-          return;
-        }
-      }
-
-      if (
-        closed ||
-        controller.signal.aborted ||
-        latestTaskIdRef.current !== taskId ||
-        !ACTIVE_TASK_STATUSES.has(latestTaskStatusRef.current)
-      ) {
-        return;
-      }
-
-      setTaskStatus("failed");
-      setProgressMessage(PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
-      setWorkspaceError(PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
     };
 
-    void streamJsonEvents<AuditProgressPayload>(`/audit/progress/${taskId}`, {
-      token,
-      signal: controller.signal,
-      onMessage: (payload) => {
+    const pollProgress = async () => {
+      if (closed || controller.signal.aborted || requestInFlight) {
+        return;
+      }
+
+      requestInFlight = true;
+      try {
+        const { data: payload } = await apiGet<AuditProgressPayload>(
+          `/audit/progress/${taskId}`,
+          { token, signal: controller.signal }
+        );
+
         if (closed || latestTaskIdRef.current !== taskId) {
           return;
         }
 
+        consecutiveFailures = 0;
         setTaskStatus(payload.status);
         setProgressPercent(payload.progress_percent);
         const safeMessage = normalizeError(payload.message, "审核进度更新失败，请稍后刷新查看。");
@@ -879,12 +766,8 @@ export function AuditWorkspace() {
           mergeProgressEvents(previous, { ...payload, message: safeMessage })
         );
 
-        if (
-          payload.status === "completed" ||
-          payload.status === "failed" ||
-          payload.status === "cancelled"
-        ) {
-          receivedTerminalEvent = true;
+        if (TERMINAL_TASK_STATUSES.has(payload.status)) {
+          clearPollingInterval();
           void fetchFinishedTaskArtifacts(taskId, token).catch((error) => {
             if (closed || latestTaskIdRef.current !== taskId) {
               return;
@@ -894,20 +777,41 @@ export function AuditWorkspace() {
             );
           });
         }
+      } catch (error) {
+        if (closed || controller.signal.aborted) {
+          return;
+        }
+
+        consecutiveFailures += 1;
+        if (consecutiveFailures < maxConsecutiveFailures) {
+          return;
+        }
+
+        clearPollingInterval();
+        setTaskStatus("failed");
+        setProgressMessage(PROGRESS_CONNECTION_INTERRUPTED_MESSAGE);
+        setWorkspaceError(
+          normalizeError(error, PROGRESS_CONNECTION_INTERRUPTED_MESSAGE)
+        );
+      } finally {
+        requestInFlight = false;
       }
-    })
-      .then(() => {
-        void handleProgressStreamInterrupted();
-      })
-      .catch((error) => {
-        void handleProgressStreamInterrupted(error);
-      });
+    };
+
+    void pollProgress();
+    progressIntervalRef.current = setInterval(() => {
+      void pollProgress();
+    }, pollIntervalMs);
 
     return () => {
       closed = true;
+      clearPollingInterval();
       controller.abort();
+      if (progressAbortRef.current === controller) {
+        progressAbortRef.current = null;
+      }
     };
-  }, [confirmAuditTerminalState, fetchFinishedTaskArtifacts, taskId, token]);
+  }, [fetchFinishedTaskArtifacts, taskId, token]);
 
   const deleteFilesSilently = useCallback(
     async (fileIds: string[]) => {
@@ -1223,7 +1127,6 @@ export function AuditWorkspace() {
       return;
     }
 
-    progressAbortRef.current?.abort();
     clearRunState();
 
     setStartLoading(true);
