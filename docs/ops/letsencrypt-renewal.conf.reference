@@ -1,0 +1,20 @@
+# 这是参考副本，生产文件在服务器 /etc/letsencrypt/ 下，修改时必须两边同步。
+# Source: /etc/letsencrypt/renewal/api.order-audit-system-neo-brutalism.icu.conf
+
+# renew_before_expiry = 30 days
+version = 1.21.0
+archive_dir = /etc/letsencrypt/archive/api.order-audit-system-neo-brutalism.icu
+cert = /etc/letsencrypt/live/api.order-audit-system-neo-brutalism.icu/cert.pem
+privkey = /etc/letsencrypt/live/api.order-audit-system-neo-brutalism.icu/privkey.pem
+chain = /etc/letsencrypt/live/api.order-audit-system-neo-brutalism.icu/chain.pem
+fullchain = /etc/letsencrypt/live/api.order-audit-system-neo-brutalism.icu/fullchain.pem
+
+# Options used in the renewal process
+[renewalparams]
+account = fd98443fbdd19023a85eb63c5064feaa
+pref_challs = dns-01,
+authenticator = manual
+server = https://acme-v02.api.letsencrypt.org/directory
+manual_auth_hook = /etc/letsencrypt/dnspod-auth.sh
+manual_cleanup_hook = /etc/letsencrypt/dnspod-cleanup.sh
+manual_public_ip_logging_ok = True

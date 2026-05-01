@@ -1,0 +1,48 @@
+# 这是参考副本，生产文件在服务器 /etc/letsencrypt/ 下，修改时必须两边同步。
+# Source: /etc/letsencrypt/dnspod-cleanup.sh
+
+#!/bin/bash
+# certbot manual cleanup hook for DNSPod
+# 验证完成后（无论成功失败），certbot 都会调本脚本，删除前面 auth hook 创建的 TXT 记录
+set -euo pipefail
+
+CRED_FILE="/etc/letsencrypt/dnspod.ini"
+LOG_FILE="/var/log/letsencrypt/dnspod-hook.log"
+API_BASE="https://dnsapi.cn"
+UA="certbot-acme-hook/1.0 (admin@order-audit-system-neo-brutalism.icu)"
+
+log() { echo "[$(date '+%F %T')] [cleanup] $*" | tee -a "$LOG_FILE" >&2; }
+
+if [[ ! -r "$CRED_FILE" ]]; then
+    log "ERROR: cannot read $CRED_FILE"; exit 1
+fi
+# shellcheck disable=SC1090
+set -a; . "$CRED_FILE"; set +a
+LOGIN_TOKEN="${DNSPOD_ID},${DNSPOD_TOKEN}"
+
+ROOT_DOMAIN="order-audit-system-neo-brutalism.icu"
+ID_FILE="/var/lib/letsencrypt-dnspod/${CERTBOT_DOMAIN}.${CERTBOT_VALIDATION}.id"
+
+if [[ ! -f "$ID_FILE" ]]; then
+    log "WARN: id file not found ($ID_FILE), nothing to clean"
+    exit 0
+fi
+RECORD_ID=$(cat "$ID_FILE")
+log "Removing TXT record_id=${RECORD_ID} (domain=${CERTBOT_DOMAIN})"
+
+RESP=$(curl -sS -X POST "${API_BASE}/Record.Remove" \
+    -d "login_token=${LOGIN_TOKEN}" \
+    -d "format=json" -d "lang=cn" \
+    -d "domain=${ROOT_DOMAIN}" \
+    -d "record_id=${RECORD_ID}" \
+    -H "User-Agent: ${UA}")
+
+CODE=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',{}).get('code',''))")
+if [[ "$CODE" != "1" ]]; then
+    log "WARN: Record.Remove failed, response: $RESP"
+    # 即使删除失败也不让 cleanup 中断 certbot 流程
+    exit 0
+fi
+
+rm -f "$ID_FILE"
+log "Cleanup hook done."

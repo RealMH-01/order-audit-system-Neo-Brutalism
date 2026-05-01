@@ -169,3 +169,7 @@ DeepSeek V4 于 2026 年 4 月发布。旧模型名 `deepseek-chat` 和 `deepsee
 - 审核报告已持久化到 Supabase Storage，后端重启后仍可通过审核历史页面重新下载。
 - DeepSeek 不支持视觉/OCR 输入，扫描件审核时系统会自动切换到 OpenAI 或智谱。
 - 连接测试仅验证 API Key 有效性和基本连通性，不测试完整审核链路。
+
+## 运维文档
+
+Let's Encrypt 证书自动续签使用 DNS-01 验证 + DNSPod API hook，详见[运维文档](docs/ops/letsencrypt-renewal.md)。
