@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
-            "https://order-audit-system-neo-brutalism.vercel.app",
+            "https://www.order-audit-system-neo-brutalism.icu",
+            "https://order-audit-system-neo-brutalism.icu",
         ]
     )
 
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     encryption_key: str = ""
     password_reset_redirect_url: str = (
-        "https://order-audit-system-neo-brutalism.vercel.app/reset-password"
+        "https://www.order-audit-system-neo-brutalism.icu/reset-password"
     )
     password_reset_local_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000"]
