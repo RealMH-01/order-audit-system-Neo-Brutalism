@@ -10,7 +10,6 @@ async function proxy(
   req: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
-  // 配置缺失时直接 500，避免出现难以排查的 403
   if (!BACKEND_ORIGIN || !EDGE_TOKEN) {
     console.error('[api-proxy] Missing BACKEND_ORIGIN or EDGE_TOKEN env');
     return NextResponse.json(
@@ -28,27 +27,37 @@ async function proxy(
   headers.delete('host');
   headers.delete('content-length');
   headers.delete('connection');
+  headers.delete('accept-encoding');
+  headers.delete('transfer-encoding');
+  headers.delete('keep-alive');
+  headers.delete('te');
+  headers.delete('upgrade');
 
   const method = req.method.toUpperCase();
   const hasBody = !['GET', 'HEAD'].includes(method);
 
-  const init: RequestInit & { duplex?: 'half' } = {
-    method,
-    headers,
-    body: hasBody ? req.body : undefined,
-    redirect: 'manual',
-  };
-
-  if (hasBody) {
-    init.duplex = 'half';
-  }
-
   try {
-    const upstream = await fetch(targetUrl, init);
+    const body = hasBody ? await req.arrayBuffer() : undefined;
+
+    const upstream = await fetch(targetUrl, {
+      method,
+      headers,
+      body,
+      redirect: 'manual',
+    });
+
     const respHeaders = new Headers(upstream.headers);
     respHeaders.delete('content-encoding');
     respHeaders.delete('transfer-encoding');
     respHeaders.delete('connection');
+
+    if (method === 'HEAD' || upstream.status === 204 || upstream.status === 304) {
+      return new NextResponse(null, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: respHeaders,
+      });
+    }
 
     return new NextResponse(upstream.body, {
       status: upstream.status,
