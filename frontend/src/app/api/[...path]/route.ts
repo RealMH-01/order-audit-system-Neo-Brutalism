@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || '';
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
 const JSON_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const FETCH_TIMEOUT_MS = 25000;
 const HOP_BY_HOP_HEADERS = [
   'host',
   'content-length',
@@ -79,30 +80,63 @@ async function proxy(
   req: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
-  if (!BACKEND_ORIGIN) {
-    console.error('[api-proxy] Missing BACKEND_ORIGIN env');
-    return NextResponse.json(
-      { error: 'API proxy is not configured' },
-      { status: 500 }
-    );
-  }
-
-  const path = params.path.join('/');
-  const search = req.nextUrl.search;
-  const targetUrl = `${BACKEND_ORIGIN}/api/${path}${search}`;
-
-  const method = req.method.toUpperCase();
-  const headers = buildProxyHeaders(req);
-
   try {
+    if (!BACKEND_ORIGIN) {
+      console.error('[api-proxy] Missing BACKEND_ORIGIN env');
+      return NextResponse.json(
+        { error: 'missing_env', missing: 'BACKEND_ORIGIN' },
+        { status: 500 }
+      );
+    }
+
+    const path = params.path.join('/');
+    const search = req.nextUrl.search;
+    const targetUrl = `${BACKEND_ORIGIN}/api/${path}${search}`;
+
+    const method = req.method.toUpperCase();
+    const headers = buildProxyHeaders(req);
     const body = await buildProxyBody(req, method, headers);
 
-    const upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      redirect: 'manual',
+    console.log('[api-proxy] forwarding request', {
+      target_url: targetUrl,
+      request_method: method,
+      has_body: body !== undefined,
+      has_authorization: headers.has('authorization'),
     });
+
+    const controller = new AbortController();
+    let didTimeout = false;
+    const timeout = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, FETCH_TIMEOUT_MS);
+
+    let upstream: Response;
+
+    try {
+      upstream = await fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (didTimeout) {
+        return NextResponse.json(
+          {
+            error: 'backend_timeout',
+            elapsed_ms: FETCH_TIMEOUT_MS,
+            target_url: targetUrl,
+          },
+          { status: 504 }
+        );
+      }
+
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const respHeaders = new Headers(upstream.headers);
     respHeaders.delete('content-encoding');
@@ -123,10 +157,22 @@ async function proxy(
       headers: respHeaders,
     });
   } catch (err) {
-    console.error('[api-proxy] upstream error:', err);
+    const error = err as Error & { cause?: unknown };
+
+    console.error('[api-proxy] proxy error:', err);
     return NextResponse.json(
-      { error: 'Upstream service unreachable', detail: String(err) },
-      { status: 502 }
+      {
+        error: 'proxy_error',
+        message: error.message,
+        name: error.name,
+        stack: error.stack?.split('\n').slice(0, 5),
+        cause: String(error.cause || ''),
+        backend_origin: process.env.BACKEND_ORIGIN || 'NOT_SET',
+        has_edge_token: !!process.env.EDGE_TOKEN,
+        request_path: params.path,
+        request_method: req.method,
+      },
+      { status: 500 }
     );
   }
 }
