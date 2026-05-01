@@ -34,7 +34,15 @@ async function proxy(
   headers.delete('upgrade');
 
   const method = req.method.toUpperCase();
-  const hasBody = !['GET', 'HEAD'].includes(method);
+  const canHaveBody = !['GET', 'HEAD'].includes(method);
+  const contentLength = req.headers.get('content-length');
+  const transferEncoding = req.headers.get('transfer-encoding');
+  const parsedContentLength =
+    contentLength === null ? 0 : Number.parseInt(contentLength, 10);
+  const hasBody =
+    canHaveBody &&
+    ((Number.isFinite(parsedContentLength) && parsedContentLength > 0) ||
+      Boolean(transferEncoding));
 
   try {
     const body = hasBody ? await req.arrayBuffer() : undefined;
