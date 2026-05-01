@@ -2,16 +2,85 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || '';
 const EDGE_TOKEN = process.env.EDGE_TOKEN || '';
+const JSON_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const HOP_BY_HOP_HEADERS = [
+  'host',
+  'content-length',
+  'connection',
+  'accept-encoding',
+  'expect',
+  'transfer-encoding',
+  'keep-alive',
+  'te',
+  'upgrade',
+];
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+function buildProxyHeaders(req: NextRequest) {
+  const headers = new Headers(req.headers);
+
+  for (const header of HOP_BY_HOP_HEADERS) {
+    headers.delete(header);
+  }
+
+  if (EDGE_TOKEN) {
+    headers.set('X-Edge-Token', EDGE_TOKEN);
+  }
+
+  return headers;
+}
+
+function requestHasBody(req: NextRequest, method: string) {
+  if (method === 'GET' || method === 'HEAD') {
+    return false;
+  }
+
+  const contentLength = req.headers.get('content-length');
+  const transferEncoding = req.headers.get('transfer-encoding');
+  const parsedContentLength =
+    contentLength === null ? 0 : Number.parseInt(contentLength, 10);
+
+  return (
+    (Number.isFinite(parsedContentLength) && parsedContentLength > 0) ||
+    Boolean(transferEncoding)
+  );
+}
+
+function isMultipartRequest(req: NextRequest) {
+  const contentType = req.headers.get('content-type')?.toLowerCase() || '';
+
+  return contentType.includes('multipart/form-data');
+}
+
+function shouldSerializeJsonBody(req: NextRequest, method: string) {
+  return JSON_METHODS.has(method) && !isMultipartRequest(req);
+}
+
+async function buildProxyBody(
+  req: NextRequest,
+  method: string,
+  headers: Headers
+) {
+  if (!requestHasBody(req, method)) {
+    return undefined;
+  }
+
+  if (shouldSerializeJsonBody(req, method)) {
+    headers.set('Content-Type', 'application/json');
+    return JSON.stringify(await req.json());
+  }
+
+  return await req.arrayBuffer();
+}
 
 async function proxy(
   req: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
-  if (!BACKEND_ORIGIN || !EDGE_TOKEN) {
-    console.error('[api-proxy] Missing BACKEND_ORIGIN or EDGE_TOKEN env');
+  if (!BACKEND_ORIGIN) {
+    console.error('[api-proxy] Missing BACKEND_ORIGIN env');
     return NextResponse.json(
       { error: 'API proxy is not configured' },
       { status: 500 }
@@ -22,30 +91,11 @@ async function proxy(
   const search = req.nextUrl.search;
   const targetUrl = `${BACKEND_ORIGIN}/api/${path}${search}`;
 
-  const headers = new Headers(req.headers);
-  headers.set('X-Edge-Token', EDGE_TOKEN);
-  headers.delete('host');
-  headers.delete('content-length');
-  headers.delete('connection');
-  headers.delete('accept-encoding');
-  headers.delete('transfer-encoding');
-  headers.delete('keep-alive');
-  headers.delete('te');
-  headers.delete('upgrade');
-
   const method = req.method.toUpperCase();
-  const canHaveBody = !['GET', 'HEAD'].includes(method);
-  const contentLength = req.headers.get('content-length');
-  const transferEncoding = req.headers.get('transfer-encoding');
-  const parsedContentLength =
-    contentLength === null ? 0 : Number.parseInt(contentLength, 10);
-  const hasBody =
-    canHaveBody &&
-    ((Number.isFinite(parsedContentLength) && parsedContentLength > 0) ||
-      Boolean(transferEncoding));
+  const headers = buildProxyHeaders(req);
 
   try {
-    const body = hasBody ? await req.arrayBuffer() : undefined;
+    const body = await buildProxyBody(req, method, headers);
 
     const upstream = await fetch(targetUrl, {
       method,
