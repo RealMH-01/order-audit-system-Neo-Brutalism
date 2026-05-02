@@ -21,6 +21,22 @@ def normalize_field_text(value: str | None) -> str:
     return re.sub(r"[\s\W_]+", "", str(value or "").lower(), flags=re.UNICODE)
 
 
+def _alias_match(alias: str, target: str) -> bool:
+    if not alias or not target:
+        return False
+
+    if alias == target:
+        return True
+
+    if len(alias) <= 2:
+        return False
+
+    if len(alias) == 3:
+        return len(target) <= 12 and (target.startswith(alias) or target.endswith(alias))
+
+    return alias in target or target in alias
+
+
 def match_field(label: str | None, target_field: str | None) -> bool:
     """Match field labels case-insensitively after removing spaces and punctuation."""
 
@@ -35,14 +51,14 @@ def match_field(label: str | None, target_field: str | None) -> bool:
     for canonical, aliases in FIELD_ALIASES.items():
         normalized_aliases = [normalize_field_text(item) for item in (canonical, *aliases)]
         target_matches_alias = any(
-            alias and (alias == normalized_target or alias in normalized_target or normalized_target in alias)
+            _alias_match(alias, normalized_target)
             for alias in normalized_aliases
         )
         if not target_matches_alias:
             continue
         return any(
-            alias and (alias == normalized_label or alias in normalized_label or normalized_label in alias)
+            _alias_match(alias, normalized_label)
             for alias in normalized_aliases
         )
 
-    return normalized_label in normalized_target or normalized_target in normalized_label
+    return _alias_match(normalized_label, normalized_target)
