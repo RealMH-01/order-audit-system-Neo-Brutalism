@@ -152,6 +152,12 @@ print(Fernet.generate_key().decode())
 
 DeepSeek V4 于 2026 年 4 月发布。旧模型名 `deepseek-chat` 和 `deepseek-reasoner` 将于 2026/07/24 被废弃，系统已完成迁移但后端保留兼容映射。
 
+## 系统硬规则架构
+
+系统硬规则已从代码常量迁移到 Supabase `system_hard_rules` 表，由管理员后台统一维护。审核任务启动时，后端会读取启用规则并动态拼装 LLM system prompt，因此管理员保存规则后，下一次审核即可生效，无需重启服务。
+
+项目级设计说明见 [系统硬规则架构文档](backend/docs/system_rules_architecture.md)。
+
 ## 开发进度
 
 | 轮次 | 内容 | 状态 |
