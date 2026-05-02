@@ -16,6 +16,7 @@ from fastapi import UploadFile
 from app.config import Settings
 from app.errors import AppError
 from app.models.schemas import FeatureStatus, FileCapability, FileRecord
+from app.services.document_classifier import classify_by_filename
 from app.services.runtime_store import RuntimeStore
 
 try:
@@ -358,26 +359,49 @@ class FileParserService:
     def _detect_type(filename: str, extension: str) -> str:
         """从文件名和扩展名推断单据类型。"""
 
+        classifier_type = classify_by_filename(filename)
+        if classifier_type:
+            logger.info(
+                "DOC_TYPE_DETECT filename=%s source=classifier type=%s",
+                filename,
+                classifier_type,
+            )
+            return classifier_type
+
         name = Path(filename).stem.lower()
+        detected_type = None
         if FileParserService._matches_po_filename(name):
-            return "po"
-        if FileParserService._matches_invoice_filename(name):
-            return "invoice"
-        if "packing" in name or "plist" in name:
-            return "packing_list"
-        if "shipping" in name or "si" in name:
-            return "shipping_instruction"
-        if "bill_of_lading" in name or "b/l" in name or "bol" in name:
-            return "bill_of_lading"
-        if "certificate_of_origin" in name or "coo" in name:
-            return "certificate_of_origin"
-        if "customs" in name or "declaration" in name:
-            return "customs_declaration"
-        if "letter_of_credit" in name or "_lc" in name or " lc" in name:
-            return "letter_of_credit"
-        if extension in {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"}:
-            return extension
-        return "other"
+            detected_type = "po"
+        elif FileParserService._matches_invoice_filename(name):
+            detected_type = "invoice"
+        elif "packing" in name or "plist" in name:
+            detected_type = "packing_list"
+        elif "shipping" in name or "si" in name:
+            detected_type = "shipping_instruction"
+        elif "bill_of_lading" in name or "b/l" in name or "bol" in name:
+            detected_type = "bill_of_lading"
+        elif "certificate_of_origin" in name or "coo" in name:
+            detected_type = "certificate_of_origin"
+        elif "customs" in name or "declaration" in name:
+            detected_type = "customs_declaration"
+        elif "letter_of_credit" in name or "_lc" in name or " lc" in name:
+            detected_type = "letter_of_credit"
+
+        if detected_type:
+            logger.info(
+                "DOC_TYPE_DETECT filename=%s source=legacy type=%s",
+                filename,
+                detected_type,
+            )
+            return detected_type
+
+        fallback_type = extension if extension in {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"} else "other"
+        logger.info(
+            "DOC_TYPE_DETECT filename=%s source=fallback type=%s",
+            filename,
+            fallback_type,
+        )
+        return fallback_type
 
     @staticmethod
     def _matches_invoice_filename(name: str) -> bool:
