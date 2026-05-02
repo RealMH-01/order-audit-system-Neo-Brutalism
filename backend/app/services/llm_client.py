@@ -188,6 +188,7 @@ class LLMClientService:
         deep_think: bool = False,
         temperature: float = 0.0,
         timeout: float | None = None,
+        response_format: dict | None = None,
     ) -> str:
         """统一文本调用入口。"""
 
@@ -211,6 +212,7 @@ class LLMClientService:
                     base_url=base_url,
                     temperature=temperature,
                     request_timeout=effective_timeout,
+                    response_format=response_format,
                 ),
                 provider=normalized_provider,
                 timeout=effective_timeout,
@@ -356,6 +358,7 @@ class LLMClientService:
         base_url: str | None,
         temperature: float,
         request_timeout: float,
+        response_format: dict | None = None,
     ) -> str:
         """调用 OpenAI 兼容接口，包括 OpenAI 和 DeepSeek。"""
 
@@ -376,16 +379,92 @@ class LLMClientService:
                     base_url=resolved_base_url or None,
                     timeout=request_timeout,
                 )
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=temperature,
-                )
-                return response.choices[0].message.content or ""
+                if response_format is None:
+                    response = self._create_openai_compatible_completion(
+                        client,
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        response_format=None,
+                    )
+                    return response.choices[0].message.content or ""
+
+                try:
+                    response = self._create_openai_compatible_completion(
+                        client,
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        response_format=response_format,
+                    )
+                except Exception as exc:
+                    if self._is_response_format_error(exc):
+                        logger.warning(
+                            "%s response_format failed; retrying without response_format. error_type=%s",
+                            provider,
+                            type(exc).__name__,
+                        )
+                        response = self._create_openai_compatible_completion(
+                            client,
+                            model=model,
+                            messages=messages,
+                            temperature=temperature,
+                            response_format=None,
+                        )
+                        return response.choices[0].message.content or ""
+                    raise
+
+                content = response.choices[0].message.content or ""
+                if self._is_empty_content(content):
+                    logger.warning(
+                        "%s response_format returned empty content; retrying without response_format.",
+                        provider,
+                    )
+                    response = self._create_openai_compatible_completion(
+                        client,
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        response_format=None,
+                    )
+                    return response.choices[0].message.content or ""
+                return content
             except Exception as exc:  # pragma: no cover
                 raise self._map_exception(provider, exc) from exc
 
         return await asyncio.to_thread(_run)
+
+    @staticmethod
+    def _create_openai_compatible_completion(
+        client: Any,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        response_format: dict | None = None,
+    ) -> Any:
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        return client.chat.completions.create(**kwargs)
+
+    @staticmethod
+    def _is_response_format_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "response_format" in message
+            or "json_object" in message
+            or "json mode" in message
+            or "json_output" in message
+        )
+
+    @staticmethod
+    def _is_empty_content(content: str | None) -> bool:
+        return content is None or not str(content).strip()
 
     async def _call_zhipu_text(
         self,

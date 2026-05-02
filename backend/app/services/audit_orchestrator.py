@@ -259,6 +259,13 @@ class AuditOrchestratorService:
         # 允许 Settings 覆盖默认并发上限，同时至少保留 1 个审核槽位，避免配置错误导致服务不可用。
         self.max_concurrent_audits = max(1, int(settings.max_concurrent_audits or self.MAX_CONCURRENT_AUDITS))
 
+    def _build_deepseek_response_format(self, provider: str | None) -> dict | None:
+        if not self.settings.enable_response_format:
+            return None
+        if (provider or "").lower() != "deepseek":
+            return None
+        return {"type": "json_object"}
+
     def get_capability(self) -> AuditCapability:
         """返回执行层能力说明。"""
 
@@ -996,6 +1003,7 @@ class AuditOrchestratorService:
                     api_key=user_api_key,
                     deep_think=deep_think,
                     timeout=self._LLM_SINGLE_CALL_TIMEOUT_SECONDS,
+                    response_format=self._build_deepseek_response_format(provider_for_call),
                 ),
                 should_cancel=should_cancel,
             )

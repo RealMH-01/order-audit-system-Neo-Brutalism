@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     default_reasoning_model: str = "o3-mini"
     default_vision_model: str = "gpt-4o"
     max_concurrent_audits: int = 5
+    enable_response_format: bool = False
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
