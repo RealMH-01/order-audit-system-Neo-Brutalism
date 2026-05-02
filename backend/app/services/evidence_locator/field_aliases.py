@@ -28,8 +28,11 @@ def _alias_match(alias: str, target: str) -> bool:
     if alias == target:
         return True
 
-    if len(alias) <= 2:
+    if len(alias) < 2:
         return False
+
+    if len(alias) == 2:
+        return alias in target and len(target) <= 10
 
     if len(alias) == 3:
         return len(target) <= 12 and (target.startswith(alias) or target.endswith(alias))
