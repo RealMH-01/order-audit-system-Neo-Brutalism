@@ -174,6 +174,8 @@ def _resolve_from_hints(issue: dict, file_index: list[dict]) -> tuple[list[dict]
         passed_count = sum(1 for value in passed.values() if value)
         if passed_count == 3:
             locations.append(_build_location(record, confidence=0.95, resolver="anchor_verified"))
+        elif passed_count == 2 and passed["value"]:
+            locations.append(_build_location(record, confidence=0.80, resolver="value_anchor_relaxed"))
         elif passed_count == 2:
             partials.append(_build_location(record, confidence=0.75, resolver="partial_match"))
 
@@ -383,16 +385,16 @@ def _parse_number(value: str) -> float | None:
     match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
     if not match:
         return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
 
 
 def _is_numeric_like(value: str) -> bool:
     cleaned = _CURRENCY_AND_UNIT_PATTERN.sub("", str(value or "")).strip()
     cleaned = re.sub(r"\b(?:KG|KGS|PCS|CTNS|TON|MT)\b", "", cleaned, flags=re.IGNORECASE).strip()
     return bool(re.fullmatch(r"[-+]?\d+(?:\.\d+)?", cleaned))
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
 
 
 def _normalize_doc_type(value: Any) -> str:

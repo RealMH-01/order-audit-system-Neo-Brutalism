@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,15 @@ from openpyxl import load_workbook
 from openpyxl.utils import coordinate_to_tuple, get_column_letter, range_boundaries
 
 logger = logging.getLogger(__name__)
+
+_NUMBER_TEXT = r"[-+]?(?:(?:\d{1,3}(?:[,，]\d{3})+)|\d+)(?:\.\d+)?"
+_UNIT_OR_CURRENCY_TEXT = r"(?:USD|EUR|CNY|RMB|KG|KGS|PCS|CTNS|TON|MT)"
+_PURE_NUMBER_PATTERN = re.compile(_NUMBER_TEXT)
+_NUMBER_WITH_UNIT_PATTERN = re.compile(
+    rf"(?:{_NUMBER_TEXT}\s*{_UNIT_OR_CURRENCY_TEXT}|{_UNIT_OR_CURRENCY_TEXT}\s*{_NUMBER_TEXT})",
+    re.IGNORECASE,
+)
+_PURE_DATE_PATTERN = re.compile(r"(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}/\d{1,2}/\d{4})")
 
 
 def build_cell_index(
@@ -115,7 +125,10 @@ def _build_sheet_index(
                 display_value = formula
             value_str = _stringify(display_value)
 
-            if value_str == "" and formula is None:
+            is_merge_anchor = bool(merged_info and merged_info["is_anchor"])
+            is_empty_anchor = value_str == "" and formula is None and is_merge_anchor
+
+            if value_str == "" and formula is None and not is_merge_anchor:
                 continue
 
             value_strings[(row_idx, column_idx)] = value_str
@@ -133,7 +146,8 @@ def _build_sheet_index(
                     "formula": formula,
                     "number_format": formula_cell.number_format,
                     "merged_range": merged_info["range"] if merged_info else None,
-                    "is_merge_anchor": bool(merged_info and merged_info["is_anchor"]),
+                    "is_merge_anchor": is_merge_anchor,
+                    "is_empty_anchor": is_empty_anchor,
                     "left_label": None,
                     "above_header": None,
                     "row_context": "",
@@ -176,19 +190,48 @@ def _build_row_contexts(value_strings: dict[tuple[int, int], str]) -> dict[int, 
 
 
 def _find_left_label(value_strings: dict[tuple[int, int], str], row: int, column: int) -> str | None:
+    fallback: str | None = None
+    skipped_data_values = 0
     for current_column in range(column - 1, 0, -1):
         value = value_strings.get((row, current_column), "").strip()
-        if len(value) >= 1:
-            return value
-    return None
+        if len(value) < 1:
+            continue
+        if fallback is None:
+            fallback = value
+        if _looks_like_data_value(value):
+            skipped_data_values += 1
+            if skipped_data_values >= 5:
+                return fallback
+            continue
+        return value
+    return fallback
 
 
 def _find_above_header(value_strings: dict[tuple[int, int], str], row: int, column: int) -> str | None:
+    fallback: str | None = None
+    skipped_data_values = 0
     for current_row in range(row - 1, 0, -1):
         value = value_strings.get((current_row, column), "").strip()
-        if len(value) >= 1:
-            return value
-    return None
+        if len(value) < 1:
+            continue
+        if fallback is None:
+            fallback = value
+        if _looks_like_data_value(value):
+            skipped_data_values += 1
+            if skipped_data_values >= 8:
+                return fallback
+            continue
+        return value
+    return fallback
+
+
+def _looks_like_data_value(value: str) -> bool:
+    text = value.strip()
+    return bool(
+        re.fullmatch(_PURE_NUMBER_PATTERN, text)
+        or re.fullmatch(_NUMBER_WITH_UNIT_PATTERN, text)
+        or re.fullmatch(_PURE_DATE_PATTERN, text)
+    )
 
 
 def _stringify(value: Any) -> str:

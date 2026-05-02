@@ -235,7 +235,7 @@ DEFAULT_PROMPT_RULE_TEXT = SYSTEM_PROMPT_TEXT
 
 _OUTPUT_FORMAT_RULES = """
 Return a JSON object with this exact shape:
-Each issue object must include location_hints: an array of "SheetName!Cell" strings, or [] when uncertain.
+Each issue object must include location_hints: an array of "SheetName!Cell" strings for markable cell-specific issues, or [] only when no specific cell can be determined from the provided sheet/cell/table context.
 {
   "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
   "issues": [
@@ -261,7 +261,16 @@ Output requirements:
 - All user-facing text must be Simplified Chinese.
 - Preserve original field names, numbers, currency codes, and Incoterms.
 - Number issues by severity: R-01, Y-01, B-01.
-- For every issue, include "location_hints" as a list of likely Excel cell coordinates in "SheetName!Cell" format, for example "Sheet1!F9". If you are not sure, output [] and do not guess.
+- For every issue that corresponds to a specific Excel cell, provide at least one
+  entry in "location_hints" pointing to the cell that needs marking, formatted as
+  "SheetName!Cell" (e.g., "Sheet1!F9").
+- For "missing field" or "empty value" issues: if the document text or extracted
+  table context clearly identifies the field label and its adjacent empty cell,
+  output the coordinate of that empty cell. Do NOT output [] merely because the
+  value itself is empty.
+- Output [] only when the issue is advisory, relates to external documents/process
+  recommendations, or no specific cell can be determined from the provided text.
+- Do NOT fabricate coordinates. Never guess a coordinate that is not supported by visible sheet/cell/table context.
 - Do not output any text outside the JSON object.
 """.strip()
 
