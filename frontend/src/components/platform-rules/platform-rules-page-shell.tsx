@@ -80,6 +80,12 @@ export function PlatformRulesPageShell() {
         </div>
       </header>
 
+      <div className="issue-yellow p-4">
+        <p className="text-sm font-black leading-6">
+          以下是当前生效的全部系统硬规则。这些规则由管理员维护，对所有审核任务生效。如需提出修改建议，请联系管理员。
+        </p>
+      </div>
+
       <PlatformRulesContent
         status={status}
         rules={rules}

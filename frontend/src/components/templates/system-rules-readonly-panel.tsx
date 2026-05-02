@@ -61,6 +61,11 @@ export function SystemRulesReadonlyPanel({ token }: { token: string | null }) {
           <p className="max-w-4xl text-sm font-bold leading-6 md:text-base">
             这些规则由平台统一维护，会自动应用到所有新审核。你不能修改它们；你可以在下方维护自己的自定义规则集。
           </p>
+          <div className="issue-yellow p-4">
+            <p className="text-sm font-black leading-6">
+              以下是当前生效的全部系统硬规则。这些规则由管理员维护，对所有审核任务生效。如需提出修改建议，请联系管理员。
+            </p>
+          </div>
         </div>
 
         <Button

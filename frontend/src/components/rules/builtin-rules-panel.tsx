@@ -1,6 +1,6 @@
 // DEPRECATED: 自 Task 4.1 起不再被 /admin/rules 页面引用，旧 built-in 规则页面不再作为当前规则维护入口。后续清理轮次再物理删除。
 
-import { AlertCircle, Loader2, RefreshCcw, Save, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCcw, ShieldCheck, ShieldOff } from "lucide-react";
 
 import type { BuiltinRuleFull, BuiltinRulePublic, RulesRole } from "@/components/rules/types";
 import { formatRulesDate } from "@/components/rules/rules-utils";
@@ -17,11 +17,6 @@ type BuiltinRulesPanelProps = {
   fullRule: BuiltinRuleFull | null;
   displayText: string;
   promptText: string;
-  saving: boolean;
-  onDisplayTextChange: (value: string) => void;
-  onPromptTextChange: (value: string) => void;
-  onSave: () => void;
-  onReset: () => void;
   onRetry: () => void;
 };
 
@@ -33,11 +28,6 @@ export function BuiltinRulesPanel({
   fullRule,
   displayText,
   promptText,
-  saving,
-  onDisplayTextChange,
-  onPromptTextChange,
-  onSave,
-  onReset,
   onRetry
 }: BuiltinRulesPanelProps) {
   const isAdmin = role === "admin";
@@ -49,7 +39,7 @@ export function BuiltinRulesPanel({
         <Badge variant="accent">系统规则</Badge>
         <CardTitle>通用 built-in 规则</CardTitle>
         <CardDescription>
-          当前页面会按真实权限边界读取 `/api/rules/builtin` 和 `/api/rules/builtin/full`。所有已登录用户可查看通用规则，只有管理员可保存修改。
+          当前页面仅保留旧规则的只读展示能力。系统硬规则请通过“系统硬约束规则管理”页面维护。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -99,8 +89,7 @@ export function BuiltinRulesPanel({
               </span>
               <Textarea
                 value={displayText}
-                onChange={(event) => onDisplayTextChange(event.target.value)}
-                disabled={!isAdmin}
+                readOnly
                 className="min-h-[14rem]"
               />
             </label>
@@ -112,8 +101,7 @@ export function BuiltinRulesPanel({
                 </span>
                 <Textarea
                   value={promptText}
-                  onChange={(event) => onPromptTextChange(event.target.value)}
-                  disabled={!isAdmin}
+                  readOnly
                   className="min-h-[18rem]"
                 />
               </label>
@@ -126,18 +114,10 @@ export function BuiltinRulesPanel({
             )}
 
             {isAdmin ? (
-              <div className="flex flex-wrap gap-3">
-                <Button onClick={onSave} disabled={saving}>
-                  {saving ? (
-                    <Loader2 className="animate-spin" size={18} strokeWidth={3} />
-                  ) : (
-                    <Save size={18} strokeWidth={3} />
-                  )}
-                  {saving ? "保存中..." : "保存系统规则"}
-                </Button>
-                <Button variant="outline" onClick={onReset} disabled={saving}>
-                  重置编辑内容
-                </Button>
+              <div className="border-4 border-ink bg-secondary p-4 shadow-neo-sm">
+                <p className="text-sm font-bold leading-6">
+                  旧 built-in 写入能力已废弃。请前往“系统硬约束规则管理”页面新增、修改、启用或停用规则。
+                </p>
               </div>
             ) : null}
           </>

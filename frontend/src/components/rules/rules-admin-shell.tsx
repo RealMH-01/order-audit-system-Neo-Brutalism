@@ -2,15 +2,14 @@
 
 // DEPRECATED: 自 Task 4.1 起不再被 /admin/rules 页面引用，旧 built-in 规则页面不再作为当前规则维护入口。后续清理轮次再物理删除。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, FolderKanban, Library, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { BuiltinRulesPanel } from "@/components/rules/builtin-rules-panel";
 import type {
   BuiltinRuleFull,
-  BuiltinRulePublic,
-  BuiltinRuleUpdatePayload
+  BuiltinRulePublic
 } from "@/components/rules/types";
 import { normalizeError } from "@/components/rules/rules-utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import type { WizardProfile } from "@/components/wizard/types";
-import { apiGet, apiPut, getStoredAccessToken } from "@/lib/api";
+import { apiGet, getStoredAccessToken } from "@/lib/api";
 
 export function RulesAdminShell() {
   const router = useRouter();
@@ -34,11 +33,6 @@ export function RulesAdminShell() {
   const [builtinPromptText, setBuiltinPromptText] = useState("");
   const [builtinLoading, setBuiltinLoading] = useState(true);
   const [builtinError, setBuiltinError] = useState<string | null>(null);
-  const [builtinSaving, setBuiltinSaving] = useState(false);
-
-  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(
-    null
-  );
 
   const loadProfile = useCallback(async (accessToken: string) => {
     setProfileLoading(true);
@@ -108,56 +102,6 @@ export function RulesAdminShell() {
     })();
   }, [loadBuiltin, loadProfile]);
 
-  const builtinDirty = useMemo(() => {
-    if (profile?.role !== "admin" || !builtinFull) {
-      return false;
-    }
-
-    return (
-      builtinDisplayText !== builtinFull.display_text || builtinPromptText !== builtinFull.prompt_text
-    );
-  }, [builtinDisplayText, builtinFull, builtinPromptText, profile?.role]);
-
-  const handleSaveBuiltin = useCallback(async () => {
-    if (!token || profile?.role !== "admin") {
-      return;
-    }
-
-    if (!builtinDisplayText.trim() || !builtinPromptText.trim()) {
-      setFeedback({
-        tone: "error",
-        message: "系统规则保存前请完整填写展示规则和 Prompt 规则。"
-      });
-      return;
-    }
-
-    setBuiltinSaving(true);
-    setFeedback(null);
-
-    const payload: BuiltinRuleUpdatePayload = {
-      display_text: builtinDisplayText.trim(),
-      prompt_text: builtinPromptText.trim()
-    };
-
-    try {
-      const { data } = await apiPut<BuiltinRuleFull>("/rules/builtin", payload, {
-        token
-      });
-      setBuiltinFull(data);
-      setBuiltinPublic(data);
-      setBuiltinDisplayText(data.display_text);
-      setBuiltinPromptText(data.prompt_text);
-      setFeedback({
-        tone: "success",
-        message: "系统规则已保存。"
-      });
-    } catch (error) {
-      setFeedback({ tone: "error", message: normalizeError(error, "保存系统规则失败，请稍后重试。") });
-    } finally {
-      setBuiltinSaving(false);
-    }
-  }, [builtinDisplayText, builtinPromptText, profile?.role, token]);
-
   if (profileLoading) {
     return (
       <section className="space-y-6">
@@ -214,12 +158,6 @@ export function RulesAdminShell() {
       {profileError ? (
         <div className="issue-red p-4">
           <p className="text-sm font-bold leading-6">{profileError}</p>
-        </div>
-      ) : null}
-
-      {feedback ? (
-        <div className={feedback.tone === "success" ? "issue-blue p-4" : "issue-red p-4"}>
-          <p className="text-sm font-bold leading-6">{feedback.message}</p>
         </div>
       ) : null}
 
@@ -293,21 +231,6 @@ export function RulesAdminShell() {
           fullRule={builtinFull}
           displayText={builtinDisplayText}
           promptText={builtinPromptText}
-          saving={builtinSaving}
-          onDisplayTextChange={setBuiltinDisplayText}
-          onPromptTextChange={setBuiltinPromptText}
-          onSave={() => void handleSaveBuiltin()}
-          onReset={() => {
-            if (profile?.role === "admin" && builtinFull) {
-              setBuiltinDisplayText(builtinFull.display_text);
-              setBuiltinPromptText(builtinFull.prompt_text);
-              return;
-            }
-
-            if (builtinPublic) {
-              setBuiltinDisplayText(builtinPublic.display_text);
-            }
-          }}
           onRetry={() => {
             if (!token || !profile) {
               return;
@@ -317,14 +240,6 @@ export function RulesAdminShell() {
           }}
         />
       </div>
-
-      {builtinDirty && profile?.role === "admin" ? (
-        <div className="issue-yellow p-4">
-          <p className="text-sm font-bold leading-6">
-            系统规则存在未保存修改。点击“保存系统规则”后才会写回 `/api/rules/builtin`。
-          </p>
-        </div>
-      ) : null}
     </section>
   );
 }

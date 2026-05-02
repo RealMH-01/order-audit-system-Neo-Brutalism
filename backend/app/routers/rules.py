@@ -4,7 +4,6 @@ from app.dependencies import get_current_user, get_rules_config_service
 from app.models.schemas import (
     BuiltinRuleFullResponse,
     BuiltinRulePublicResponse,
-    BuiltinRuleUpdateRequest,
     CurrentUser,
     CustomRulesResponse,
     CustomRulesUpdateRequest,
@@ -15,6 +14,11 @@ from app.services.rules_config import RulesConfigService
 router = APIRouter()
 
 LEGACY_TEMPLATE_GONE_MESSAGE = "旧规则模板体系已下线，请使用审核模板功能。"
+LEGACY_BUILTIN_GONE_MESSAGE = "该端点已废弃。请通过 /admin/system-rules 管理系统硬规则。"
+
+# Compatibility legacy endpoints:
+# GET /builtin and GET /builtin/full expose the currently effective system_hard_rules text
+# for old callers; PUT /builtin is permanently gone. These routes may be removed later.
 
 
 @router.get("/capabilities", response_model=RulesCapability, summary="规则能力说明")
@@ -41,12 +45,8 @@ async def get_builtin_rule_full(
 
 
 @router.put("/builtin", response_model=BuiltinRuleFullResponse)
-async def update_builtin_rule(
-    payload: BuiltinRuleUpdateRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-    service: RulesConfigService = Depends(get_rules_config_service),
-) -> BuiltinRuleFullResponse:
-    return service.update_builtin(current_user, payload)
+async def update_builtin_rule() -> None:
+    raise HTTPException(status_code=410, detail=LEGACY_BUILTIN_GONE_MESSAGE)
 
 
 @router.get("/custom", response_model=CustomRulesResponse)

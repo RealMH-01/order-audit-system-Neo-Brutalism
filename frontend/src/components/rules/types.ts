@@ -11,8 +11,3 @@ export type BuiltinRulePublic = {
 export type BuiltinRuleFull = BuiltinRulePublic & {
   prompt_text: string;
 };
-
-export type BuiltinRuleUpdatePayload = {
-  display_text: string;
-  prompt_text: string;
-};

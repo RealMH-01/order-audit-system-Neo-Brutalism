@@ -494,6 +494,12 @@ export function SystemRulesAdminShell() {
         }
       />
 
+      <div className="issue-yellow p-4">
+        <p className="text-sm font-black leading-6">
+          在此处启用、修改、新增或停用规则会立即影响所有用户的下一次审核任务，无需重启服务。请谨慎操作，每次修改都会被记录到变更日志中。
+        </p>
+      </div>
+
       {loadError ? <Notice tone="error" message={loadError} /> : null}
       {feedback ? <Notice tone={feedback.tone} message={feedback.message} /> : null}
 

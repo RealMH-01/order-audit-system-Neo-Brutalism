@@ -1,4 +1,9 @@
-"""System and custom rule configuration service."""
+"""Compatibility reads for DB-backed system hard rules and custom rule configuration.
+
+The legacy builtin-rule API is now read-only. Its response shape is kept for
+old callers, but the displayed rule text is built from enabled rows in
+system_hard_rules, matching the audit system prompt used for new audit tasks.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,6 @@ from app.models.schemas import (
     BootstrapDataPlan,
     BuiltinRuleFullResponse,
     BuiltinRulePublicResponse,
-    BuiltinRuleUpdateRequest,
     CurrentUser,
     CustomRulesResponse,
     CustomRulesUpdateRequest,
@@ -19,7 +23,11 @@ from app.models.schemas import (
     RulesCapability,
     SystemRuleSeed,
 )
-from app.services.audit_engine import build_default_display_text, build_default_prompt_text
+from app.services.audit_engine import (
+    build_audit_system_prompt,
+    build_default_display_text,
+    build_default_prompt_text,
+)
 from app.services.runtime_store import RuntimeStore
 
 DEFAULT_SYSTEM_KEY = "default"
@@ -85,9 +93,9 @@ class RulesConfigService:
         )
 
     def get_builtin_public(self) -> BuiltinRulePublicResponse:
-        """Read the public system-rule summary."""
+        """Read the effective system hard rules through the legacy response shape."""
 
-        rule = self._get_system_rule()
+        rule = self._get_effective_system_hard_rules_text()
         return BuiltinRulePublicResponse(
             key=str(rule["key"]),
             display_text=str(rule["display_text"]),
@@ -95,32 +103,9 @@ class RulesConfigService:
         )
 
     def get_builtin_full(self) -> BuiltinRuleFullResponse:
-        """Read the full system-rule prompt."""
+        """Read the effective system hard rules through the legacy response shape."""
 
-        rule = self._get_system_rule()
-        return BuiltinRuleFullResponse(
-            key=str(rule["key"]),
-            display_text=str(rule["display_text"]),
-            prompt_text=str(rule["prompt_text"]),
-            updated_at=rule.get("updated_at"),
-        )
-
-    def update_builtin(
-        self,
-        current_user: CurrentUser,
-        payload: BuiltinRuleUpdateRequest,
-    ) -> BuiltinRuleFullResponse:
-        """Update the system rule. Admin only."""
-
-        if current_user.role != "admin":
-            raise AppError("只有管理员可以修改系统通用规则。", status_code=403)
-
-        rule = self._get_system_rule()
-        rule["display_text"] = payload.display_text
-        rule["prompt_text"] = payload.prompt_text
-        rule["updated_by"] = current_user.id
-        rule["updated_at"] = datetime.now(timezone.utc)
-        rule = self._save_system_rule(rule)
+        rule = self._get_effective_system_hard_rules_text()
         return BuiltinRuleFullResponse(
             key=str(rule["key"]),
             display_text=str(rule["display_text"]),
@@ -185,6 +170,32 @@ class RulesConfigService:
         if self.store.system_rule is None:
             self._ensure_bootstrap_data()
         return dict(self.store.system_rule or {})
+
+    def _get_effective_system_hard_rules_text(self) -> dict[str, object]:
+        """Build legacy builtin text from currently enabled system_hard_rules."""
+
+        rules = self._list_enabled_system_hard_rules()
+        prompt_text = build_audit_system_prompt(rules)
+        return {
+            "key": "system_hard_rules",
+            "display_text": prompt_text,
+            "prompt_text": prompt_text,
+            "updated_at": self._get_latest_updated_at(rules),
+        }
+
+    def _list_enabled_system_hard_rules(self) -> list[dict[str, object]]:
+        if self.repo is None:
+            raise AppError("Supabase 未配置，无法加载系统硬规则。", status_code=500)
+
+        rows = self.repo.list_system_hard_rules(enabled_only=True)
+        return [dict(row) for row in rows]
+
+    @staticmethod
+    def _get_latest_updated_at(rules: list[dict[str, object]]) -> object | None:
+        values = [rule.get("updated_at") for rule in rules if rule.get("updated_at") is not None]
+        if not values:
+            return None
+        return max(values, key=str)
 
     def _get_profile(self, user_id: str) -> dict[str, object]:
         """Read the current user profile."""
