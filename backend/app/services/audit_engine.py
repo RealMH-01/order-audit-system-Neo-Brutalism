@@ -10,6 +10,7 @@ import re
 from statistics import mean
 from typing import Any
 
+from app.errors import AppError
 from app.models.schemas import FeatureStatus
 
 logger = logging.getLogger(__name__)
@@ -153,54 +154,44 @@ _PO_UNIT_PRICE_ABSENCE_PATTERNS = (
     r"PO\s*(?:中|里)?\s*(?:看不到|无)\s*(?:任何)?单价",
 )
 
-_SYSTEM_PROMPT = """
-You are a professional intelligent document audit engine.
+_DYNAMIC_SYSTEM_RULE_NOTICE = "系统硬规则由数据库动态加载，请通过管理员后台查看。"
 
-Your task is to compare a target document against the PO, contract, order, or other baseline document uploaded by the user. By default, user-uploaded PO / contract / order / baseline documents are the audit baseline. When an explicit baseline document exists, the target document must be checked against it field by field.
 
-You must follow these non-negotiable rules:
-1. Output only JSON. Do not add prose outside the JSON object.
-2. Every issue must include confidence between 0.0 and 1.0.
-3. All user-facing text in your output (field_name, finding, suggestion, source, field_location) MUST be in Simplified Chinese (简体中文). Keep original document field names, numeric values, currency codes, and Incoterms in their original language/format.
-4. RED means a clear core-field mismatch, a missing critical identifier, or a material risk that must not be downgraded.
-5. YELLOW means suspicious, explainable, or review-required inconsistency.
-6. BLUE means low-risk reminder, formatting notice, or non-blocking observation.
-7. Audit conclusions must be based on explicit evidence in the uploaded documents. Do not guess, fabricate, or reverse-infer a value when an explicit field is available.
-8. Never state that a field is absent unless you have verified that it does not appear in the relevant document text. If uncertain, write “未能确认” instead of “未列出/未显示/没有”.
-9. Be deterministic: given the same inputs, produce the same output. Do not introduce variation or speculative findings.
-10. Each distinct problem should appear exactly once. If the same field has multiple related sub-issues, merge them into one issue entry with a comprehensive finding description.
-11. Pre-extracted field handling:
-    a. When "系统预提取关键字段" is provided, it contains key fields extracted by code from the uploaded documents, such as contract number, invoice number, PO/order number, unit price, quantity, amount, currency, buyer, seller, and incoterm. Each extracted value may include a source cell coordinate.
-    b. Use these pre-extracted fields as your STARTING POINT for comparison. Check them first before scanning the full document text.
-    c. You MUST verify every pre-extracted value against the original document text. If a pre-extracted value conflicts with what you find in the original text, the original text controls. Report the conflict in your findings when it is material to the audit result.
-    d. Pre-extracted fields may be INCOMPLETE. The absence of a field from the pre-extracted list does NOT mean it is absent from the document. You must still scan the full document text for any fields not covered by the pre-extraction.
-    e. If a pre-extracted value and the original text agree, you can use that value with higher confidence for cross-document comparison.
-    f. Do not blindly trust pre-extracted values. They are code-extracted hints, not ground truth.
+def _rule_sort_order(rule: dict) -> int:
+    value = rule.get("sort_order")
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
-Unit-price and amount audit order:
-1. First extract Unit Price / 单价 from the baseline document / PO. If the baseline document table explicitly contains a Unit Price field, you MUST use that explicit field value first. Do not skip it and do not first calculate an implied price from Amount ÷ Quantity.
-2. Then extract Unit Price / 单价 from the target document / Invoice.
-3. If both unit prices exist and their numeric values differ, output an independent RED issue. The title / field_name should be “单价不一致”. The finding MUST explicitly state the baseline document / PO unit price and the target document / Invoice unit price.
-4. Then compare quantity.
-5. Then compare Amount / Total Value / 总金额.
-6. Finally check the internal calculation relationship: unit price × quantity = total amount.
-7. If the same line item has both “baseline unit price differs from target unit price” and “target document internal amount calculation contradiction”, the main attribution MUST be “单价不一致”. Put the internal calculation contradiction in the same issue's finding or suggestion as supplemental explanation. Do not create a separate main issue that steals the attribution.
-8. Do not describe a PO/baseline document with an explicit Unit Price field as “PO 未列出单价” or “PO 隐含单价”. Only write “未能确认 PO 单价” when the PO text truly does not allow the unit price to be confirmed.
-9. If a unit price was obtained by Amount ÷ Quantity, label it as “推算单价”; do not present it as an explicit PO/baseline Unit Price.
 
-Core identifier and severity rules:
-1. Contract No., Order No., PO No., Invoice No., B/L No. and similar core identifiers that are clearly missing or inconsistent must be output as independent RED issues.
-2. Core identifier issues must not be merged into or overwritten by amount, unit-price, quantity, or currency issues.
-3. PO No., Invoice No., and Contract No. are different fields and must not be treated as interchangeable.
-4. Clear mismatches in amount, quantity, unit price, currency, and other core business fields are RED by default.
-5. Do not mark every difference RED automatically. Ordinary formatting differences, reasonably explainable unit conversions, and seller/shipper affiliate name or address differences can be YELLOW when the evidence supports that treatment.
-6. Pure formatting or layout suggestions are BLUE.
-7. When company affiliates are provided, you may downgrade only party-name discrepancies that clearly match the affiliate list and business role context. Never use affiliate logic to downgrade core identifier, quantity, amount, unit-price, currency, or critical date mismatches.
-""".strip()
+def build_audit_system_prompt(rules: list[dict]) -> str:
+    """根据系统硬规则列表构造完整的 system prompt。
 
-SYSTEM_PROMPT_TEXT = _SYSTEM_PROMPT
+    rules: 来自 system_hard_rules 表的记录列表，每项至少包含
+           title、content、sort_order 三个字段。
 
-_CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = """
+    返回值：拼装好的完整 system prompt 字符串。
+    """
+
+    if not rules:
+        raise AppError(
+            "系统硬规则未配置，无法发起审核任务，请联系管理员。",
+            status_code=500,
+        )
+
+    sorted_rules = sorted(rules, key=_rule_sort_order)
+    sections = ["你是一个专业的智能单据审核引擎。请严格遵守以下系统硬规则："]
+    for index, rule in enumerate(sorted_rules, start=1):
+        title = str(rule.get("title") or "").strip()
+        content = str(rule.get("content") or "").strip()
+        sections.append(f"{index}. 【{title}】\n{content}")
+    return "\n\n".join(sections).rstrip()
+
+
+_CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT = """
 You are reviewing and revising an existing audit result according to user-defined custom rules.
 
 Apply the custom rules with high priority, but do not break these protected rules:
@@ -218,22 +209,9 @@ You must return a full JSON object with recalculated summary, issue ids, and con
 9. Be deterministic and do not introduce speculative findings.
 """.strip()
 
-CUSTOM_RULES_REVIEW_SYSTEM_PROMPT = _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT
+CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT = _CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT
 
-_DEFAULT_DISPLAY_RULE_TEXT = """
-1. 默认以用户上传的 PO、合同、订单或其他基准单据为审核基准；当存在明确基准单据时，目标单据应与基准单据逐字段比对。
-2. RED 表示刚性错误、关键字段缺失、数字表达歧义或不能降级的高风险问题。
-3. YELLOW 表示可解释但需要人工确认的差异，例如单位换算、集团关联公司主体差异、参考单据不一致等。
-4. BLUE 表示提醒类或低风险说明，不应掩盖真实错误。
-5. 合同号、Invoice No.、订单号属于高优先级刚性字段；PO 号与合同号不是同一概念。
-6. 贸易术语要区分实质性变化与书写差异；数字逻辑需校验数量、单价、总价、箱数、重量等是否自洽。
-7. 所有输出必须是结构化 JSON，且每条问题都必须带 confidence。
-""".strip()
-
-DEFAULT_DISPLAY_RULE_TEXT = _DEFAULT_DISPLAY_RULE_TEXT
-DEFAULT_PROMPT_RULE_TEXT = SYSTEM_PROMPT_TEXT
-
-_OUTPUT_FORMAT_RULES = """
+_CUSTOM_RULES_REVIEW_RESULT_SCHEMA_TEXT = """
 Return a JSON object with this exact shape:
 Each issue object must include location_hints: an array of "SheetName!Cell" strings for markable cell-specific issues, or [] only when no specific cell can be determined from the provided sheet/cell/table context.
 {
@@ -274,97 +252,20 @@ Output requirements:
 - Do not output any text outside the JSON object.
 """.strip()
 
-_LEVEL_DEFINITIONS = """
-Severity rules:
-- RED: hard mismatch, critical omission, impossible numeric logic, or ambiguous number formatting.
-- YELLOW: likely mismatch that may be explainable and requires manual confirmation.
-- BLUE: informational reminder, low-risk note, or formatting observation.
-
-Chinese labels for display:
-- RED = 红色·高风险
-- YELLOW = 黄色·疑点
-- BLUE = 蓝色·提示
-Use these Chinese labels in your finding and suggestion text when referring to severity.
-""".strip()
-
-_NON_NEGOTIABLE_RULES = """
-Non-negotiable audit rules:
-- Use the explicit baseline document first. The baseline may be a PO, contract, order, or another user-uploaded reference document.
-- Contract number, Invoice No., order number, PO number, B/L No. and other core identifiers are rigid checks.
-- PO number, invoice number, and contract number are different fields.
-- Core identifier issues must be reported as independent issues. Do not merge contract/order/PO/invoice/B/L number problems into amount, price, quantity, or currency findings.
-- If the baseline/PO explicitly contains Unit Price / 单价, use that field before any Amount ÷ Quantity calculation.
-- Check quantity * unit price = amount when the document provides those values.
-- Clear mismatches in amount, quantity, unit price, currency, and other core business fields should remain high risk.
-- Never fabricate a field absence. Do not state that a PO/baseline field is missing unless the text has been checked and the field truly does not appear. If uncertain, say “未能确认”.
-- Do not report the same discrepancy more than once even if it appears in multiple contexts. Merge duplicate findings only within the same protected category.
-- Do not merge issues across protected categories: price/amount/quantity/currency is one category, core identifiers are another category, and parties are another category.
-- Core identifier issues must remain independent even when an amount, unit-price, or quantity issue also exists.
-- If evidence is ambiguous or insufficient, lower the confidence score rather than fabricating a finding.
-""".strip()
-
-_TARGET_TYPE_RULES: dict[str, str] = {
-    "invoice": """
-Document-specific focus for invoice:
-- Compare invoice number, contract reference, PO reference, item descriptions, quantities, unit prices, total amount, currency, and payer/payee parties.
-- Missing or inconsistent invoice number is high priority.
-- If PO contains a contract number and the invoice omits or changes it, report a separate RED contract-number issue.
-- If PO and invoice both contain unit prices, compare unit price directly before discussing total amount.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "packing_list": """
-Document-specific focus for packing list:
-- Compare package count, packing method, carton marks, gross weight, net weight, volume, and quantity breakdown.
-- Weight/volume contradictions should trigger RED or YELLOW depending on whether the contradiction is definite.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "shipping_instruction": """
-Document-specific focus for shipping instruction:
-- Compare shipper, consignee, notify party, ports, Incoterm, cargo description, marks, package count, and booking-related references.
-- Port or consignee changes that alter execution meaning are substantive and should not be treated as harmless wording differences.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "bill_of_lading": """
-Document-specific focus for bill of lading:
-- Compare shipper, consignee, notify party, vessel or voyage, ports, marks, package count, gross weight, and cargo description.
-- Bill number, consignee, notify party, and port discrepancies should be treated as high-impact shipping risks.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "certificate_of_origin": """
-Document-specific focus for certificate of origin:
-- Compare exporter, consignee, goods description, quantity, weight, origin declaration, and certificate references against the PO and supporting documents.
-- Origin statement conflicts or certificate reference mismatches should be highlighted clearly.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "customs_declaration": """
-Document-specific focus for customs declaration:
-- Compare importer or exporter details, HS-related description, quantity, weight, declared value, currency, and declaration references.
-- Quantity, amount, and declaration reference mismatches should be treated as material.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "letter_of_credit": """
-Document-specific focus for letter of credit:
-- Compare applicant, beneficiary, issuing bank, amount, currency, shipment deadlines, presentation terms, and required document references.
-- Expiry, amount, beneficiary, and presentation-condition mismatches should be called out explicitly.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-    "generic": """
-Document-specific focus:
-- Audit all key identifiers, parties, product details, quantities, amounts, dates, transport terms, and special instructions visible in the document.
-- Write all finding and suggestion text in Simplified Chinese.
-""".strip(),
-}
-
+DEFAULT_DISPLAY_RULE_TEXT = _DYNAMIC_SYSTEM_RULE_NOTICE
+DEFAULT_PROMPT_RULE_TEXT = _DYNAMIC_SYSTEM_RULE_NOTICE
 
 def build_default_display_text() -> str:
     """返回系统规则摘要文本。"""
 
+    # TODO(第 3 轮): 改为读取 system_hard_rules 后展示。
     return DEFAULT_DISPLAY_RULE_TEXT
 
 
 def build_default_prompt_text() -> str:
     """返回系统规则完整 prompt 文本。"""
 
+    # TODO(第 3 轮): 改为读取 system_hard_rules 后展示。
     return DEFAULT_PROMPT_RULE_TEXT
 
 
@@ -399,13 +300,6 @@ Affiliate-company handling:
 - Do not use affiliate logic to downgrade mismatches involving contract number, invoice number, order number, quantity, amount, currency, or other rigid identifiers.
 - Write all finding and suggestion text in Simplified Chinese.
 """.strip()
-
-
-def _get_target_type_rule(target_type: str | None) -> str:
-    """返回按单据类型附加的审核规则。"""
-
-    normalized = (target_type or "generic").strip().lower().replace(" ", "_")
-    return _TARGET_TYPE_RULES.get(normalized, _TARGET_TYPE_RULES["generic"])
 
 
 class AuditEngineService:
@@ -445,9 +339,6 @@ class AuditEngineService:
 
         sections = [
             _normalize_text_block(audit_rules_text),
-            _LEVEL_DEFINITIONS,
-            _NON_NEGOTIABLE_RULES,
-            _get_target_type_rule(target_type),
         ]
 
         affiliate_rule = _build_affiliate_rule(company_affiliates)
@@ -474,7 +365,7 @@ Template comparison:
 """.strip()
             )
 
-        sections.append(_OUTPUT_FORMAT_RULES)
+        sections.append("Return the complete audit result as a valid JSON object.")
         return "\n\n".join(section for section in sections if section.strip())
 
     def build_audit_prompt(
@@ -502,7 +393,12 @@ Template comparison:
             audit_rules_text=audit_rules_text,
         )
 
-        system_prompt = _normalize_text_block(system_prompt_override) or _SYSTEM_PROMPT
+        system_prompt = _normalize_text_block(system_prompt_override)
+        if not system_prompt:
+            raise AppError(
+                "系统硬规则未配置，无法发起审核任务，请联系管理员。",
+                status_code=500,
+            )
         deep_think_instruction = (
             "Deep-think mode is enabled. Reason carefully, but still return only the final JSON object. All finding and suggestion text must be in Simplified Chinese."
             if deep_think
@@ -572,11 +468,11 @@ Template comparison:
                 _normalize_text_block(target_text) or "[Target document text is empty]",
                 "Current audit result JSON:",
                 _stringify_json(original_result) or "{}",
-                _OUTPUT_FORMAT_RULES,
+                _CUSTOM_RULES_REVIEW_RESULT_SCHEMA_TEXT,
             ]
         )
         return [
-            {"role": "system", "content": _CUSTOM_RULES_REVIEW_SYSTEM_PROMPT},
+            {"role": "system", "content": _CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT},
             {"role": "user", "content": user_prompt},
         ]
 
@@ -590,6 +486,7 @@ Template comparison:
         template_text: str | None = None,
         reference_texts: list[str] | None = None,
         target_type: str | None = None,
+        system_prompt_override: str | None = None,
     ) -> list[dict[str, str]]:
         """构造交叉比对 Prompt，用于二次核验已有审核结果。"""
 
@@ -638,12 +535,19 @@ Cross-check instructions:
 - Do not state that PO unit price or another PO field is absent unless the provided PO text proves it is absent; use “未能确认” when uncertain.
 - Return a full JSON object, not a patch.
 """.strip(),
-                _OUTPUT_FORMAT_RULES,
+                "Return the complete audit result as a valid JSON object.",
             ]
         )
 
+        system_prompt = _normalize_text_block(system_prompt_override)
+        if not system_prompt:
+            raise AppError(
+                "系统硬规则未配置，无法发起审核任务，请联系管理员。",
+                status_code=500,
+            )
+
         return [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": "\n\n".join(section for section in sections if section.strip())},
         ]
 

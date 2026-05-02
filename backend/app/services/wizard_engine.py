@@ -38,7 +38,7 @@ WIZARD_SESSION_TIMEOUT = timedelta(minutes=30)
 WIZARD_MAX_MESSAGE_LENGTH = 5000  # 单条消息最大字符数
 WIZARD_MAX_MESSAGES = 30  # 单个 session 最大消息轮数
 
-WIZARD_SYSTEM_PROMPT = """
+WIZARD_INSTRUCTION_TEXT = """
 你是一个经验丰富、耐心细致的订单审核专家和业务规则配置助手，正在帮助新手梳理可执行的审核规则。
 
 你的目标：
@@ -150,7 +150,7 @@ class WizardEngineService:
             selected_model=selected_model,
             business_background=business_background,
             messages=[
-                {"role": "system", "content": WIZARD_SYSTEM_PROMPT},
+                {"role": "system", "content": WIZARD_INSTRUCTION_TEXT},
                 {"role": "assistant", "content": initial_message},
             ],
         )

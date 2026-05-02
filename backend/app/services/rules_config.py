@@ -23,6 +23,7 @@ from app.services.audit_engine import build_default_display_text, build_default_
 from app.services.runtime_store import RuntimeStore
 
 DEFAULT_SYSTEM_KEY = "default"
+# TODO(第 3 轮): 改为读取 system_hard_rules 后展示。
 DEFAULT_DISPLAY_RULE_TEXT = build_default_display_text()
 DEFAULT_PROMPT_RULE_TEXT = build_default_prompt_text()
 

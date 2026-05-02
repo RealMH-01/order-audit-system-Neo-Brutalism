@@ -37,7 +37,8 @@ from app.models.schemas import (
     CurrentUser,
     FeatureStatus,
 )
-from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
+from app.services import audit_engine
+from app.services.audit_engine import AuditEngineService
 from app.services.document_classifier import classify_by_filename
 from app.services.evidence_locator import build_cell_index, resolve_issue_locations
 from app.services.file_parser import FileParserService
@@ -398,7 +399,10 @@ class AuditOrchestratorService:
         company_affiliates = list(profile.get("company_affiliates", []))
         selected_model = str(profile.get("selected_model") or self.settings.default_text_model)
         primary_provider = self.llm_client._resolve_provider(None, selected_model)
-        audit_rules_text = str(task.get("audit_rules_text") or "")
+        # System hard rules are loaded from system_hard_rules for the LLM system prompt.
+        # TODO(第 3 轮): 规则展示/模板快照路径再统一读取 system_hard_rules。
+        audit_rules_text = ""
+        system_prompt = self._load_audit_system_prompt(task_id)
 
         await self._notify_progress(progress_callback, 5, "正在准备审核上下文。")
         self._ensure_not_cancelled(should_cancel)
@@ -450,6 +454,7 @@ class AuditOrchestratorService:
                 deep_think=bool(task["deep_think"]),
                 custom_rules=list(task["custom_rules"]),
                 audit_rules_text=audit_rules_text,
+                system_prompt=system_prompt,
                 company_affiliates=company_affiliates,
                 should_cancel=should_cancel,
                 progress_callback=progress_callback,
@@ -495,6 +500,7 @@ class AuditOrchestratorService:
                     task=task,
                     selected_model=selected_model,
                     primary_provider=primary_provider,
+                    system_prompt=system_prompt,
                     should_cancel=should_cancel,
                 )
             except Exception:
@@ -567,6 +573,22 @@ class AuditOrchestratorService:
             "provider": primary_provider,
         }
 
+    def _load_audit_system_prompt(self, task_id: str) -> str:
+        if self.repo is None:
+            raise AppError("Supabase 未配置，无法加载系统硬规则。", status_code=500)
+
+        rules = self.repo.list_system_hard_rules(enabled_only=True)
+        system_prompt = audit_engine.build_audit_system_prompt(rules)
+        logger.info(
+            "AUDIT_" "SYSTEM_PROMPT_LOADED task_id=%s rule_count=%d rule_ids=%s rule_codes=%s",
+            task_id,
+            len(rules),
+            [str(r.get("id")) for r in rules],
+            [str(r.get("code")) for r in rules],
+        )
+        return system_prompt
+
+
     async def _run_cross_file_check(
         self,
         *,
@@ -575,6 +597,7 @@ class AuditOrchestratorService:
         task: dict[str, Any],
         selected_model: str,
         primary_provider: str,
+        system_prompt: str,
         should_cancel: Callable[[], bool] | None,
     ) -> dict[str, Any] | None:
         """对多个目标文件执行交叉一致性检查。
@@ -628,7 +651,7 @@ class AuditOrchestratorService:
 
         user_content = "\n".join(parts)
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_TEXT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
 
@@ -861,6 +884,7 @@ class AuditOrchestratorService:
         deep_think: bool,
         custom_rules: list[str],
         audit_rules_text: str,
+        system_prompt: str,
         company_affiliates: list[str],
         should_cancel: Callable[[], bool] | None,
         progress_callback: Callable[[int, str], Awaitable[None] | None] | None,
@@ -936,6 +960,7 @@ class AuditOrchestratorService:
             company_affiliates=company_affiliates,
             deep_think=deep_think,
             audit_rules_text=audit_rules_text,
+            system_prompt_override=system_prompt,
             evidence_block=evidence_block,
         )
 

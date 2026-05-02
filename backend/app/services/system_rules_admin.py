@@ -1,7 +1,9 @@
 """Admin service for DB-backed system hard rules.
 
-This service intentionally does not feed rules into the audit flow. It only
-serves the management/read-only HTTP APIs for ``system_hard_rules``.
+Rules in system_hard_rules are loaded by audit_orchestrator at the
+start of every audit task and injected into the LLM system prompt.
+Changes made through this service take effect on the next audit
+task; no service restart is required.
 """
 
 from __future__ import annotations
