@@ -314,9 +314,28 @@ def _has_location_hints(issue: dict) -> bool:
 
 def _location_hints(issue: dict) -> list[str]:
     hints = issue.get("location_hints")
-    if not isinstance(hints, list):
-        return []
-    return [str(item).strip() for item in hints if str(item).strip()]
+    if isinstance(hints, list):
+        cleaned = [item.strip() for item in hints if isinstance(item, str) and item.strip()]
+        if cleaned:
+            return cleaned
+
+    fallback_hints: list[str] = []
+    field_location = issue.get("field_location")
+    if isinstance(field_location, str) and field_location.strip():
+        fallback_hints.append(field_location.strip())
+
+    locations = issue.get("locations")
+    if isinstance(locations, list):
+        for location in locations:
+            if isinstance(location, str) and location.strip():
+                fallback_hints.append(location.strip())
+            elif isinstance(location, dict):
+                sheet = str(location.get("sheet") or "").strip()
+                cell = str(location.get("cell") or "").strip()
+                if sheet and cell:
+                    fallback_hints.append(f"{sheet}!{cell}")
+
+    return fallback_hints
 
 
 def _parse_location_hint(hint: str) -> tuple[str, str] | None:

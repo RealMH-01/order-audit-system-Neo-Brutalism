@@ -15,6 +15,66 @@ from app.models.schemas import FeatureStatus
 
 logger = logging.getLogger(__name__)
 
+_LOCATION_HINT_PATTERN = re.compile(
+    r"""
+    ^\s*
+    (?:'?(?P<sheet>[^'!]+)'?\s*!\s*)?
+    (?P<cell>[A-Za-z]+\d+)
+    (?:\s*:\s*[A-Za-z]+\d+)?
+    \s*$
+    """,
+    re.VERBOSE,
+)
+
+
+def _normalize_location_hints(raw) -> list[str]:
+    """
+    Normalize arbitrary LLM output into safe Sheet!Cell location hints.
+
+    Invalid items are ignored so malformed model output cannot fail the whole
+    audit parse.
+    """
+
+    if raw is None:
+        return []
+
+    if isinstance(raw, str):
+        items = [piece for piece in re.split(r"[,，、\n]+", raw) if piece.strip()]
+    elif isinstance(raw, list):
+        items = []
+        for item in raw:
+            if isinstance(item, str):
+                items.append(item)
+            elif isinstance(item, dict):
+                sheet = str(item.get("sheet") or "").strip()
+                cell = str(item.get("cell") or "").strip()
+                if sheet and cell:
+                    items.append(f"{sheet}!{cell}")
+    else:
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for item in items:
+        match = _LOCATION_HINT_PATTERN.match(item)
+        if not match:
+            continue
+
+        sheet = (match.group("sheet") or "").strip()
+        cell = match.group("cell").upper()
+
+        if not sheet:
+            continue
+
+        key = f"{sheet}!{cell}"
+        if key not in seen:
+            seen.add(key)
+            normalized.append(key)
+
+    return normalized
+
+
 _LEVEL_ALIASES = {
     "RED": "RED",
     "红色·高风险": "RED",
@@ -696,6 +756,13 @@ Cross-check instructions:
                 value = raw_issue.get(optional_key)
                 if value not in (None, ""):
                     normalized_issue[optional_key] = value
+
+            location_hints = _normalize_location_hints(raw_issue.get("location_hints"))
+            if not location_hints:
+                legacy_location = raw_issue.get("field_location")
+                if isinstance(legacy_location, str) and "!" in legacy_location:
+                    location_hints = _normalize_location_hints(legacy_location)
+            normalized_issue["location_hints"] = location_hints
 
             normalized_issues.append(normalized_issue)
             level_counts[level] += 1
