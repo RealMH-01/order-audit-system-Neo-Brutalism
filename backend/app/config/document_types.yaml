@@ -1,0 +1,128 @@
+document_types:
+  - type: po
+    label: 采购订单
+    filename_keywords:
+      - purchase_order
+    filename_regex:
+      - '(?:^|[-_\s])po(?:$|[-_\s])'
+    content_keywords:
+      - 'Purchase Order'
+      - 'PO No'
+      - '采购订单'
+    content_match_threshold: 2
+
+  - type: invoice
+    label: 商业发票
+    filename_keywords:
+      - commercial_invoice
+      - invoice
+    filename_regex:
+      - '(?:^|[-_\s])ci(?:$|[-_\s])'
+      - '(?:^|[-_\s])inv(?:$|[-_\s])'
+    content_keywords:
+      - 'Commercial Invoice'
+      - 'Invoice No'
+      - '商业发票'
+      - '发票号'
+    content_match_threshold: 2
+
+  - type: packing_list
+    label: 箱单
+    filename_keywords:
+      - packing_list
+      - packing
+      - plist
+      - pkl
+      - 装箱单
+      - 箱单
+    filename_regex:
+      - '(?:^|[-_\s])pl(?:$|[-_\s])'
+    content_keywords:
+      - 'Packing List'
+      - 'Carton No'
+      - 'N.W.'
+      - 'G.W.'
+      - 'CTNS'
+      - '装箱单'
+    content_match_threshold: 2
+
+  - type: bill_of_lading
+    label: 提单
+    filename_keywords:
+      - bill_of_lading
+      - bol
+      - 提单
+      - 海运单
+    filename_regex:
+      - '(?:^|[-_\s])b[_\-/]?l(?:$|[-_\s])'
+    content_keywords:
+      - 'Bill of Lading'
+      - 'B/L No'
+      - 'Shipper'
+      - 'Consignee'
+      - 'Vessel'
+      - '提单号'
+    content_match_threshold: 2
+
+  - type: shipping_instruction
+    label: 托书
+    filename_keywords:
+      - shipping_instruction
+      - shipping_order
+      - booking_confirmation
+      - 托书
+      - 订舱
+      - 委托书
+    filename_regex:
+      - '(?:^|[-_\s])si(?:$|[-_\s])'
+      - '(?:^|[-_\s])so(?:$|[-_\s])'
+      - '(?:^|[-_\s])sli(?:$|[-_\s])'
+    content_keywords:
+      - 'Shipping Instruction'
+      - 'Shipping Order'
+      - 'Booking Confirmation'
+      - '托书'
+      - '订舱'
+    content_match_threshold: 2
+
+  - type: certificate_of_origin
+    label: 原产地证
+    filename_keywords:
+      - certificate_of_origin
+      - coo
+      - 原产地证
+    filename_regex:
+      - '(?:^|[-_\s])co(?:$|[-_\s])'
+    content_keywords:
+      - 'Certificate of Origin'
+      - 'Country of Origin'
+      - '原产地证'
+    content_match_threshold: 2
+
+  - type: customs_declaration
+    label: 报关单
+    filename_keywords:
+      - customs_declaration
+      - customs
+      - declaration
+      - 报关单
+    content_keywords:
+      - 'Customs Declaration'
+      - '报关单'
+      - '海关编号'
+    content_match_threshold: 2
+
+  - type: letter_of_credit
+    label: 信用证
+    filename_keywords:
+      - letter_of_credit
+      - 信用证
+    filename_regex:
+      - '(?:^|[-_\s])lc(?:$|[-_\s])'
+      - '(?:^|[-_\s])l[_\-]?c(?:$|[-_\s])'
+    content_keywords:
+      - 'Letter of Credit'
+      - 'Documentary Credit'
+      - 'L/C'
+      - '信用证'
+    content_match_threshold: 2
