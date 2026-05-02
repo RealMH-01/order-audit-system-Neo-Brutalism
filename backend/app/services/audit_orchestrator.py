@@ -579,12 +579,21 @@ class AuditOrchestratorService:
 
         rules = self.repo.list_system_hard_rules(enabled_only=True)
         system_prompt = audit_engine.build_audit_system_prompt(rules)
+        rule_ids = [str(r.get("id")) for r in rules]
+        rule_codes = [str(r.get("code")) for r in rules]
         logger.info(
             "AUDIT_" "SYSTEM_PROMPT_LOADED task_id=%s rule_count=%d rule_ids=%s rule_codes=%s",
             task_id,
             len(rules),
-            [str(r.get("id")) for r in rules],
-            [str(r.get("code")) for r in rules],
+            rule_ids,
+            rule_codes,
+        )
+        logging.getLogger("uvicorn.error").info(
+            "AUDIT_" "SYSTEM_PROMPT_LOADED task_id=%s rule_count=%d rule_ids=%s rule_codes=%s",
+            task_id,
+            len(rules),
+            rule_ids,
+            rule_codes,
         )
         return system_prompt
 
