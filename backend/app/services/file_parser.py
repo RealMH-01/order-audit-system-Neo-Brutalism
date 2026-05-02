@@ -16,7 +16,7 @@ from fastapi import UploadFile
 from app.config import Settings
 from app.errors import AppError
 from app.models.schemas import FeatureStatus, FileCapability, FileRecord
-from app.services.document_classifier import classify_by_filename
+from app.services.document_classifier import classify_by_content, classify_by_filename
 from app.services.runtime_store import RuntimeStore
 
 try:
@@ -45,6 +45,9 @@ except Exception:  # pragma: no cover
     Image = None
 
 logger = logging.getLogger(__name__)
+
+_CONTENT_FALLBACK_TYPES = {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt", "other"}
+_CONTENT_CLASSIFICATION_TEXT_LIMIT = 20000
 
 _DIAG_KEYWORDS = (
     "1.85",
@@ -182,6 +185,18 @@ class FileParserService:
         }
         parser = parser_map.get(extension, self._parse_text)
         parsed_payload = parser(file_bytes, filename)
+
+        if detected_type in _CONTENT_FALLBACK_TYPES:
+            extracted_text = self._extract_text_for_classification(parsed_payload)
+            content_detected_type = classify_by_content(extracted_text)
+            if content_detected_type:
+                logger.info(
+                    "DOC_TYPE_DETECT filename=%s source=content_fallback old=%s new=%s",
+                    filename,
+                    detected_type,
+                    content_detected_type,
+                )
+                detected_type = content_detected_type
 
         preview_text = self._build_preview_text(parsed_payload.get("text", ""), detected_type)
         keep_raw = (extension == "xlsx") or (bool(parsed_payload.get("needs_ocr")) and not parsed_payload.get("page_images"))
@@ -393,6 +408,43 @@ class FileParserService:
         if "purchase_order" in normalized:
             return True
         return bool(re.search(r"(?:^|[-_\s])po(?:$|[-_\s])", name, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _extract_text_for_classification(parsed_payload: dict) -> str:
+        if not isinstance(parsed_payload, dict):
+            return ""
+
+        parts: list[str] = []
+
+        def append_string(value: object) -> None:
+            if isinstance(value, str):
+                text = value.strip()
+                if text:
+                    parts.append(text)
+
+        def collect_shallow(value: object) -> None:
+            append_string(value)
+            if isinstance(value, dict):
+                for nested_value in value.values():
+                    append_string(nested_value)
+                    if isinstance(nested_value, (list, tuple)):
+                        for item in nested_value:
+                            append_string(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    append_string(item)
+                    if isinstance(item, dict):
+                        for nested_value in item.values():
+                            append_string(nested_value)
+                            if isinstance(nested_value, (list, tuple)):
+                                for nested_item in nested_value:
+                                    append_string(nested_item)
+
+        for key in ("text", "content", "preview_text", "markdown", "sheets"):
+            if key in parsed_payload:
+                collect_shallow(parsed_payload[key])
+
+        return "\n".join(parts)[:_CONTENT_CLASSIFICATION_TEXT_LIMIT]
 
     @staticmethod
     def _collect_diag_hits(text: str, keywords: tuple[str, ...] = _DIAG_KEYWORDS) -> dict[str, int]:
