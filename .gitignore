@@ -19,3 +19,7 @@ build/
 .env.production.local
 coverage/
 *.tsbuildinfo
+
+# local backups
+*.backup
+*.backup-*

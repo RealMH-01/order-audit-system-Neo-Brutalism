@@ -1866,13 +1866,20 @@ class AuditOrchestratorService:
             task["progress_percent"] = 100
             task["message"] = "审核任务已完成。"
             task["updated_at"] = datetime.now(timezone.utc)
-            report_paths: dict[str, str] = {}
+            report_paths: dict[str, Any] = {}
             if self.repo is not None and result_bundle.get("report_bundle"):
                 report_paths = self._upload_reports_to_storage(
                     task_id=task_id,
                     user_id=user_id,
                     report_bundle=result_bundle["report_bundle"],
                 )
+                bundle_filenames = result_bundle["report_bundle"].get("filenames")
+                if isinstance(bundle_filenames, dict) and report_paths:
+                    report_paths["filenames"] = {
+                        key: str(value)
+                        for key, value in bundle_filenames.items()
+                        if isinstance(value, str) and value.strip()
+                    }
                 task["report_paths"] = report_paths
 
             history_item = {
@@ -2394,6 +2401,13 @@ class AuditOrchestratorService:
             if history_record:
                 found_history_record = True
                 report_paths = history_record.get("report_paths")
+
+        if isinstance(report_paths, dict):
+            persisted_filenames = report_paths.get("filenames")
+            if isinstance(persisted_filenames, dict):
+                persisted_name = persisted_filenames.get(report_type)
+                if isinstance(persisted_name, str) and persisted_name.strip():
+                    filename = persisted_name
 
         if report_paths and self.repo is not None:
             storage_path = report_paths.get(report_type)

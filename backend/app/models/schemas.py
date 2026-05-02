@@ -495,7 +495,7 @@ class AuditHistoryRecord(BaseModel):
     audit_rule_snapshot: dict[str, Any] | None = None
     deep_think_used: bool = False
     task_id: str | None = None
-    report_paths: dict[str, str] | None = None
+    report_paths: dict[str, Any] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
