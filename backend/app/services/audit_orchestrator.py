@@ -38,6 +38,7 @@ from app.models.schemas import (
     FeatureStatus,
 )
 from app.services.audit_engine import AuditEngineService, SYSTEM_PROMPT_TEXT
+from app.services.document_classifier import classify_by_filename
 from app.services.evidence_locator import build_cell_index, resolve_issue_locations
 from app.services.file_parser import FileParserService
 from app.services.llm_client import LLMClientService, format_cell_index_for_llm
@@ -58,18 +59,30 @@ _TECHNICAL_TASK_MESSAGE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_DOC_TYPE_HINTS = {
-    "invoice": {"invoice", "commercial_invoice", "inv"},
-    "packing_list": {"packing_list", "packing", "plist"},
-    "shipping_instruction": {"shipping_instruction", "shipping", "si"},
-    "bill_of_lading": {"bill_of_lading", "bol", "b_l", "b-l"},
-    "certificate_of_origin": {"certificate_of_origin", "coo", "c_o"},
-    "customs_declaration": {"customs_declaration", "customs", "declaration"},
-    "letter_of_credit": {"letter_of_credit", "lc", "l_c"},
-    "po": {"po", "purchase_order"},
+_BUSINESS_DOC_TYPES = {
+    "po",
+    "invoice",
+    "packing_list",
+    "bill_of_lading",
+    "shipping_instruction",
+    "certificate_of_origin",
+    "customs_declaration",
+    "letter_of_credit",
 }
 
-_EXTENSION_FALLBACKS = {"pdf", "xlsx", "xlsm", "xls", "docx", "png", "jpg", "jpeg", "txt", "csv", "other"}
+_EXTENSION_FALLBACKS = {
+    "pdf",
+    "xlsx",
+    "xlsm",
+    "xls",
+    "docx",
+    "png",
+    "jpg",
+    "jpeg",
+    "txt",
+    "csv",
+    "other",
+}
 
 _DIAG_KEYWORDS = (
     "1.85",
@@ -977,28 +990,34 @@ class AuditOrchestratorService:
         }
 
     def _resolve_doc_type(self, manual_type: str | None, file_record: dict[str, Any]) -> str:
-        """手动类型优先，其次依据已解析出的 detected_type 和文件名提示。"""
+        """手动类型优先，其次依据 detected_type 和文件名分类器推断业务类型。"""
 
         if manual_type:
             normalized_manual = manual_type.strip().lower()
-            return "generic" if normalized_manual in _EXTENSION_FALLBACKS else normalized_manual
+            if normalized_manual and normalized_manual not in _EXTENSION_FALLBACKS and normalized_manual != "other":
+                logger.info("DOC_TYPE_RESOLVE source=manual type=%s", normalized_manual)
+                return normalized_manual
 
         detected_type = str(file_record.get("detected_type", "")).strip().lower()
-        if detected_type in _DOC_TYPE_HINTS:
+        if detected_type in _BUSINESS_DOC_TYPES:
+            logger.info("DOC_TYPE_RESOLVE source=detected type=%s", detected_type)
             return detected_type
 
-        filename = str(file_record.get("filename", "")).lower()
-        for doc_type, hints in _DOC_TYPE_HINTS.items():
-            if doc_type == "invoice" and self._matches_invoice_filename(filename):
-                return doc_type
-            if doc_type == "po" and self._matches_po_filename(filename):
-                return doc_type
-            if doc_type not in {"invoice", "po"} and any(hint in filename for hint in hints):
-                return doc_type
+        filename = str(file_record.get("filename", "") or "")
+        classifier_type = classify_by_filename(filename)
+        if classifier_type:
+            logger.info(
+                "DOC_TYPE_RESOLVE source=filename_classifier detected_type=%s type=%s",
+                detected_type or "<empty>",
+                classifier_type,
+            )
+            return classifier_type
 
-        if detected_type in _EXTENSION_FALLBACKS:
-            return "generic"
-        return detected_type or "generic"
+        logger.info(
+            "DOC_TYPE_RESOLVE source=generic detected_type=%s",
+            detected_type or "<empty>",
+        )
+        return "generic"
 
     def _select_ocr_provider(self, primary_provider: str, profile: dict[str, Any]) -> tuple[str, str]:
         """当主 provider 不适合视觉/OCR 时，选择降级/切换 provider。"""

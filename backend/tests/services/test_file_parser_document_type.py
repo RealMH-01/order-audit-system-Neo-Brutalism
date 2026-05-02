@@ -52,14 +52,14 @@ def test_detect_type_unknown_filename_uses_extension_fallback():
     }
 
 
-def test_detect_type_logs_classifier_legacy_and_fallback_sources(caplog):
+def test_detect_type_logs_classifier_and_fallback_sources(caplog):
     caplog.set_level("INFO")
 
     assert detect("PL-001.pdf") == "packing_list"
-    assert detect("Commercial.pdf") == "invoice"
+    assert detect("CI-001.pdf") == "invoice"
     assert detect("random123.pdf") == "pdf"
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("source=classifier type=packing_list" in message for message in messages)
-    assert any("source=legacy type=invoice" in message for message in messages)
+    assert any("source=classifier type=invoice" in message for message in messages)
     assert any("source=fallback type=pdf" in message for message in messages)

@@ -368,33 +368,6 @@ class FileParserService:
             )
             return classifier_type
 
-        name = Path(filename).stem.lower()
-        detected_type = None
-        if FileParserService._matches_po_filename(name):
-            detected_type = "po"
-        elif FileParserService._matches_invoice_filename(name):
-            detected_type = "invoice"
-        elif "packing" in name or "plist" in name:
-            detected_type = "packing_list"
-        elif "shipping" in name or "si" in name:
-            detected_type = "shipping_instruction"
-        elif "bill_of_lading" in name or "b/l" in name or "bol" in name:
-            detected_type = "bill_of_lading"
-        elif "certificate_of_origin" in name or "coo" in name:
-            detected_type = "certificate_of_origin"
-        elif "customs" in name or "declaration" in name:
-            detected_type = "customs_declaration"
-        elif "letter_of_credit" in name or "_lc" in name or " lc" in name:
-            detected_type = "letter_of_credit"
-
-        if detected_type:
-            logger.info(
-                "DOC_TYPE_DETECT filename=%s source=legacy type=%s",
-                filename,
-                detected_type,
-            )
-            return detected_type
-
         fallback_type = extension if extension in {"pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"} else "other"
         logger.info(
             "DOC_TYPE_DETECT filename=%s source=fallback type=%s",
