@@ -174,6 +174,8 @@ def _resolve_from_hints(issue: dict, file_index: list[dict]) -> tuple[list[dict]
         passed_count = sum(1 for value in passed.values() if value)
         if passed_count == 3:
             locations.append(_build_location(record, confidence=0.95, resolver="anchor_verified"))
+        elif passed_count == 2 and passed["value"]:
+            locations.append(_build_location(record, confidence=0.80, resolver="value_anchor_relaxed"))
         elif passed_count == 2:
             partials.append(_build_location(record, confidence=0.75, resolver="partial_match"))
 
