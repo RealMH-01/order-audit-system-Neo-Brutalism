@@ -383,16 +383,16 @@ def _parse_number(value: str) -> float | None:
     match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
     if not match:
         return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
 
 
 def _is_numeric_like(value: str) -> bool:
     cleaned = _CURRENCY_AND_UNIT_PATTERN.sub("", str(value or "")).strip()
     cleaned = re.sub(r"\b(?:KG|KGS|PCS|CTNS|TON|MT)\b", "", cleaned, flags=re.IGNORECASE).strip()
     return bool(re.fullmatch(r"[-+]?\d+(?:\.\d+)?", cleaned))
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
 
 
 def _normalize_doc_type(value: Any) -> str:
