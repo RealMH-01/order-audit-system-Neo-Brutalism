@@ -271,9 +271,52 @@ You must return a full JSON object with recalculated summary, issue ids, and con
 
 CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT = _CUSTOM_RULES_REVIEW_INSTRUCTION_TEXT
 
+_AUDIT_RESULT_SCHEMA_TEXT = """
+Return a JSON object with this exact shape. Do not output anything outside the JSON.
+
+{
+  "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
+  "issues": [
+    {
+      "id": "R-01",
+      "level": "RED|YELLOW|BLUE",
+      "field_name": "字段中文名称",
+      "finding": "具体发现的问题描述（中文）",
+      "your_value": "目标单据上的值，无法确认则写未能确认",
+      "source_value": "基准单据/PO 中的值，无法确认则写未能确认",
+      "source": "数据来源说明，例如 PO、合同、Invoice、装箱单等",
+      "field_location": "字段位置或行项目说明（人类可读），可省略",
+      "location_hints": ["Sheet1!F9"],
+      "suggestion": "中文修正建议",
+      "confidence": 0.0
+    }
+  ],
+  "confidence": 0.0
+}
+
+Coordinate rules（必须遵守）:
+- 用户输入中，每个非空 Excel 单元格都以 "[SheetName!Cell] label: value" 的形式列出。
+  当某个 issue 引用某个值时，你必须从该输入中抄出对应的 "SheetName!Cell"
+  放进 location_hints 数组。
+- 严禁伪造未在输入中出现过的坐标。如果你不确定某个 issue 对应哪个具体单元格，
+  请输出 location_hints: []，不要猜。
+- 对“字段缺失/为空”类问题：如果输入里能识别出该字段标签及其相邻空白单元格，
+  输出那个空白单元格的坐标；不要因为值为空就直接输出 []。
+- 如果该 issue 是建议性、跨文件、纯流程类问题，且无对应单元格，
+  输出 location_hints: []。
+- field_location 仍可填人类可读描述，例如 "发票第 3 行"；
+  但标记坐标依赖 location_hints，而不是 field_location。
+
+Output requirements:
+- 所有 finding 与 suggestion 必须使用简体中文。
+- 保留原始字段名、数字、币种与 Incoterms。
+- 编号按严重程度：R-01, Y-01, B-01。
+- 不要输出 JSON 以外的任何文本。
+""".strip()
+
 _CUSTOM_RULES_REVIEW_RESULT_SCHEMA_TEXT = """
 Return a JSON object with this exact shape:
-Each issue object must include location_hints: an array of "SheetName!Cell" strings for markable cell-specific issues, or [] only when no specific cell can be determined from the provided sheet/cell/table context.
+Each issue object must include location_hints: a string array of "SheetName!Cell" coordinates copied only from real coordinates present in the input.
 {
   "summary": {"red": 0, "yellow": 0, "blue": 0, "total": 0},
   "issues": [
@@ -286,6 +329,7 @@ Each issue object must include location_hints: an array of "SheetName!Cell" stri
       "source_value": "基准单据/PO/数据源中的值，无法确认则写未能确认",
       "source": "数据来源说明，例如 PO、合同、订单、Invoice、装箱单等",
       "field_location": "字段位置或行项目说明，无法确认可省略",
+      "location_hints": ["Sheet1!F9"],
       "suggestion": "中文修正建议",
       "confidence": 0.0
     }
@@ -299,16 +343,20 @@ Output requirements:
 - All user-facing text must be Simplified Chinese.
 - Preserve original field names, numbers, currency codes, and Incoterms.
 - Number issues by severity: R-01, Y-01, B-01.
-- For every issue that corresponds to a specific Excel cell, provide at least one
-  entry in "location_hints" pointing to the cell that needs marking, formatted as
-  "SheetName!Cell" (e.g., "Sheet1!F9").
+- "location_hints" must be a string array. For every issue that corresponds to a
+  specific Excel cell, provide at least one entry pointing to the cell that needs
+  marking, formatted as "SheetName!Cell" (e.g., "Sheet1!F9").
+- Only use real SheetName!Cell coordinates that appeared in the input. 严禁伪造未在输入中出现过的坐标。
+  If you are uncertain which specific cell applies, output location_hints: []，不要猜。
 - For "missing field" or "empty value" issues: if the document text or extracted
   table context clearly identifies the field label and its adjacent empty cell,
   output the coordinate of that empty cell. Do NOT output [] merely because the
   value itself is empty.
 - Output [] only when the issue is advisory, relates to external documents/process
-  recommendations, or no specific cell can be determined from the provided text.
-- Do NOT fabricate coordinates. Never guess a coordinate that is not supported by visible sheet/cell/table context.
+  recommendations, is a cross-file or pure process issue, or no specific cell can
+  be determined from the provided text.
+- field_location is a human-readable description only and is not the primary basis
+  for marking coordinates; marking depends on location_hints.
 - Do not output any text outside the JSON object.
 """.strip()
 
@@ -425,6 +473,7 @@ Template comparison:
 """.strip()
             )
 
+        sections.append(_AUDIT_RESULT_SCHEMA_TEXT)
         sections.append("Return the complete audit result as a valid JSON object.")
         return "\n\n".join(section for section in sections if section.strip())
 
