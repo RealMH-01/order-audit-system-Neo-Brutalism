@@ -115,7 +115,10 @@ def _build_sheet_index(
                 display_value = formula
             value_str = _stringify(display_value)
 
-            if value_str == "" and formula is None:
+            is_merge_anchor = bool(merged_info and merged_info["is_anchor"])
+            is_empty_anchor = value_str == "" and formula is None and is_merge_anchor
+
+            if value_str == "" and formula is None and not is_merge_anchor:
                 continue
 
             value_strings[(row_idx, column_idx)] = value_str
@@ -133,7 +136,8 @@ def _build_sheet_index(
                     "formula": formula,
                     "number_format": formula_cell.number_format,
                     "merged_range": merged_info["range"] if merged_info else None,
-                    "is_merge_anchor": bool(merged_info and merged_info["is_anchor"]),
+                    "is_merge_anchor": is_merge_anchor,
+                    "is_empty_anchor": is_empty_anchor,
                     "left_label": None,
                     "above_header": None,
                     "row_context": "",
