@@ -140,6 +140,38 @@ class GoldenDatasetApiClient:
         )
         return self._json_or_raise(response, "获取审核结果")
 
+    def delete_files(self, file_ids: list[str]) -> int:
+        if not file_ids:
+            return 0
+        payload = self._delete_mine_files({"file_ids": file_ids}, "清理指定暂存文件")
+        return int(payload.get("deleted_count", 0) or 0)
+
+    def delete_all_files(self) -> int:
+        payload = self._delete_mine_files(None, "清空当前用户暂存文件")
+        return int(payload.get("deleted_count", 0) or 0)
+
+    def _delete_mine_files(self, body: dict[str, Any] | None, action: str) -> dict[str, Any]:
+        self._require_token()
+        try:
+            response = self.session.delete(
+                self._url("/files/mine"),
+                headers=self._auth_headers(),
+                json=body,
+                timeout=self.config.timeout_seconds,
+            )
+            return self._json_or_raise(response, action)
+        except requests.RequestException as exc:
+            message = f"{action}失败：网络异常：{exc}"
+            self.log(message)
+            raise GoldenDatasetApiError(message) from exc
+        except GoldenDatasetApiError as exc:
+            message = str(exc)
+            if "HTTP 401" in message:
+                self.log(f"{action}失败：token 已过期或无效，跳过清理。")
+            else:
+                self.log(message)
+            raise
+
     def _read_progress_stream(self, task_id: str, deadline: float):
         remaining = max(deadline - time.monotonic(), 1)
         read_timeout = max(min(self.config.timeout_seconds, remaining), 1)

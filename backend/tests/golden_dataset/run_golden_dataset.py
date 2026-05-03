@@ -102,12 +102,18 @@ def main() -> int:
         try:
             token = client.login(config.user_email, config.user_password)
             logger(f"登录成功，access_token 长度：{len(token)}。")
+
+            if args.dry_run:
+                logger("dry-run 模式：已完成环境变量、登录和 expected.json 检查，不上传文件，不启动审核。")
+                return 0
+
+            try:
+                deleted_count = client.delete_all_files()
+                logger(f"启动前清理：已删除 {deleted_count} 个残留文件。")
+            except GoldenDatasetApiError as exc:
+                logger(f"启动前清理失败：{exc}")
         finally:
             client.close()
-
-        if args.dry_run:
-            logger("dry-run 模式：已完成环境变量、登录和 expected.json 检查，不上传文件，不启动审核。")
-            return 0
 
         logger(f"开始真实审核，最大并发：{config.concurrency}。")
         results = run_cases(
@@ -224,14 +230,19 @@ def run_one_case(
 ) -> CaseAssertionResult:
     case_id = case_dir.name
     task_id: str | None = None
+    uploaded_file_ids: list[str] = []
     client = GoldenDatasetApiClient(api_config, logger, token=token)
     try:
         logger(f"{case_id} 开始上传文件。")
         files = locate_case_files(case_dir)
         po_file_id = client.upload_file(files["po"])
+        uploaded_file_ids.append(po_file_id)
         ci_file_id = client.upload_file(files["ci"])
+        uploaded_file_ids.append(ci_file_id)
         pl_file_id = client.upload_file(files["pl"])
+        uploaded_file_ids.append(pl_file_id)
         si_file_id = client.upload_file(files["si"])
+        uploaded_file_ids.append(si_file_id)
 
         logger(f"{case_id} 文件上传完成，开始审核。")
         task_id = client.start_audit(po_file_id, [ci_file_id, pl_file_id, si_file_id])
@@ -256,6 +267,12 @@ def run_one_case(
         logger(f"{case_id} 异常：{exc}")
         return error_result(expected=expected, message=str(exc), task_id=task_id)
     finally:
+        if uploaded_file_ids:
+            try:
+                deleted_count = client.delete_files(uploaded_file_ids)
+                logger(f"{case_id} 清理完成：已删除 {deleted_count} 个暂存文件。")
+            except Exception as exc:
+                logger(f"{case_id} 清理失败：{exc}")
         client.close()
 
 
