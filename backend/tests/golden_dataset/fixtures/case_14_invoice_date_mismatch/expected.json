@@ -1,0 +1,30 @@
+{
+  "case_id": "case_14_invoice_date_mismatch",
+  "description": "CI 的 INV Date 改为 April 12, 2025，PL 仍为 April 10, 2025。",
+  "tested_rules": [
+    "priority_fields"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "日期",
+        "Date"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "INV Date",
+        "日期"
+      ],
+      "rule_code": "priority_fields"
+    }
+  ],
+  "must_not_contain": []
+}

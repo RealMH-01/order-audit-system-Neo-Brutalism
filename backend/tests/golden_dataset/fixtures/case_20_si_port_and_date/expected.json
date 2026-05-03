@@ -1,0 +1,41 @@
+{
+  "case_id": "case_20_si_port_and_date",
+  "description": "托书装货港改为 Ningbo，同时 CI 发票日期与 PL 不一致。",
+  "tested_rules": [
+    "shipping_instruction_focus",
+    "priority_fields"
+  ],
+  "expected_summary": {
+    "red_min": 2,
+    "red_max": 4,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "托书",
+        "港口"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "港口"
+      ],
+      "rule_code": "shipping_instruction_focus"
+    },
+    {
+      "must_contain_keywords": [
+        "日期",
+        "Date"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "日期"
+      ],
+      "rule_code": "priority_fields"
+    }
+  ],
+  "must_not_contain": []
+}

@@ -1,0 +1,31 @@
+{
+  "case_id": "case_28_contract_no_missing_zero",
+  "description": "CI/PL/托书编号 HR-EXP250401，PO 合同号 HR-EXP2504001，少一个 0。",
+  "tested_rules": [
+    "fuzzy_id_matching"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "合同号",
+        "少",
+        "0"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Contract No",
+        "合同号"
+      ],
+      "rule_code": "fuzzy_id_matching"
+    }
+  ],
+  "must_not_contain": []
+}

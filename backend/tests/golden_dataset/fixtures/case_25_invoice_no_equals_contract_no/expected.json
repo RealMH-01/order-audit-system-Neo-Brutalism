@@ -1,0 +1,27 @@
+{
+  "case_id": "case_25_invoice_no_equals_contract_no",
+  "description": "CI/PL 发票号与 PO 合同号完全相同，属于合规情况。",
+  "tested_rules": [
+    "invoice_no_equals_contract_no"
+  ],
+  "expected_summary": {
+    "red_min": 0,
+    "red_max": 0,
+    "yellow_min": 0,
+    "yellow_max": 0,
+    "blue_min": 0,
+    "blue_max": 1
+  },
+  "expected_issues": [],
+  "must_not_contain": [
+    {
+      "level": "RED",
+      "field_name_keywords": [
+        "Invoice No",
+        "发票号",
+        "合同号"
+      ],
+      "reason": "发票号等于合同号是明确允许的正常情况。"
+    }
+  ]
+}

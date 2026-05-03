@@ -1,0 +1,29 @@
+{
+  "case_id": "case_27_format_spaces",
+  "description": "CI/PL 的编号和品名周围加入多余空格，业务值未改变，预期最多 BLUE。",
+  "tested_rules": [
+    "evidence_only"
+  ],
+  "expected_summary": {
+    "red_min": 0,
+    "red_max": 0,
+    "yellow_min": 0,
+    "yellow_max": 0,
+    "blue_min": 0,
+    "blue_max": 2
+  },
+  "expected_issues": [],
+  "must_not_contain": [
+    {
+      "level": "RED",
+      "field_name_keywords": [
+        "PO No",
+        "Invoice No",
+        "单价",
+        "数量",
+        "金额"
+      ],
+      "reason": "仅为空格格式问题，不应触发业务 RED。"
+    }
+  ]
+}

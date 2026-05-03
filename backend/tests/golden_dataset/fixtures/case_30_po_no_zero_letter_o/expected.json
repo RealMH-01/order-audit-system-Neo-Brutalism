@@ -1,0 +1,32 @@
+{
+  "case_id": "case_30_po_no_zero_letter_o",
+  "description": "CI/PL PO No. 中数字 0 被写成字母 O，PO 文件保持数字 0。",
+  "tested_rules": [
+    "fuzzy_id_matching",
+    "core_identifier_rules"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "PO",
+        "0",
+        "O"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "PO No",
+        "PO号"
+      ],
+      "rule_code": "fuzzy_id_matching"
+    }
+  ],
+  "must_not_contain": []
+}

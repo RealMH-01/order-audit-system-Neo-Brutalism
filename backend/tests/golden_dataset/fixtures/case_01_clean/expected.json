@@ -1,0 +1,17 @@
+{
+  "case_id": "case_01_clean",
+  "description": "完全干净的一票，预期 0 RED 0 YELLOW 0 BLUE。",
+  "tested_rules": [
+    "stable_results"
+  ],
+  "expected_summary": {
+    "red_min": 0,
+    "red_max": 0,
+    "yellow_min": 0,
+    "yellow_max": 0,
+    "blue_min": 0,
+    "blue_max": 0
+  },
+  "expected_issues": [],
+  "must_not_contain": []
+}

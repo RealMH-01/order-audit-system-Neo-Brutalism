@@ -1,0 +1,39 @@
+{
+  "case_id": "case_26_affiliate_downgrade",
+  "description": "CI 卖方名称与 PO 略有不同，但属于同一 Huarui 关联主体，预期不得 RED。",
+  "tested_rules": [
+    "affiliate_downgrade"
+  ],
+  "expected_summary": {
+    "red_min": 0,
+    "red_max": 0,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 2
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "关联",
+        "主体"
+      ],
+      "expected_level": "YELLOW",
+      "expected_field_name_keywords": [
+        "卖方",
+        "主体"
+      ],
+      "rule_code": "affiliate_downgrade"
+    }
+  ],
+  "must_not_contain": [
+    {
+      "level": "RED",
+      "field_name_keywords": [
+        "卖方",
+        "主体"
+      ],
+      "reason": "关联公司名称差异不得按核心金额/数量类问题直接判 RED。"
+    }
+  ]
+}

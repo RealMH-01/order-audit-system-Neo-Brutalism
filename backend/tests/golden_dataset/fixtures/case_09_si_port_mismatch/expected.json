@@ -1,0 +1,31 @@
+{
+  "case_id": "case_09_si_port_mismatch",
+  "description": "托书装货港改为 Ningbo, China，CI/PL/PO 仍为 Shanghai。",
+  "tested_rules": [
+    "shipping_instruction_focus"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "托书",
+        "港口"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Port of Loading",
+        "装货港",
+        "港口"
+      ],
+      "rule_code": "shipping_instruction_focus"
+    }
+  ],
+  "must_not_contain": []
+}

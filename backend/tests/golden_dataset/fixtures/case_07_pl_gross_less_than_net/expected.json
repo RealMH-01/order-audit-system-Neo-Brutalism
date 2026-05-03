@@ -1,0 +1,32 @@
+{
+  "case_id": "case_07_pl_gross_less_than_net",
+  "description": "PL 毛重改为 20,000 KGS，低于净重 21,000 KGS。",
+  "tested_rules": [
+    "packing_list_focus"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "毛重",
+        "净重"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Gross Weight",
+        "Net Weight",
+        "毛重",
+        "净重"
+      ],
+      "rule_code": "packing_list_focus"
+    }
+  ],
+  "must_not_contain": []
+}

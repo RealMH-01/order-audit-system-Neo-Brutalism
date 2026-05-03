@@ -1,0 +1,42 @@
+{
+  "case_id": "case_17_po_no_and_unit_price",
+  "description": "同时埋 PO No. 不一致和 CI/PO 单价不一致。",
+  "tested_rules": [
+    "core_identifier_rules",
+    "unit_price_order"
+  ],
+  "expected_summary": {
+    "red_min": 2,
+    "red_max": 4,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "PO",
+        "不一致"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "PO No",
+        "PO号"
+      ],
+      "rule_code": "core_identifier_rules"
+    },
+    {
+      "must_contain_keywords": [
+        "单价",
+        "Unit Price"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "单价"
+      ],
+      "rule_code": "unit_price_order"
+    }
+  ],
+  "must_not_contain": []
+}

@@ -1,0 +1,42 @@
+{
+  "case_id": "case_19_invoice_blank_and_pl_weight",
+  "description": "CI Invoice No. 为空，同时 PL 毛重低于净重。",
+  "tested_rules": [
+    "invoice_focus",
+    "packing_list_focus"
+  ],
+  "expected_summary": {
+    "red_min": 2,
+    "red_max": 4,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "Invoice No",
+        "为空"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Invoice No"
+      ],
+      "rule_code": "invoice_focus"
+    },
+    {
+      "must_contain_keywords": [
+        "毛重",
+        "净重"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "毛重",
+        "净重"
+      ],
+      "rule_code": "packing_list_focus"
+    }
+  ],
+  "must_not_contain": []
+}

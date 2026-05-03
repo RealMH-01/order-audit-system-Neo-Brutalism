@@ -1,0 +1,31 @@
+{
+  "case_id": "case_03_invoice_no_missing_digit",
+  "description": "CI/PL/托书发票号比 PO 合同号末尾少一位数字。",
+  "tested_rules": [
+    "fuzzy_id_matching"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "发票号",
+        "末尾",
+        "少"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Invoice No",
+        "发票号"
+      ],
+      "rule_code": "fuzzy_id_matching"
+    }
+  ],
+  "must_not_contain": []
+}

@@ -1,0 +1,43 @@
+{
+  "case_id": "case_24_invoice_no_and_contract_blank",
+  "description": "CI/PL 发票号改为另一编号，同时 PO Contract No. 为空。",
+  "tested_rules": [
+    "core_identifier_rules",
+    "missing_field_wording"
+  ],
+  "expected_summary": {
+    "red_min": 2,
+    "red_max": 4,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "发票号",
+        "不一致"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Invoice No",
+        "发票号"
+      ],
+      "rule_code": "core_identifier_rules"
+    },
+    {
+      "must_contain_keywords": [
+        "合同号",
+        "为空"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Contract No",
+        "合同号"
+      ],
+      "rule_code": "missing_field_wording"
+    }
+  ],
+  "must_not_contain": []
+}

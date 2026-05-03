@@ -1,0 +1,42 @@
+{
+  "case_id": "case_22_affiliate_and_amount",
+  "description": "CI 卖方写成关联公司名称，同时 CI 金额不一致。",
+  "tested_rules": [
+    "affiliate_downgrade",
+    "business_field_severity"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 3,
+    "yellow_min": 0,
+    "yellow_max": 2,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "关联",
+        "主体"
+      ],
+      "expected_level": "YELLOW",
+      "expected_field_name_keywords": [
+        "卖方",
+        "主体"
+      ],
+      "rule_code": "affiliate_downgrade"
+    },
+    {
+      "must_contain_keywords": [
+        "金额",
+        "Amount"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "金额"
+      ],
+      "rule_code": "business_field_severity"
+    }
+  ],
+  "must_not_contain": []
+}

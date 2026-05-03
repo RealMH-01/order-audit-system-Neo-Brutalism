@@ -19,3 +19,12 @@ build/
 .env.production.local
 coverage/
 *.tsbuildinfo
+
+# Office 临时锁文件
+~$*
+
+# 测试运行日志（运行时产物，不进仓库）
+backend/tests/golden_dataset/runs/
+
+# 测试报告（运行时产物）
+backend/tests/golden_dataset/reports/

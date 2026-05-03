@@ -1,0 +1,17 @@
+{
+  "case_id": "case_10_customs_scope_skipped",
+  "description": "本系统当前测试输入不上传报关单，本 case 不埋雷，仅作为范围说明。",
+  "tested_rules": [
+    "customs_declaration_focus"
+  ],
+  "expected_summary": {
+    "red_min": 0,
+    "red_max": 0,
+    "yellow_min": 0,
+    "yellow_max": 0,
+    "blue_min": 0,
+    "blue_max": 1
+  },
+  "expected_issues": [],
+  "must_not_contain": []
+}

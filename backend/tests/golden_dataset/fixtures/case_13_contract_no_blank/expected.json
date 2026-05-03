@@ -1,0 +1,30 @@
+{
+  "case_id": "case_13_contract_no_blank",
+  "description": "PO 中 Contract No. 标签保留但值明确为空。",
+  "tested_rules": [
+    "missing_field_wording"
+  ],
+  "expected_summary": {
+    "red_min": 1,
+    "red_max": 2,
+    "yellow_min": 0,
+    "yellow_max": 1,
+    "blue_min": 0,
+    "blue_max": 3
+  },
+  "expected_issues": [
+    {
+      "must_contain_keywords": [
+        "合同号",
+        "为空"
+      ],
+      "expected_level": "RED",
+      "expected_field_name_keywords": [
+        "Contract No",
+        "合同号"
+      ],
+      "rule_code": "missing_field_wording"
+    }
+  ],
+  "must_not_contain": []
+}
